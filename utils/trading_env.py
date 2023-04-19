@@ -32,14 +32,22 @@ class TradingEnv:
         return np.array([[position_type, volume, profit, spread]])
 
     def get_reward(self, position_before, position_after):
-        if position_after == None:
-            reward = 0
-        elif position_before != None and position_before.type == position_after.type:
-            reward = -abs(position_after.profit - position_before.profit)
+        if position_before is None or position_after is None:
+            return 0
+            
+        profit_loss = position_after.profit - position_before.profit
+        if profit_loss > 0:
+            reward = 1
+        elif profit_loss < 0:
+            reward = -1
         else:
-            reward = abs(position_after.profit)
-
+            reward = 0
+            
+        # Discount the reward based on the number of steps taken in the episode
+        reward *= self.gamma ** self.current_step
+        
         return reward
+
 
     def is_done(self):
         # Check if position is closed
