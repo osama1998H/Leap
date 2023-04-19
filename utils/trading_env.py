@@ -11,10 +11,9 @@ class TradingEnv:
         self.max_steps = 1000
         self.current_step = 0
 
-
     def get_state(self):
         positions = mt5.positions_get(symbol=self.symbol)
-        if positions is None:
+        if not positions:
             return np.zeros((1, 4))
 
         position = positions[0]
@@ -54,7 +53,6 @@ class TradingEnv:
 
         return False
 
-
     def step(self, action):
         positions = mt5.positions_get(symbol=self.symbol)
         if not positions:
@@ -67,8 +65,7 @@ class TradingEnv:
         next_state = self.get_state()
         done = self.is_done()
         reward = self.get_reward(position_before, position_after)
-        return next_state, reward, done, None
-
+        return next_state, reward, (done, None)
 
 
     def trade(self, action):

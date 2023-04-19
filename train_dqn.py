@@ -21,7 +21,7 @@ def train_dqn(symbol, lot_size, stop_loss, take_profit):
         state = env.reset()
         while not done:
             action = agent.act(state)
-            next_state, reward, done, info = env.step(action)
+            next_state, reward, done = env.step(action)
             agent.remember(state, action, reward, next_state, done)
             agent.replay(32)
             score += reward

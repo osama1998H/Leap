@@ -16,6 +16,12 @@ class DQNAgent:
         self.learning_rate = learning_rate
         self.memory = deque(maxlen=2000)
         self.model = self._build_model()
+        self.target_model = self._build_model()
+        self.update_target_model()
+
+
+    def update_target_model(self):
+        self.target_model.set_weights(self.model.get_weights())
 
     def _build_model(self):
         model = Sequential()
@@ -49,7 +55,7 @@ class DQNAgent:
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-
+        
     def load(self, name):
         self.model.load_weights(name)
 
