@@ -1,11 +1,10 @@
 import tensorflow as tf
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.networks import q_network
-from tf_agents.optimizers import adam_optimizer
 from tf_agents.utils import common
 
 
-class DQNAgent(dqn_agent.DQNAgent):
+class DQNAgent(dqn_agent.DqnAgent):
     def __init__(self, observation_spec, action_spec, time_step_spec, learning_rate, gamma):
         q_net = q_network.QNetwork(
             observation_spec,
@@ -13,7 +12,7 @@ class DQNAgent(dqn_agent.DQNAgent):
             fc_layer_params=(100,)
         )
 
-        optimizer = adam_optimizer.AdamOptimizer(learning_rate=learning_rate)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
         super().__init__(
             time_step_spec,

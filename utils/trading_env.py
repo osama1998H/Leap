@@ -86,11 +86,11 @@ class TradingEnv(py_environment.PyEnvironment):
         else:
             return False
 
-    def reset(self):
+    def _reset(self):
         self.state = self.get_state()
         return tf.reshape(self.state, self._observation_spec.shape)
 
-    def step(self, action):
+    def _step(self, action):
         positions = mt5.positions_get(symbol=self.symbol)
         if not positions:
             return tensor_spec.termination(np.array([0, 0, 0, 0, 0, 0]), 0)
