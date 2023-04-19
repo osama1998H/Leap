@@ -1,66 +1,26 @@
-import numpy as np
-import random
-from collections import deque
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.optimizers import Adam
+import tensorflow as tf
+from tf_agents.agents.dqn import dqn_agent
+from tf_agents.networks import q_network
+from tf_agents.optimizers import adam_optimizer
+from tf_agents.utils import common
 
 
-class DQNAgent:
-    def __init__(self, state_size, action_size, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995, learning_rate=0.001):
-        self.state_size = state_size
-        self.action_size = action_size
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
-        self.epsilon_decay = epsilon_decay
-        self.learning_rate = learning_rate
-        self.memory = deque(maxlen=2000)
-        self.model = self._build_model()
-        self.target_model = self._build_model()
-        self.update_target_model()
-        self.learning_rate = learning_rate
+class DQNAgent(dqn_agent.DQNAgent):
+    def __init__(self, observation_spec, action_spec, time_step_spec, learning_rate, gamma):
+        q_net = q_network.QNetwork(
+            observation_spec,
+            action_spec,
+            fc_layer_params=(100,)
+        )
 
-    def update_target_model(self):
-        self.target_model.set_weights(self.model.get_weights())
+        optimizer = adam_optimizer.AdamOptimizer(learning_rate=learning_rate)
 
-    def _build_model(self):
-        model = Sequential()
-        model.add(Dense(64, input_shape=self.state_size, activation='relu'))
-        model.add(Dense(64, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
-        # Define optimizer and compile model
-        optimizer = Adam(learning_rate=self.learning_rate)
-        model.compile(optimizer=optimizer, loss='mse')
-        return model
-
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-
-    def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return random.randrange(self.action_size)
-        else:
-            return np.argmax(self.model.predict(state)[0])
-
-    def replay(self, memory, batch_size):
-        minibatch = random.sample(memory, batch_size)
-        X = []
-        y = []
-        for state, action, reward, next_state, done in minibatch:
-            target = reward
-            if not done:
-                target = reward + self.gamma * np.amax(self.model.predict(next_state)[0])
-            target_f = self.model.predict(state)
-            target_f[0][action] = target
-            X.append(state[0])
-            y.append(target_f[0])
-        self.model.fit(np.array(X), np.array(y), epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-
-    def load(self, name):
-        self.model.load_weights(name)
-
-    def save(self, name):
-        self.model.save_weights(name)
+        super().__init__(
+            time_step_spec,
+            action_spec,
+            q_network=q_net,
+            optimizer=optimizer,
+            td_errors_loss_fn=common.element_wise_squared_loss,
+            train_step_counter=tf.Variable(0),
+            gamma=gamma
+        )

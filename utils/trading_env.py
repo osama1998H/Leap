@@ -1,15 +1,30 @@
-import MetaTrader5 as mt5
 import numpy as np
+import tensorflow as tf
+from tensorflow.python.framework import tensor_spec
+from tf_agents.environments import py_environment
+from tf_agents.specs import array_spec
+import MetaTrader5 as mt5
 
 
-class TradingEnv:
+class TradingEnv(py_environment.PyEnvironment):
     def __init__(self, symbol, lot_size, stop_loss, take_profit):
+        super().__init__()
+
         self.symbol = symbol
         self.lot_size = lot_size
         self.stop_loss = stop_loss
         self.take_profit = take_profit
-        self.max_steps = 1000
-        self.current_step = 0
+        self.state = self.get_state()
+        self._action_spec = array_spec.BoundedArraySpec(
+            shape=(), dtype=np.int32, minimum=0, maximum=2, name='action')
+        self._observation_spec = array_spec.BoundedArraySpec(
+            shape=(1, 6), dtype=np.float32, minimum=-np.inf, maximum=np.inf, name='observation')
+
+    def action_spec(self):
+        return self._action_spec
+
+    def observation_spec(self):
+        return self._observation_spec
 
     def get_state(self):
         positions = mt5.positions_get(symbol=self.symbol)
@@ -32,96 +47,62 @@ class TradingEnv:
         bid = mt5.symbol_info_tick(self.symbol).bid
         ask = mt5.symbol_info_tick(self.symbol).ask
 
-        print("state shape:", self.state.shape)
-        return np.array([[position_type, volume, profit, spread, bid, ask]])
+        return np.array([[position_type, volume, profit, spread, bid, ask]], dtype=np.float32)
 
-
-
+    def trade(self, action):
+        if action == 0:
+            mt5.positions_add(
+                symbol=self.symbol,
+                action=mt5.ORDER_TYPE_BUY,
+                volume=self.lot_size,
+                slippage=2,
+                stoploss=self.stop_loss,
+                takeprofit=self.take_profit
+            )
+        elif action == 1:
+            mt5.positions_add(
+                symbol=self.symbol,
+                action=mt5.ORDER_TYPE_SELL,
+                volume=self.lot_size,
+                slippage=2,
+                stoploss=self.stop_loss,
+                takeprofit=self.take_profit
+            )
 
     def get_reward(self, position_before, position_after):
-        if position_before is None or position_after is None:
+        if not position_before and not position_after:
             return 0
-            
-        profit_loss = position_after.profit - position_before.profit
-        if profit_loss > 0:
-            reward = 1
-        elif profit_loss < 0:
-            reward = -1
+        elif position_before and not position_after:
+            return -1
+        elif position_after and not position_before:
+            return 1
         else:
-            reward = 0
-            
-        # Discount the reward based on the number of steps taken in the episode
-        reward *= self.gamma ** self.current_step
-        
-        # Add the profit/loss from all previous actions
-        for position in self.positions:
-            profit_loss = position_after.profit - position.profit
-            if profit_loss > 0:
-                reward += 1
-            elif profit_loss < 0:
-                reward -= 1
-            
-        return reward
-
+            return position_after.profit - position_before.profit
 
     def is_done(self):
-        # Check if position is closed
         positions = mt5.positions_get(symbol=self.symbol)
-        if len(positions) == 0:
+        if not positions:
             return True
+        else:
+            return False
 
-        # Check if max steps have been reached
-        if self.current_step >= self.max_steps:
-            return True
-
-        return False
+    def reset(self):
+        self.state = self.get_state()
+        return tf.reshape(self.state, self._observation_spec.shape)
 
     def step(self, action):
         positions = mt5.positions_get(symbol=self.symbol)
         if not positions:
-            return np.array([0, 0, 0, 0, 0, 0]), 0, True
+            return tensor_spec.termination(np.array([0, 0, 0, 0, 0, 0]), 0)
+
         position = positions[0]
         position_before = positions[0] if len(positions) > 0 else None
         self.trade(action)
         positions = mt5.positions_get(symbol=self.symbol)
         position_after = positions[0] if len(positions) > 0 else None
-        next_state = self.get_state()
-        done = self.is_done()
-        reward = self.get_reward(position_before, position_after)
-        return next_state, reward, done
-
-
-
-
-    def trade(self, action):
-        if action == None:
-            return
-
-        position_before = mt5.positions_get(symbol=self.symbol)[0]
-        if position_before != None and position_before.type == action:
-            return
-
-        request = {
-            "action": action,
-            "symbol": self.symbol,
-            "volume": self.lot_size,
-            "type": action,
-            "deviation": 10,
-            "magic": 123456,
-            "comment": "AI Trading Bot",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-            "position": 0,
-            "price": mt5.symbol_info_tick(self.symbol).bid if action == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask,
-            "sl": mt5.symbol_info_tick(self.symbol).bid - self.stop_loss * mt5.symbol_info(self.symbol).point if action == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask + self.stop_loss * mt5.symbol_info(self.symbol).point,
-            "tp": mt5.symbol_info_tick(self.symbol).bid + self.take_profit * mt5.symbol_info(self.symbol).point if action == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(self.symbol).ask - self.take_profit * mt5.symbol_info(self.symbol).point
-        }
-
-        result = mt5.order_send(request)
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            print("Failed to execute order. Error code:", result.retcode)
-
-    def reset(self):
-        mt5.shutdown()
-        mt5.initialize()
-        return self.get_state()
+        next_state = tensor_spec.numpy_array_to_feature_dict(self.get_state())
+        done = tensor_spec.termination(
+            self.is_done(), reward=self.get_reward(position_before, position_after))
+        reward = tensor_spec.scalar(
+            self.get_reward(position_before, position_after))
+        return tensor_spec.transition(next_state, reward=reward, discount=0.99, step_type=1 if done else 0)
