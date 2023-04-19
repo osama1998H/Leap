@@ -46,6 +46,14 @@ class TradingEnv:
         # Discount the reward based on the number of steps taken in the episode
         reward *= self.gamma ** self.current_step
         
+        # Add the profit/loss from all previous actions
+        for position in self.positions:
+            profit_loss = position_after.profit - position.profit
+            if profit_loss > 0:
+                reward += 1
+            elif profit_loss < 0:
+                reward -= 1
+            
         return reward
 
 
