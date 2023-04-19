@@ -19,7 +19,8 @@ class TradingEnv:
         position = positions[0]
         volume = position.volume
         profit = position.profit
-        spread = mt5.symbol_info_tick(self.symbol).ask - mt5.symbol_info_tick(self.symbol).bid
+        spread = mt5.symbol_info_tick(
+            self.symbol).ask - mt5.symbol_info_tick(self.symbol).bid
 
         if position.type == mt5.ORDER_TYPE_BUY:
             position_type = 0
@@ -28,10 +29,12 @@ class TradingEnv:
         else:
             position_type = 2
 
-        balance = mt5.account_info().balance
-        equity = mt5.account_info().equity
+        bid = mt5.symbol_info_tick(self.symbol).bid
+        ask = mt5.symbol_info_tick(self.symbol).ask
 
-        return np.array([[position_type, volume, profit, spread, balance, equity]])
+        print("state shape:", self.state.shape)
+        return np.array([[position_type, volume, profit, spread, bid, ask]])
+
 
 
 

@@ -10,6 +10,7 @@ def train_dqn(symbol, lot_size, stop_loss, take_profit):
     env = TradingEnv(symbol, lot_size, stop_loss, take_profit)
     state_shape = env.get_state().shape[1:]
     action_size = 3  # buy, sell, or hold
+    print("stats shape:", state_shape)
     agent = DQNAgent(state_shape, action_size)
 
     # Initialize memory
@@ -19,6 +20,7 @@ def train_dqn(symbol, lot_size, stop_loss, take_profit):
     scores = []
     eps_history = []
     n_episodes = 100
+    batch_size = 32  # Add batch_size argument
     for i in range(n_episodes):
         score = 0
         done = False
@@ -27,7 +29,7 @@ def train_dqn(symbol, lot_size, stop_loss, take_profit):
             action = agent.act(state)
             next_state, reward, done = env.step(action)
             mem.store_transition(state, action, reward, next_state, done)
-            agent.replay(mem)
+            agent.replay(mem, batch_size)  # Pass batch_size argument
             score += reward
             state = next_state
         eps_history.append(agent.epsilon)
@@ -39,8 +41,6 @@ def train_dqn(symbol, lot_size, stop_loss, take_profit):
 
     # Save agent model
     agent.save('dqn_model.h5')
-
-
 
 
 train_dqn('EURUSD', 0.01, 50, 100)

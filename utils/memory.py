@@ -1,11 +1,12 @@
 import numpy as np
 
+
 class Memory:
-    def __init__(self, max_size):
+    def __init__(self, max_size, state_shape):
         self.mem_counter = 0
         self.mem_size = max_size
-        self.state_memory = np.zeros((max_size, 4))
-        self.new_state_memory = np.zeros((max_size, 4))
+        self.state_memory = np.zeros((max_size,) + state_shape)
+        self.new_state_memory = np.zeros((max_size,) + state_shape)
         self.action_memory = np.zeros(max_size, dtype=np.int8)
         self.reward_memory = np.zeros(max_size)
         self.terminal_memory = np.zeros(max_size, dtype=np.bool)
@@ -19,7 +20,3 @@ class Memory:
         self.terminal_memory[index] = done
         self.mem_counter += 1
         self.mem_counter = min(self.mem_counter, self.mem_size)
-
-
-
-

@@ -26,7 +26,7 @@ class DQNAgent:
 
     def _build_model(self):
         model = Sequential()
-        model.add(Dense(64, input_dim=self.state_size, activation='relu'))
+        model.add(Dense(64, input_shape=self.state_size, activation='relu'))
         model.add(Dense(64, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
         # Define optimizer and compile model
@@ -43,24 +43,19 @@ class DQNAgent:
         else:
             return np.argmax(self.model.predict(state)[0])
 
-    def replay(self, batch_size):
-        """Train the agent on a batch of experiences from memory.
-
-        Args:
-            batch_size (int): The number of experiences to sample from memory.
-        """
-        if len(self.memory) < batch_size:
-            return
-
-        minibatch = random.sample(self.memory, batch_size)
+    def replay(self, memory, batch_size):
+        minibatch = random.sample(memory, batch_size)
+        X = []
+        y = []
         for state, action, reward, next_state, done in minibatch:
             target = reward
             if not done:
-                target = reward + self.gamma * \
-                    np.amax(self.model.predict(next_state)[0])
+                target = reward + self.gamma * np.amax(self.model.predict(next_state)[0])
             target_f = self.model.predict(state)
             target_f[0][action] = target
-            self.model.fit(state, target_f, epochs=1, verbose=0)
+            X.append(state[0])
+            y.append(target_f[0])
+        self.model.fit(np.array(X), np.array(y), epochs=1, verbose=0)
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
