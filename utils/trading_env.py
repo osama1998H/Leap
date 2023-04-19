@@ -56,13 +56,19 @@ class TradingEnv:
 
 
     def step(self, action):
-        position_before = mt5.positions_get(symbol=self.symbol)[0]
+        positions = mt5.positions_get(symbol=self.symbol)
+        if not positions:
+            return np.array([0, 0, 0, 0, 0, 0])
+        position = positions[0]
+        position_before = positions[0] if len(positions) > 0 else None
         self.trade(action)
-        position_after = mt5.positions_get(symbol=self.symbol)[0] if action is not None else None
+        positions = mt5.positions_get(symbol=self.symbol)
+        position_after = positions[0] if len(positions) > 0 else None
         next_state = self.get_state()
         done = self.is_done()
         reward = self.get_reward(position_before, position_after)
         return next_state, reward, done, None
+
 
 
     def trade(self, action):
