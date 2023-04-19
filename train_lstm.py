@@ -1,6 +1,6 @@
 import numpy as np
-from trading_env import TradingEnv
-from training_utils import create_model, normalize_data, prepare_data, train_model, predict, denormalize_data
+from utils.trading_env import TradingEnv
+from utils.trading_utils import create_model, normalize_data, prepare_data, train_model, predict, denormalize_data
 import MetaTrader5 as mt5
 
 # set up the trading environment
@@ -16,7 +16,7 @@ if not mt5.initialize():
     quit()
 
 # download historical data
-rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 1000)
+rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 10000)
 closing_prices = [rate[4] for rate in rates]
 
 # normalize the data

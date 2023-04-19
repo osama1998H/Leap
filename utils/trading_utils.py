@@ -31,7 +31,11 @@ def predict(model, X):
     return model.predict(X)
 
 def denormalize_data(scaler, data):
+    # Reshape data to 2D array
+    data = np.reshape(data, (-1, 1))
+    # Inverse transform using scaler
     return scaler.inverse_transform(data)
+
 
 
 import matplotlib.pyplot as plt
