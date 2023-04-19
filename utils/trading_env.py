@@ -1,6 +1,7 @@
 import MetaTrader5 as mt5
 import numpy as np
 
+
 class TradingEnv:
     def __init__(self, symbol, lot_size, stop_loss, take_profit):
         self.symbol = symbol
@@ -8,12 +9,19 @@ class TradingEnv:
         self.stop_loss = stop_loss
         self.take_profit = take_profit
         self.max_steps = 1000
+        self.current_step = 0
+
 
     def get_state(self):
-        position = mt5.positions_get(symbol=self.symbol)[0]
+        positions = mt5.positions_get(symbol=self.symbol)
+        if positions is None:
+            return np.zeros((1, 4))
+
+        position = positions[0]
         volume = position.volume
         profit = position.profit
-        spread = mt5.symbol_info_tick(self.symbol).ask - mt5.symbol_info_tick(self.symbol).bid
+        spread = mt5.symbol_info_tick(
+            self.symbol).ask - mt5.symbol_info_tick(self.symbol).bid
 
         if position.type == mt5.ORDER_TYPE_BUY:
             position_type = 0
@@ -33,6 +41,29 @@ class TradingEnv:
             reward = abs(position_after.profit)
 
         return reward
+
+    def is_done(self):
+        # Check if position is closed
+        positions = mt5.positions_get(symbol=self.symbol)
+        if len(positions) == 0:
+            return True
+
+        # Check if max steps have been reached
+        if self.current_step >= self.max_steps:
+            return True
+
+        return False
+
+
+    def step(self, action):
+        position_before = mt5.positions_get(symbol=self.symbol)[0]
+        self.trade(action)
+        position_after = mt5.positions_get(symbol=self.symbol)[0] if action is not None else None
+        next_state = self.get_state()
+        done = self.is_done()
+        reward = self.get_reward(position_before, position_after)
+        return next_state, reward, done, None
+
 
     def trade(self, action):
         if action == None:
@@ -61,3 +92,8 @@ class TradingEnv:
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             print("Failed to execute order. Error code:", result.retcode)
+
+    def reset(self):
+        mt5.shutdown()
+        mt5.initialize()
+        return self.get_state()

@@ -1,13 +1,15 @@
 import numpy as np
-from utils.trading_env import TradingEnv
 from models.dqn_model import DQNAgent
+from utils.trading_env import TradingEnv
 from utils.trading_utils import plot_learning_curve
 
 
 def train_dqn(symbol, lot_size, stop_loss, take_profit):
     # Initialize environment and agent
     env = TradingEnv(symbol, lot_size, stop_loss, take_profit)
-    agent = DQNAgent(env.observation_space.shape[0], env.action_space.n)
+    state_size = env.get_state().shape[1]
+    action_size = 3  # buy, sell, or hold
+    agent = DQNAgent(state_size, action_size)
 
     # Train agent
     scores = []
@@ -33,7 +35,6 @@ def train_dqn(symbol, lot_size, stop_loss, take_profit):
 
     # Save agent model
     agent.save('dqn_model.h5')
-
 
 
 train_dqn('EURUSD', 0.01, 50, 100)

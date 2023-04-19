@@ -35,6 +35,9 @@ class DQNAgent:
             return np.argmax(self.model.predict(state)[0])
 
     def replay(self, batch_size):
+        if len(self.memory) < batch_size:
+            return
+            
         minibatch = random.sample(self.memory, batch_size)
         for state, action, reward, next_state, done in minibatch:
             target = reward
@@ -45,6 +48,7 @@ class DQNAgent:
             self.model.fit(state, target_f, epochs=1, verbose=0)
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+
 
     def load(self, name):
         self.model.load_weights(name)
