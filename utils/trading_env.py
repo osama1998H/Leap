@@ -14,13 +14,12 @@ class TradingEnv:
     def get_state(self):
         positions = mt5.positions_get(symbol=self.symbol)
         if not positions:
-            return np.zeros((1, 4))
+            return np.zeros((1, 6))
 
         position = positions[0]
         volume = position.volume
         profit = position.profit
-        spread = mt5.symbol_info_tick(
-            self.symbol).ask - mt5.symbol_info_tick(self.symbol).bid
+        spread = mt5.symbol_info_tick(self.symbol).ask - mt5.symbol_info_tick(self.symbol).bid
 
         if position.type == mt5.ORDER_TYPE_BUY:
             position_type = 0
@@ -29,7 +28,12 @@ class TradingEnv:
         else:
             position_type = 2
 
-        return np.array([[position_type, volume, profit, spread]])
+        balance = mt5.account_info().balance
+        equity = mt5.account_info().equity
+
+        return np.array([[position_type, volume, profit, spread, balance, equity]])
+
+
 
     def get_reward(self, position_before, position_after):
         if position_before is None or position_after is None:
