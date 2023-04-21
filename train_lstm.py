@@ -1,14 +1,9 @@
 import numpy as np
-from utils.trading_env import TradingEnv
 from utils.trading_utils import create_model, normalize_data, prepare_data, train_model, predict, denormalize_data
 import MetaTrader5 as mt5
 
 # set up the trading environment
 symbol = "EURUSD"
-lot_size = 0.01
-stop_loss = 20
-take_profit = 40
-trading_env = TradingEnv(symbol, lot_size, stop_loss, take_profit)
 
 # set up connection to MetaTrader 5
 if not mt5.initialize():
@@ -16,8 +11,10 @@ if not mt5.initialize():
     quit()
 
 # download historical data
-rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 10000)
+rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 50000)
+print("rates", rates)
 closing_prices = [rate[4] for rate in rates]
+print("closing_prices", closing_prices)
 
 # normalize the data
 scaler, data_normalized = normalize_data(closing_prices)
@@ -51,6 +48,12 @@ Y_pred = denormalize_data(scaler, Y_pred)
 # calculate the accuracy of the model
 accuracy = np.mean(np.abs((Y_test - Y_pred) / Y_test)) * 100
 print("Accuracy: {:.2f}%".format(100 - accuracy))
+print("prediction first", Y_pred[0])
+print("prediction last", Y_pred[-1])
+print("prediction all", Y_pred)
+
+model.save(f"model-lstm.h5")
 
 # disconnect from MetaTrader 5
 mt5.shutdown()
+print("shutdown")

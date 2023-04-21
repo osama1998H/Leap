@@ -1,5 +1,5 @@
+from datetime import datetime
 import numpy as np
-from utils.trading_env import TradingEnv
 from utils.trading_utils import create_model, normalize_data, prepare_data, train_model, predict, denormalize_data
 import MetaTrader5 as mt5
 
@@ -8,14 +8,22 @@ import MetaTrader5 as mt5
 if not mt5.initialize():
     print("initialize() failed, error code =", mt5.last_error())
     quit()
-    
-symbols = mt5.symbols_get(group="EUR,USD")
+
+# symbols = mt5.symbols_get(group="*UR*")
+symbols = mt5.symbols_get("*USD*")
+symbols = ['EURUSD', 'GBPUSD', 'USDCHF', 'USDJPY', 'USDCNH', 'AUDUSD', 'NZDUSD', 'USDCAD']
+# print('len(*RU*): ', len(symbols))
+for s in symbols:
+    print(s.name)
+print("end")
 
 # Download historical data for all symbols
 closing_prices = []
 for symbol in symbols:
     rates = mt5.copy_rates_from_pos(symbol.name, mt5.TIMEFRAME_D1, 0, 10000)
     closing_prices.append([rate[4] for rate in rates])
+
+print(closing_prices)
 
 # Normalize the data for all symbols
 scalers = []
@@ -34,8 +42,12 @@ for data in data_normalized:
     Ys.append(Y)
 
 # Concatenate the data for all symbols
-X = np.concatenate(Xs, axis=0)
-Y = np.concatenate(Ys, axis=0)
+if closing_prices:
+    X = np.concatenate(Xs, axis=0)
+    Y = np.concatenate(Ys, axis=0)
+else:
+    print("No data available for the symbols.")
+
 
 # Split the data into training and testing sets
 split_ratio = 0.8
@@ -58,16 +70,22 @@ Y_pred = predict(model, X_test)
 # Denormalize the data for all symbols
 Y_test_denorm, Y_pred_denorm = [], []
 for i in range(len(symbols)):
-    Y_test_denorm.append(denormalize_data(scalers[i], Y_test[i * len(closing_prices):(i + 1) * len(closing_prices)]))
-    Y_pred_denorm.append(denormalize_data(scalers[i], Y_pred[i * len(closing_prices):(i + 1) * len(closing_prices)]))
+    Y_test_denorm.append(denormalize_data(
+        scalers[i], Y_test[i * len(closing_prices):(i + 1) * len(closing_prices)]))
+    Y_pred_denorm.append(denormalize_data(
+        scalers[i], Y_pred[i * len(closing_prices):(i + 1) * len(closing_prices)]))
 
 # Calculate the accuracy of the model for all symbols
 for i in range(len(symbols)):
-    accuracy = np.mean(np.abs((Y_test_denorm[i] - Y_pred_denorm[i]) / Y_test_denorm[i])) * 100
-    print("Symbol: {} - Accuracy: {:.2f}%".format(symbols[i].name, 100 - accuracy))
+    accuracy = np.mean(
+        np.abs((Y_test_denorm[i] - Y_pred_denorm[i]) / Y_test_denorm[i])) * 100
+    print(
+        "Symbol: {} - Accuracy: {:.2f}%".format(symbols[i].name, 100 - accuracy))
 
 # Save the model
-model.save("model.h5")
+
+now = datetime.now()
+model.save(f"model-mlsmt-{now}.h5")
 
 # Disconnect from MetaTrader 5
 mt5.shutdown()

@@ -1,6 +1,7 @@
 import numpy as np
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
+import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
 
 def create_model(input_shape):
