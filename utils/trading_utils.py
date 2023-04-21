@@ -24,8 +24,13 @@ def prepare_data(data, window_size):
         Y.append(data[i + window_size, 0])
     return np.array(X), np.array(Y)
 
+# def train_model(model, X_train, Y_train, epochs):
+#     model.fit(X_train, Y_train, epochs=epochs, batch_size=32, verbose=1)
+
 def train_model(model, X_train, Y_train, epochs):
-    model.fit(X_train, Y_train, epochs=epochs, batch_size=32, verbose=1)
+    tb_callback = tf.keras.callbacks.TensorBoard(log_dir="./logs")
+    model.fit(X_train, Y_train, epochs=epochs, batch_size=32, verbose=1, callbacks=[tb_callback])
+
 
 def predict(model, X):
     return model.predict(X)
