@@ -74,17 +74,14 @@ class TradingEnv(py_environment.PyEnvironment):
             return 0
         elif position_before and not position_after:
             return -1
-        elif position_after and not position_before:
+        elif not position_before:
             return 1
         else:
             return position_after.profit - position_before.profit
 
     def is_done(self):
         positions = mt5.positions_get(symbol=self.symbol)
-        if not positions:
-            return True
-        else:
-            return False
+        return not positions
 
     def _reset(self):
         self.state = self.get_state()

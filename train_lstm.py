@@ -52,7 +52,7 @@ print("prediction first", Y_pred[0])
 print("prediction last", Y_pred[-1])
 print("prediction all", Y_pred)
 
-model.save(f"model-lstm.h5")
+model.save("model-lstm.h5")
 
 # disconnect from MetaTrader 5
 mt5.shutdown()

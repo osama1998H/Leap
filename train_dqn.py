@@ -109,7 +109,7 @@ def train():
                 train_step=global_step,
             )
             for result in results:
-                print('{}: {}'.format(result.name, result.result().numpy()))
+                print(f'{result.name}: {result.result().numpy()}')
 
         # Collect a trajectory
         driver.run()
