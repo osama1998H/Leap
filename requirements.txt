@@ -2,12 +2,14 @@
 # AI-Powered Forex Trading with Online Learning
 
 # Core Deep Learning
-torch>=2.0.0
-numpy>=1.24.0
+# Note: NumPy <2.0 required to avoid ABI breakage with PyTorch wheels
+torch>=2.2.0
+numpy>=1.24.0,<2.0
 pandas>=2.0.0
 
 # Scientific Computing
-scipy>=1.10.0
+# scipy and scikit-learn versions compatible with NumPy 1.x
+scipy>=1.11.0
 scikit-learn>=1.3.0
 
 # Reinforcement Learning
