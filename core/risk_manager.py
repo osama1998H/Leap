@@ -22,6 +22,7 @@ class RiskLimits:
     max_weekly_loss_pct: float = 0.10  # Max 10% weekly loss
     max_drawdown_pct: float = 0.15  # Max 15% drawdown
     max_consecutive_losses: int = 5  # Max consecutive losing trades
+    max_open_positions: int = 5  # Max number of open positions
     max_correlation: float = 0.7  # Max correlation between positions
     min_risk_reward: float = 1.5  # Minimum risk/reward ratio
 
@@ -300,8 +301,8 @@ class RiskManager:
             return False, "Position size too small or limits exceeded"
 
         # Check max positions
-        if self.state.open_positions >= 5:  # Hardcoded limit
-            return False, "Maximum open positions reached"
+        if self.state.open_positions >= self.limits.max_open_positions:
+            return False, f"Maximum open positions ({self.limits.max_open_positions}) reached"
 
         return True, "Trade approved"
 
@@ -314,14 +315,16 @@ class RiskManager:
             halt_reasons.append(f"Max drawdown exceeded ({self.state.current_drawdown:.1%})")
 
         # Check daily loss limit
-        daily_loss_pct = -self.state.daily_pnl / self.initial_balance
-        if daily_loss_pct >= self.limits.max_daily_loss_pct:
-            halt_reasons.append(f"Daily loss limit exceeded ({daily_loss_pct:.1%})")
+        if self.initial_balance > 0:
+            daily_loss_pct = -self.state.daily_pnl / self.initial_balance
+            if daily_loss_pct >= self.limits.max_daily_loss_pct:
+                halt_reasons.append(f"Daily loss limit exceeded ({daily_loss_pct:.1%})")
 
         # Check weekly loss limit
-        weekly_loss_pct = (self.week_start_balance - self.current_balance) / self.week_start_balance
-        if weekly_loss_pct >= self.limits.max_weekly_loss_pct:
-            halt_reasons.append(f"Weekly loss limit exceeded ({weekly_loss_pct:.1%})")
+        if self.week_start_balance > 0:
+            weekly_loss_pct = (self.week_start_balance - self.current_balance) / self.week_start_balance
+            if weekly_loss_pct >= self.limits.max_weekly_loss_pct:
+                halt_reasons.append(f"Weekly loss limit exceeded ({weekly_loss_pct:.1%})")
 
         # Check consecutive losses
         if self.state.consecutive_losses >= self.limits.max_consecutive_losses:
@@ -360,6 +363,7 @@ class RiskManager:
 
     def get_risk_report(self) -> Dict:
         """Generate risk report."""
+        total_trades = self.wins + self.losses
         return {
             'current_balance': self.current_balance,
             'initial_balance': self.initial_balance,
@@ -367,12 +371,12 @@ class RiskManager:
             'current_drawdown': self.state.current_drawdown,
             'max_drawdown_limit': self.limits.max_drawdown_pct,
             'daily_pnl': self.state.daily_pnl,
-            'daily_pnl_pct': self.state.daily_pnl / self.initial_balance,
+            'daily_pnl_pct': self.state.daily_pnl / self.initial_balance if self.initial_balance > 0 else 0.0,
             'consecutive_losses': self.state.consecutive_losses,
             'is_trading_allowed': self.state.is_trading_allowed,
             'halt_reason': self.state.halt_reason,
-            'win_rate': self.wins / (self.wins + self.losses) if (self.wins + self.losses) > 0 else 0,
-            'total_trades': self.wins + self.losses,
+            'win_rate': self.wins / total_trades if total_trades > 0 else 0.0,
+            'total_trades': total_trades,
             'position_sizing_method': self.sizing.method
         }
 

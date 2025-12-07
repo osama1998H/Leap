@@ -623,7 +623,8 @@ class PPOAgent:
 
     def load(self, path: str):
         """Load agent checkpoint."""
-        checkpoint = torch.load(path, map_location=self.device)
+        # weights_only=False required for loading optimizer state and custom objects
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.network.load_state_dict(checkpoint['network_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.training_stats = checkpoint.get('training_stats', self.training_stats)
