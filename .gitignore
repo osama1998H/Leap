@@ -1,2 +1,7 @@
 dqn_model.h5
 .vscode
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
