@@ -380,11 +380,12 @@ class PPOAgent:
 
         # PPO update epochs
         n_samples = len(data['states'])
-        indices = np.arange(n_samples)
+        indices = np.arange(n_samples, dtype=np.int64)
 
         total_policy_loss = 0.0
         total_value_loss = 0.0
         total_entropy_loss = 0.0
+        total_combined_loss = 0.0
         total_approx_kl = 0.0
         total_clip_fraction = 0.0
         n_updates = 0
@@ -394,7 +395,12 @@ class PPOAgent:
 
             for start in range(0, n_samples, self.batch_size):
                 end = start + self.batch_size
-                batch_indices = indices[start:end]
+                # Convert to tensor for GPU-compatible indexing
+                batch_indices = torch.as_tensor(
+                    indices[start:end],
+                    device=self.device,
+                    dtype=torch.long
+                )
 
                 # Get batch data
                 batch_states = data['states'][batch_indices]
@@ -442,6 +448,7 @@ class PPOAgent:
                 total_policy_loss += policy_loss.item()
                 total_value_loss += value_loss.item()
                 total_entropy_loss += entropy_loss.item()
+                total_combined_loss += loss.item()
                 total_approx_kl += approx_kl.item()
                 total_clip_fraction += clip_fraction.item()
                 n_updates += 1
@@ -453,6 +460,7 @@ class PPOAgent:
         avg_policy_loss = total_policy_loss / n_updates
         avg_value_loss = total_value_loss / n_updates
         avg_entropy = -total_entropy_loss / n_updates
+        avg_total_loss = total_combined_loss / n_updates
         avg_approx_kl = total_approx_kl / n_updates
         avg_clip_fraction = total_clip_fraction / n_updates
 
@@ -460,6 +468,7 @@ class PPOAgent:
         self.training_stats['policy_losses'].append(avg_policy_loss)
         self.training_stats['value_losses'].append(avg_value_loss)
         self.training_stats['entropy_losses'].append(avg_entropy)
+        self.training_stats['total_losses'].append(avg_total_loss)
         self.training_stats['approx_kl'].append(avg_approx_kl)
         self.training_stats['clip_fraction'].append(avg_clip_fraction)
 
