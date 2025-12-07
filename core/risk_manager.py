@@ -142,6 +142,34 @@ class RiskManager:
 
         self._check_risk_limits()
 
+    def on_position_opened(self, notional: float):
+        """
+        Update exposure and position count when a position is opened.
+
+        Args:
+            notional: The notional value of the position (size * price)
+        """
+        self.state.open_positions += 1
+        self.state.total_exposure += notional
+        logger.debug(
+            f"Position opened: {self.state.open_positions} positions, "
+            f"${self.state.total_exposure:.2f} total exposure"
+        )
+
+    def on_position_closed(self, notional: float):
+        """
+        Update exposure and position count when a position is closed.
+
+        Args:
+            notional: The notional value of the closed position
+        """
+        self.state.open_positions = max(0, self.state.open_positions - 1)
+        self.state.total_exposure = max(0.0, self.state.total_exposure - notional)
+        logger.debug(
+            f"Position closed: {self.state.open_positions} positions, "
+            f"${self.state.total_exposure:.2f} total exposure"
+        )
+
     def calculate_position_size(
         self,
         entry_price: float,
@@ -377,7 +405,11 @@ class RiskManager:
             'halt_reason': self.state.halt_reason,
             'win_rate': self.wins / total_trades if total_trades > 0 else 0.0,
             'total_trades': total_trades,
-            'position_sizing_method': self.sizing.method
+            'position_sizing_method': self.sizing.method,
+            'open_positions': self.state.open_positions,
+            'max_open_positions': self.limits.max_open_positions,
+            'total_exposure': self.state.total_exposure,
+            'max_exposure_pct': self.limits.max_total_exposure_pct
         }
 
     def reset(self):
