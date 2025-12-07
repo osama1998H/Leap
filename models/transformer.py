@@ -283,9 +283,12 @@ class TemporalFusionTransformer(nn.Module):
         dropout: float = 0.1,
         max_seq_length: int = 120,
         output_dim: int = 1,
-        quantiles: List[float] = [0.1, 0.5, 0.9]
+        quantiles: Optional[List[float]] = None
     ):
         super().__init__()
+
+        if quantiles is None:
+            quantiles = [0.1, 0.5, 0.9]
 
         self.input_dim = input_dim
         self.d_model = d_model

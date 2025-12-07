@@ -400,7 +400,7 @@ class DynamicRiskManager(RiskManager):
         self.volatility_history: deque = deque(maxlen=100)
         self.regime = 'normal'
 
-    def update_market_conditions(self, volatility: float, trend_strength: float):
+    def update_market_conditions(self, volatility: float):
         """Update market conditions for dynamic adjustment."""
         self.volatility_history.append(volatility)
 

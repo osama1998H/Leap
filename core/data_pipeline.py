@@ -210,11 +210,13 @@ class FeatureEngineer:
     def _add_trend_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add trend-based indicators."""
         # ADX (Average Directional Index)
-        plus_dm = df['high'].diff()
-        minus_dm = df['low'].diff().abs() * -1
+        # +DM = current high - previous high (when positive and dominates)
+        # -DM = previous low - current low (when positive and dominates)
+        high_diff = df['high'].diff()
+        low_diff = -df['low'].diff()  # previous low - current low
 
-        plus_dm = plus_dm.where((plus_dm > minus_dm.abs()) & (plus_dm > 0), 0)
-        minus_dm = minus_dm.abs().where((minus_dm.abs() > plus_dm) & (minus_dm < 0), 0)
+        plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
+        minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
 
         tr_14 = df['tr'].rolling(14).sum()
         plus_di = 100 * (plus_dm.rolling(14).sum() / (tr_14 + 1e-10))

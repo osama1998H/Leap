@@ -56,7 +56,6 @@ class TransformerConfig:
     d_model: int = 128  # Model dimension
     n_heads: int = 8  # Number of attention heads
     n_encoder_layers: int = 4
-    n_decoder_layers: int = 2
     d_ff: int = 512  # Feed-forward dimension
     dropout: float = 0.1
     max_seq_length: int = 120
@@ -151,7 +150,7 @@ class EvaluationConfig:
 class SystemConfig:
     """Main system configuration."""
     # Paths
-    base_dir: str = "/home/user/Leap"
+    base_dir: str = field(default_factory=lambda: os.getcwd())
     models_dir: str = "saved_models"
     logs_dir: str = "logs"
     data_dir: str = "data"

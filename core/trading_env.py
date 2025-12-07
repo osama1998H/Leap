@@ -43,6 +43,8 @@ class TradingState:
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
+    gross_profit: float = 0.0  # Sum of all winning trade profits
+    gross_loss: float = 0.0    # Sum of all losing trade losses (absolute value)
     total_pnl: float = 0.0
     max_drawdown: float = 0.0
     peak_equity: float = 0.0
@@ -248,10 +250,13 @@ class TradingEnvironment(gym.Env):
         self.state.balance += pnl
         self.state.total_pnl += pnl
 
+        # Track gross profit and gross loss for profit factor calculation
         if pnl > 0:
             self.state.winning_trades += 1
+            self.state.gross_profit += pnl
         else:
             self.state.losing_trades += 1
+            self.state.gross_loss += abs(pnl)
 
         self.state.positions.remove(position)
 
@@ -429,12 +434,11 @@ class TradingEnvironment(gym.Env):
         return np.mean(excess_returns) / np.std(downside_returns) * np.sqrt(252)
 
     def _calculate_profit_factor(self) -> float:
-        """Calculate profit factor."""
-        if self.state.losing_trades == 0:
-            return float('inf') if self.state.winning_trades > 0 else 0.0
+        """Calculate profit factor (gross profit / gross loss)."""
+        if self.state.gross_loss == 0:
+            return float('inf') if self.state.gross_profit > 0 else 0.0
 
-        # This is simplified - in production would track actual profits/losses
-        return self.state.winning_trades / max(1, self.state.losing_trades)
+        return self.state.gross_profit / self.state.gross_loss
 
     def _calculate_avg_trade_duration(self) -> float:
         """Calculate average trade duration."""

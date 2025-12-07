@@ -25,9 +25,11 @@ class ActorCritic(nn.Module):
         self,
         state_dim: int,
         action_dim: int,
-        hidden_sizes: List[int] = [256, 256, 128],
+        hidden_sizes: Optional[List[int]] = None,
         activation: nn.Module = nn.ReLU
     ):
+        if hidden_sizes is None:
+            hidden_sizes = [256, 256, 128]
         super().__init__()
 
         self.state_dim = state_dim

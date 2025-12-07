@@ -25,6 +25,8 @@ class Trade:
     exit_price: Optional[float]
     direction: str  # 'long' or 'short'
     size: float
+    stop_loss: Optional[float] = None  # Stop loss price level
+    take_profit: Optional[float] = None  # Take profit price level
     pnl: float = 0.0
     pnl_pct: float = 0.0
     commission: float = 0.0
@@ -231,8 +233,19 @@ class Backtester:
         else:
             entry_price = price * (1 - self.spread_pips * self.pip_value / 2 - slippage)
 
-        # Calculate position size based on risk
+        # Get stop loss and take profit from signal
         stop_loss_pips = signal.get('stop_loss_pips', 50)
+        take_profit_pips = signal.get('take_profit_pips', stop_loss_pips * 2)  # Default 2:1 R:R
+
+        # Calculate stop loss and take profit price levels
+        if direction == 'long':
+            stop_loss_price = entry_price * (1 - stop_loss_pips * self.pip_value)
+            take_profit_price = entry_price * (1 + take_profit_pips * self.pip_value)
+        else:
+            stop_loss_price = entry_price * (1 + stop_loss_pips * self.pip_value)
+            take_profit_price = entry_price * (1 - take_profit_pips * self.pip_value)
+
+        # Calculate position size based on risk
         risk_amount = self.balance * self.risk_per_trade
         size = risk_amount / (stop_loss_pips * self.pip_value * entry_price)
 
@@ -244,7 +257,7 @@ class Backtester:
         commission = size * entry_price * self.commission_rate
         self.balance -= commission
 
-        # Create trade
+        # Create trade with stop loss and take profit
         trade = Trade(
             entry_time=timestamp,
             exit_time=None,
@@ -252,6 +265,8 @@ class Backtester:
             exit_price=None,
             direction=direction,
             size=size,
+            stop_loss=stop_loss_price,
+            take_profit=take_profit_price,
             commission=commission,
             slippage=slippage * size
         )
@@ -320,24 +335,28 @@ class Backtester:
     ):
         """Update positions, check for stop loss / take profit."""
         for position in list(self.positions):
-            # Simple stop loss check (would be more sophisticated in production)
-            if position.direction == 'long':
-                # Check if stopped out
-                stop_loss = position.entry_price * 0.98  # 2% stop
-                take_profit = position.entry_price * 1.04  # 4% TP
+            # Use stored stop loss and take profit levels from the trade
+            stop_loss = position.stop_loss
+            take_profit = position.take_profit
 
-                if low <= stop_loss:
+            # Skip if no stop loss or take profit set
+            if stop_loss is None and take_profit is None:
+                continue
+
+            if position.direction == 'long':
+                # Check if stopped out (price went below stop loss)
+                if stop_loss is not None and low <= stop_loss:
                     self._close_position(position, stop_loss, timestamp, 'stopped')
-                elif high >= take_profit:
+                # Check if take profit hit (price went above take profit)
+                elif take_profit is not None and high >= take_profit:
                     self._close_position(position, take_profit, timestamp, 'take_profit')
 
             else:  # short
-                stop_loss = position.entry_price * 1.02
-                take_profit = position.entry_price * 0.96
-
-                if high >= stop_loss:
+                # Check if stopped out (price went above stop loss)
+                if stop_loss is not None and high >= stop_loss:
                     self._close_position(position, stop_loss, timestamp, 'stopped')
-                elif low <= take_profit:
+                # Check if take profit hit (price went below take profit)
+                elif take_profit is not None and low <= take_profit:
                     self._close_position(position, take_profit, timestamp, 'take_profit')
 
     def _update_equity(self, current_price: float):
