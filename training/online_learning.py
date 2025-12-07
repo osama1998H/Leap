@@ -500,11 +500,14 @@ class AdaptiveTrainer:
                         callback(result)
 
                 except Exception as e:
-                    logger.error(f"Online training error: {e}")
+                    # Use exception() to include full stack trace for debugging
+                    logger.exception(f"Online training error: {e}")
                     time.sleep(5)
 
         self.training_thread = threading.Thread(target=training_loop)
-        self.training_thread.daemon = True
+        # daemon=False allows graceful shutdown via stop_online_training()
+        # to prevent model corruption during updates
+        self.training_thread.daemon = False
         self.training_thread.start()
 
         logger.info("Online training started")
