@@ -367,6 +367,18 @@ class PPOAgent:
         # Get data from buffer
         data = self.buffer.get()
 
+        # Guard against empty buffer to prevent division by zero
+        n_samples = len(data['states'])
+        if n_samples == 0:
+            logger.warning("PPO update called with empty buffer, skipping")
+            return {
+                'policy_loss': 0.0,
+                'value_loss': 0.0,
+                'entropy': 0.0,
+                'approx_kl': 0.0,
+                'clip_fraction': 0.0
+            }
+
         # Compute returns and advantages
         returns, advantages = self.compute_returns_and_advantages(
             data['rewards'],
@@ -379,7 +391,6 @@ class PPOAgent:
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # PPO update epochs
-        n_samples = len(data['states'])
         indices = np.arange(n_samples, dtype=np.int64)
 
         total_policy_loss = 0.0
@@ -390,7 +401,7 @@ class PPOAgent:
         total_clip_fraction = 0.0
         n_updates = 0
 
-        for epoch in range(self.n_epochs):
+        for _epoch in range(self.n_epochs):
             np.random.shuffle(indices)
 
             for start in range(0, n_samples, self.batch_size):

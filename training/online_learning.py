@@ -145,7 +145,10 @@ class OnlineLearningManager:
         prediction: float,
         actual: float,
         trading_action: int,
-        trading_reward: float
+        trading_reward: float,
+        done: bool = False,
+        log_prob: Optional[float] = None,
+        value: Optional[float] = None
     ) -> Dict:
         """
         Process one step of online learning.
@@ -156,11 +159,26 @@ class OnlineLearningManager:
             actual: Actual outcome
             trading_action: Action taken by agent
             trading_reward: Reward received
+            done: Whether episode is done (for RL)
+            log_prob: Log probability of action (for PPO)
+            value: Value estimate (for PPO)
 
         Returns:
             Dictionary with adaptation info
         """
         self.step_count += 1
+
+        # Store transition in agent's buffer if we have all required fields
+        state = market_data.get('state')
+        if state is not None and log_prob is not None and value is not None:
+            self.agent.store_transition(
+                state=state,
+                action=trading_action,
+                reward=trading_reward,
+                done=done,
+                log_prob=log_prob,
+                value=value
+            )
 
         # Update regime detector
         if 'close' in market_data and 'returns' in market_data:
@@ -271,8 +289,8 @@ class OnlineLearningManager:
             results['predictor_updated'] = predictor_result is not None
             results['predictor_loss'] = predictor_result
 
-        # Adapt agent
-        if len(self.experience_buffer) >= self.config.min_samples_for_adaptation:
+        # Adapt agent - check agent's experience buffer, not manager's
+        if len(self.agent.experience_buffer) >= self.config.min_samples_for_adaptation:
             agent_result = self._adapt_agent()
             results['agent_updated'] = agent_result is not None
             results['agent_loss'] = agent_result
@@ -314,9 +332,14 @@ class OnlineLearningManager:
         return loss
 
     def _adapt_agent(self) -> Optional[float]:
-        """Adapt the RL agent."""
+        """Adapt the RL agent using agent's experience buffer."""
+        # Use agent's buffer length for sampling
+        n_samples = min(256, len(self.agent.experience_buffer))
+        if n_samples == 0:
+            return None
+
         result = self.agent.online_update(
-            n_samples=min(256, len(self.experience_buffer)),
+            n_samples=n_samples,
             n_epochs=3
         )
 
@@ -476,24 +499,28 @@ class AdaptiveTrainer:
                     else:
                         prediction = 0.0
 
-                    # Get agent action
+                    # Get agent action with log_prob and value for PPO buffer
                     state = market_data.get('state')
                     if state is not None:
-                        action, _, _ = self.agent.select_action(state)
+                        action, log_prob, value = self.agent.select_action(state)
                     else:
-                        action = 0
+                        action, log_prob, value = 0, None, None
 
                     # Wait for actual outcome
                     actual = market_data.get('actual', prediction)
                     reward = market_data.get('reward', 0.0)
+                    done = market_data.get('done', False)
 
-                    # Online learning step
+                    # Online learning step - pass PPO required fields
                     result = self.online_manager.step(
                         market_data=market_data,
                         prediction=prediction,
                         actual=actual,
                         trading_action=action,
-                        trading_reward=reward
+                        trading_reward=reward,
+                        done=done,
+                        log_prob=log_prob,
+                        value=value
                     )
 
                     if callback:

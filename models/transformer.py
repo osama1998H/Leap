@@ -515,7 +515,8 @@ class TransformerPredictor:
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     patience_counter = 0
-                    best_state = self.model.state_dict().copy()
+                    # Deep copy state_dict to avoid tensor sharing during continued training
+                    best_state = {k: v.clone().detach().cpu() for k, v in self.model.state_dict().items()}
                 else:
                     patience_counter += 1
 
