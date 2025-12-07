@@ -30,6 +30,8 @@ class ActorCritic(nn.Module):
     ):
         if hidden_sizes is None:
             hidden_sizes = [256, 256, 128]
+        if len(hidden_sizes) < 3:
+            raise ValueError(f"hidden_sizes must have at least 3 elements, got {len(hidden_sizes)}: {hidden_sizes}")
         super().__init__()
 
         self.state_dim = state_dim
@@ -38,7 +40,6 @@ class ActorCritic(nn.Module):
         # Shared feature extractor
         self.feature_extractor = self._build_mlp(
             state_dim,
-            hidden_sizes[0],
             hidden_sizes[:2],
             activation
         )
@@ -63,7 +64,6 @@ class ActorCritic(nn.Module):
     def _build_mlp(
         self,
         input_dim: int,
-        output_dim: int,
         hidden_sizes: List[int],
         activation: nn.Module
     ) -> nn.Sequential:
