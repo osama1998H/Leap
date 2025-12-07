@@ -632,11 +632,17 @@ class TransformerPredictor:
         logger.info(f"Model saved to {path}")
 
     def load(self, path: str):
-        """Load model checkpoint."""
+        """
+        Load model checkpoint.
+
+        Note: Callers must construct TransformerPredictor with matching input_dim
+        so the model architecture matches the loaded weights.
+        """
         # weights_only=False required for loading optimizer state and custom objects
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.config = checkpoint.get('config', self.config)
         self.train_losses = checkpoint.get('train_losses', [])
         self.val_losses = checkpoint.get('val_losses', [])
         logger.info(f"Model loaded from {path}")
