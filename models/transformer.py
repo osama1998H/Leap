@@ -207,13 +207,22 @@ class VariableSelectionNetwork(nn.Module):
         context_dim: Optional[int] = None
     ):
         super().__init__()
+
+        # Validate input_dim is divisible by n_features to avoid silent truncation
+        if input_dim % n_features != 0:
+            raise ValueError(
+                f"input_dim ({input_dim}) must be divisible by n_features ({n_features}). "
+                f"Remainder: {input_dim % n_features} features would be silently truncated."
+            )
+
         self.n_features = n_features
         self.hidden_dim = hidden_dim
+        self.feature_dim = input_dim // n_features
 
         # Feature-wise GRNs
         self.feature_grns = nn.ModuleList([
             GatedResidualNetwork(
-                input_dim // n_features,
+                self.feature_dim,
                 hidden_dim,
                 hidden_dim,
                 dropout,
@@ -240,12 +249,11 @@ class VariableSelectionNetwork(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Split input into features
         batch_size, seq_len, _ = x.shape
-        feature_dim = x.shape[-1] // self.n_features
 
         # Process each feature
         processed_features = []
         for i, grn in enumerate(self.feature_grns):
-            feature_input = x[:, :, i * feature_dim:(i + 1) * feature_dim]
+            feature_input = x[:, :, i * self.feature_dim:(i + 1) * self.feature_dim]
             processed = grn(feature_input, context)
             processed_features.append(processed)
 
