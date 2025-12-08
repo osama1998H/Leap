@@ -385,7 +385,7 @@ class DataPipeline:
         prices = 1.1000 * np.exp(np.cumsum(returns))
 
         # Generate OHLCV
-        timestamps = pd.date_range(end=end_date, periods=n_bars, freq='H')
+        timestamps = pd.date_range(end=end_date, periods=n_bars, freq='h')
 
         df = pd.DataFrame({
             'timestamp': timestamps,
