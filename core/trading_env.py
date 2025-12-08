@@ -79,7 +79,7 @@ class TradingEnvironment(gym.Env):
     ):
         super().__init__()
 
-        self.data = data  # OHLCV data: (n_steps, 5)
+        self.data = data  # OHLCV data: (n_steps, n_columns)
         self.features = features  # Additional features: (n_steps, n_features)
         self.initial_balance = initial_balance
         self.commission = commission
@@ -92,8 +92,14 @@ class TradingEnvironment(gym.Env):
         self.window_size = window_size
         self.render_mode = render_mode
 
-        # Calculate observation dimension
-        self.n_price_features = 5  # OHLCV
+        # Validate window_size against data length
+        if data is not None and window_size >= len(data):
+            raise ValueError(
+                f"window_size ({window_size}) must be less than data length ({len(data)})"
+            )
+
+        # Calculate observation dimension from actual data shape
+        self.n_price_features = data.shape[1] if data is not None else 5
         self.n_additional_features = features.shape[1] if features is not None else 0
         self.n_account_features = 8  # balance, equity, position, unrealized_pnl, etc.
 
@@ -177,6 +183,7 @@ class TradingEnvironment(gym.Env):
         self.history['actions'].append(action)
         self.history['rewards'].append(reward)
         self.history['prices'].append(current_price)
+        self.history['positions'].append(len(self.state.positions))
 
         obs = self._get_observation()
         info = self._get_info()

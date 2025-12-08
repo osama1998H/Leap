@@ -493,8 +493,9 @@ class AdaptiveTrainer:
                     # Make prediction
                     features = market_data.get('features')
                     if features is not None:
+                        # Model expects 3D input: (batch, seq_len, features)
                         prediction = self.predictor.predict(
-                            features.reshape(1, -1)
+                            features.reshape(1, 1, -1)
                         )['prediction'][0, 0]
                     else:
                         prediction = 0.0

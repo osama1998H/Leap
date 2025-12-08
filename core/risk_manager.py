@@ -122,23 +122,39 @@ class RiskManager:
         # Check risk limits
         self._check_risk_limits()
 
-    def record_trade(self, pnl: float, is_win: bool):
-        """Record a completed trade."""
+    def record_trade(self, pnl: float, is_win: Optional[bool] = None):
+        """
+        Record a completed trade.
+
+        Args:
+            pnl: Profit/loss from the trade
+            is_win: Optional override for win determination. If None, derived from pnl sign.
+        """
+        # Derive win/loss from pnl sign if not explicitly provided
+        # This keeps counts and averages in sync
+        if is_win is None:
+            is_win = pnl > 0
+
         self.trade_history.append({
             'timestamp': datetime.now(),
             'pnl': pnl,
             'is_win': is_win
         })
 
-        # Update consecutive losses
-        if is_win:
+        # Skip counting for zero pnl trades (breakeven)
+        if pnl == 0:
+            self._check_risk_limits()
+            return
+
+        # Update consecutive losses and win/loss statistics
+        if pnl > 0:
             self.state.consecutive_losses = 0
             self.wins += 1
-            self.avg_win = (self.avg_win * (self.wins - 1) + pnl) / self.wins if pnl > 0 else self.avg_win
-        else:
+            self.avg_win = (self.avg_win * (self.wins - 1) + pnl) / self.wins
+        else:  # pnl < 0
             self.state.consecutive_losses += 1
             self.losses += 1
-            self.avg_loss = (self.avg_loss * (self.losses - 1) + abs(pnl)) / self.losses if pnl < 0 else self.avg_loss
+            self.avg_loss = (self.avg_loss * (self.losses - 1) + abs(pnl)) / self.losses
 
         self._check_risk_limits()
 
@@ -424,6 +440,9 @@ class RiskManager:
         self.equity_history.clear()
         self.trade_history.clear()
         self.daily_pnl_history.clear()
+        # Reset date-tracking fields for proper daily/weekly limit handling
+        self.last_reset_date = datetime.now().date()
+        self.week_start_balance = self.initial_balance
 
 
 class DynamicRiskManager(RiskManager):
