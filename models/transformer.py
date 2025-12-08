@@ -173,17 +173,19 @@ class GatedResidualNetwork(nn.Module):
         x: torch.Tensor,
         context: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        # Primary pathway
-        hidden = F.elu(self.fc1(x))
+        # Primary pathway - compute fc1 activation once and reuse
+        fc1_activation = F.elu(self.fc1(x))
 
+        # Apply context to hidden pathway (gate uses pre-context activation)
+        hidden = fc1_activation
         if self.context_dim is not None and context is not None:
             hidden = hidden + self.context_proj(context)
 
         hidden = F.elu(self.fc2(hidden))
         hidden = self.dropout(hidden)
 
-        # Gating
-        gate = self.sigmoid(self.gate(F.elu(self.fc1(x))))
+        # Gating - use pre-context fc1 activation (no duplicate computation)
+        gate = self.sigmoid(self.gate(fc1_activation))
         gated = gate * hidden
 
         # Skip connection
