@@ -192,6 +192,12 @@ class Backtester:
             final_time = data.iloc[-1].name if isinstance(data.iloc[-1].name, datetime) else datetime.now()
             self._close_all_positions(final_price, final_time)
 
+            # Update final equity after closing positions (balance is now the true equity)
+            # Since all positions are closed, equity = balance
+            self.equity = self.balance
+            self.equity_curve.append(self.equity)
+            self.timestamps.append(final_time)
+
         # Calculate results
         result = self._calculate_results()
 
@@ -251,8 +257,17 @@ class Backtester:
             take_profit_price = entry_price * (1 - take_profit_pips * self.pip_value)
 
         # Calculate position size based on risk
+        # Validate stop_loss_pips to prevent division by zero
+        MIN_STOP_PIPS = 1.0  # Minimum 1 pip stop loss
+        if stop_loss_pips <= 0:
+            raise ValueError(
+                f"stop_loss_pips must be positive, got {stop_loss_pips}. "
+                f"Check signal['stop_loss_pips'] or provide a valid default."
+            )
+        safe_stop_pips = max(stop_loss_pips, MIN_STOP_PIPS)
+
         risk_amount = self.balance * self.risk_per_trade
-        size = risk_amount / (stop_loss_pips * self.pip_value * entry_price)
+        size = risk_amount / (safe_stop_pips * self.pip_value * entry_price)
 
         # Apply leverage limit
         max_size = (self.balance * self.leverage) / entry_price
