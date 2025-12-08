@@ -394,6 +394,7 @@ class PositionTracker:
         type: str  # 'long' or 'short'
         volume: float
         entry_price: float
+        contract_size: float = 100000.0  # Contract size (forex default: 100,000)
         sl: float = 0.0
         tp: float = 0.0
         open_time: datetime = field(default_factory=datetime.now)
@@ -417,6 +418,7 @@ class PositionTracker:
         position_type: str,
         volume: float,
         entry_price: float,
+        contract_size: float = 100000.0,
         sl: float = 0.0,
         tp: float = 0.0
     ) -> int:
@@ -430,6 +432,7 @@ class PositionTracker:
             type=position_type,
             volume=volume,
             entry_price=entry_price,
+            contract_size=contract_size,
             sl=sl,
             tp=tp
         )
@@ -453,14 +456,11 @@ class PositionTracker:
 
         pos = self._positions[ticket]
 
-        # Update unrealized PnL using contract size
-        # BUG: TrackedPosition dataclass doesn't have contract_size attribute
-        # hasattr check always returns False, defaults to 100000
-        contract_size = pos.contract_size if hasattr(pos, 'contract_size') and pos.contract_size else 100000
+        # Update unrealized PnL using stored contract size
         if pos.is_long:
-            pos.unrealized_pnl = (current_price - pos.entry_price) * pos.volume * contract_size
+            pos.unrealized_pnl = (current_price - pos.entry_price) * pos.volume * pos.contract_size
         else:
-            pos.unrealized_pnl = (pos.entry_price - current_price) * pos.volume * contract_size
+            pos.unrealized_pnl = (pos.entry_price - current_price) * pos.volume * pos.contract_size
 
         # Update SL/TP if provided
         if sl is not None:

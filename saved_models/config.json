@@ -10,7 +10,6 @@
   "seed": 42,
   "use_mixed_precision": true,
   "num_workers": 4,
-  "log_level": "INFO",
   "tensorboard_enabled": true,
   "wandb_enabled": false,
   "wandb_project": "leap-trading",
@@ -118,5 +117,52 @@
     "benchmark_symbol": "EURUSD",
     "risk_free_rate": 0.02,
     "trading_days_per_year": 252
+  },
+  "logging": {
+    "level": "INFO",
+    "log_to_file": true,
+    "log_to_console": true,
+    "log_format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "date_format": "%Y-%m-%d %H:%M:%S",
+    "max_file_size_mb": 10,
+    "backup_count": 5,
+    "log_filename_prefix": "leap",
+    "rotation_type": "size",
+    "rotation_when": "midnight",
+    "rotation_interval": 1
+  },
+  "auto_trader": {
+    "symbols": [
+      "EURUSD"
+    ],
+    "timeframe": "1h",
+    "risk_per_trade": 0.01,
+    "max_positions": 3,
+    "max_daily_loss": 0.05,
+    "max_drawdown": 0.1,
+    "default_sl_pips": 50.0,
+    "default_tp_pips": 100.0,
+    "trading_start_hour": 0,
+    "trading_end_hour": 24,
+    "trading_days": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "paper_mode": true,
+    "loop_interval": 1.0,
+    "bar_interval": 3600,
+    "min_confidence": 0.6,
+    "prediction_threshold": 0.001,
+    "enable_online_learning": true,
+    "adaptation_frequency": 100,
+    "max_adaptations_per_day": 10,
+    "mt5_login": null,
+    "mt5_server": null,
+    "magic_number": 234567,
+    "log_trades": true,
+    "heartbeat_interval": 60.0
   }
 }

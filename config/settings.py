@@ -154,9 +154,14 @@ class LoggingConfig:
     log_to_console: bool = True  # Enable console logging
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     date_format: str = "%Y-%m-%d %H:%M:%S"
+    # Size-based rotation
     max_file_size_mb: int = 10  # Max log file size before rotation
     backup_count: int = 5  # Number of backup log files to keep
     log_filename_prefix: str = "leap"  # Prefix for auto-generated log files
+    # Time-based rotation
+    rotation_type: str = "size"  # "size" or "time"
+    rotation_when: str = "midnight"  # S, M, H, D, midnight, W0-W6
+    rotation_interval: int = 1  # Interval multiplier for time-based rotation
 
 
 @dataclass

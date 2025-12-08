@@ -4,7 +4,7 @@ Handles order execution, validation, and position sizing for the auto-trader.
 """
 
 import logging
-from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -475,11 +475,49 @@ class OrderManager:
 
         return executions
 
-    # UNUSED - Placeholder method, always returns empty list
     def get_pending_orders(self) -> List[OrderExecution]:
-        """Get executions that are pending (for async systems)."""
-        # In this implementation, all orders are synchronous
-        return []
+        """Get executions whose positions are still open.
+
+        Returns executed orders where the position has not been closed yet.
+        Useful for tracking active trades initiated by this OrderManager.
+
+        Returns:
+            List of OrderExecution objects with currently open positions
+        """
+        open_executions: List[OrderExecution] = []
+        positions_cache: Dict[str, List[Any]] = {}
+
+        for execution in self.executions:
+            # Only consider successfully executed orders with valid tickets
+            if not execution.executed or execution.ticket <= 0:
+                continue
+
+            symbol = execution.signal.symbol
+
+            # Check if position still exists in broker
+            try:
+                if symbol not in positions_cache:
+                    positions_cache[symbol] = self.broker.get_positions(symbol)
+                positions = positions_cache.get(symbol, [])
+
+                # Look for matching ticket in open positions
+                for pos in positions:
+                    if pos.ticket == execution.ticket:
+                        open_executions.append(execution)
+                        break
+            except Exception:
+                logger.exception(
+                    "Failed to check open position for ticket %s on symbol %s",
+                    execution.ticket,
+                    symbol,
+                )
+                continue
+
+        return open_executions
+
+    def get_open_trade_count(self) -> int:
+        """Get count of currently open trades from this manager."""
+        return len(self.get_pending_orders())
 
     def get_recent_executions(self, n: int = 10) -> List[OrderExecution]:
         """Get the n most recent executions."""
