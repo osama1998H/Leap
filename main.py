@@ -439,11 +439,28 @@ class LeapTradingSystem:
 
         os.makedirs(directory, exist_ok=True)
 
+        # Save model metadata for proper reloading
+        metadata = {}
+
         if self._predictor:
             self._predictor.save(os.path.join(directory, 'predictor.pt'))
+            metadata['predictor'] = {
+                'input_dim': self._predictor.input_dim,
+                'exists': True
+            }
 
         if self._agent:
             self._agent.save(os.path.join(directory, 'agent.pt'))
+            metadata['agent'] = {
+                'state_dim': self._agent.state_dim,
+                'action_dim': self._agent.action_dim,
+                'exists': True
+            }
+
+        # Save metadata for model reloading
+        metadata_path = os.path.join(directory, 'model_metadata.json')
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
 
         # Save config
         self.config.save(os.path.join(directory, 'config.json'))
@@ -455,13 +472,44 @@ class LeapTradingSystem:
         if directory is None:
             directory = os.path.join(self.config.base_dir, self.config.models_dir)
 
-        # Load config
+        # Load config first
         config_path = os.path.join(directory, 'config.json')
         if os.path.exists(config_path):
             self.config = SystemConfig.load(config_path)
 
-        # Need to know dimensions to initialize models
-        # This would typically come from saved metadata
+        # Load model metadata for dimensions
+        metadata_path = os.path.join(directory, 'model_metadata.json')
+        if not os.path.exists(metadata_path):
+            logger.warning(f"No model metadata found at {metadata_path}")
+            return
+
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+
+        # Load predictor if it exists
+        predictor_path = os.path.join(directory, 'predictor.pt')
+        if metadata.get('predictor', {}).get('exists') and os.path.exists(predictor_path):
+            input_dim = metadata['predictor']['input_dim']
+            self._predictor = TransformerPredictor(
+                input_dim=input_dim,
+                config=self.config
+            )
+            self._predictor.load(predictor_path)
+            logger.info(f"Loaded predictor with input_dim={input_dim}")
+
+        # Load agent if it exists
+        agent_path = os.path.join(directory, 'agent.pt')
+        if metadata.get('agent', {}).get('exists') and os.path.exists(agent_path):
+            state_dim = metadata['agent']['state_dim']
+            action_dim = metadata['agent']['action_dim']
+            self._agent = PPOAgent(
+                state_dim=state_dim,
+                action_dim=action_dim,
+                config=self.config
+            )
+            self._agent.load(agent_path)
+            logger.info(f"Loaded agent with state_dim={state_dim}, action_dim={action_dim}")
+
         logger.info(f"Models loaded from {directory}")
 
 

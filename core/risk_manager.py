@@ -321,9 +321,31 @@ class RiskManager:
         """
         Determine if a trade should be taken based on risk parameters.
 
+        Args:
+            entry_price: Proposed entry price
+            stop_loss_price: Proposed stop loss price
+            take_profit_price: Proposed take profit price
+            direction: Trade direction ('long' or 'short')
+
         Returns:
             Tuple of (should_trade, reason)
         """
+        # Validate direction parameter
+        if direction not in ('long', 'short'):
+            return False, f"Invalid direction: {direction}. Must be 'long' or 'short'"
+
+        # Validate price logic based on direction
+        if direction == 'long':
+            if stop_loss_price >= entry_price:
+                return False, "Long trade: stop loss must be below entry price"
+            if take_profit_price <= entry_price:
+                return False, "Long trade: take profit must be above entry price"
+        else:  # short
+            if stop_loss_price <= entry_price:
+                return False, "Short trade: stop loss must be above entry price"
+            if take_profit_price >= entry_price:
+                return False, "Short trade: take profit must be below entry price"
+
         # Check if trading is allowed
         if not self.state.is_trading_allowed:
             return False, f"Trading halted: {self.state.halt_reason}"
