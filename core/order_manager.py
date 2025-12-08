@@ -475,6 +475,7 @@ class OrderManager:
 
         return executions
 
+    # UNUSED - Placeholder method, always returns empty list
     def get_pending_orders(self) -> List[OrderExecution]:
         """Get executions that are pending (for async systems)."""
         # In this implementation, all orders are synchronous

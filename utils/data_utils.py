@@ -1,11 +1,17 @@
+# UNUSED - This entire module is not imported anywhere in the codebase
+# Also contains bugs: mt5.datetime doesn't exist, symbol_info.timezone doesn't exist
+
 import pandas as pd
 import MetaTrader5 as mt5
 
+
+# UNUSED - Function never called anywhere in codebase
 def load_data(file_path):
     data = pd.read_csv(file_path)
     return data
 
 
+# UNUSED - Function never called anywhere in codebase
 def get_historical_data(symbol, timeframe, start, end):
     mt5.initialize()
 

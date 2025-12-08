@@ -454,6 +454,8 @@ class PositionTracker:
         pos = self._positions[ticket]
 
         # Update unrealized PnL using contract size
+        # BUG: TrackedPosition dataclass doesn't have contract_size attribute
+        # hasattr check always returns False, defaults to 100000
         contract_size = pos.contract_size if hasattr(pos, 'contract_size') and pos.contract_size else 100000
         if pos.is_long:
             pos.unrealized_pnl = (current_price - pos.entry_price) * pos.volume * contract_size

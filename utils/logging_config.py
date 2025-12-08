@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 from datetime import datetime
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler  # UNUSED: TimedRotatingFileHandler
 from typing import Optional
 
 
