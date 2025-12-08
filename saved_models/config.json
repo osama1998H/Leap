@@ -126,7 +126,10 @@
     "date_format": "%Y-%m-%d %H:%M:%S",
     "max_file_size_mb": 10,
     "backup_count": 5,
-    "log_filename_prefix": "leap"
+    "log_filename_prefix": "leap",
+    "rotation_type": "size",
+    "rotation_when": "midnight",
+    "rotation_interval": 1
   },
   "auto_trader": {
     "symbols": [

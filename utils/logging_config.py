@@ -47,14 +47,18 @@ def _create_file_handler(
             log_file,
             when=rotation_when,
             interval=rotation_interval,
-            backupCount=backup_count
+            backupCount=backup_count,
+            encoding='utf-8'
         )
-    else:  # 'size' (default)
+    elif rotation_type == 'size':
         return RotatingFileHandler(
             log_file,
             maxBytes=max_bytes,
-            backupCount=backup_count
+            backupCount=backup_count,
+            encoding='utf-8'
         )
+    else:
+        raise ValueError(f"Unsupported rotation_type: {rotation_type!r}. Use 'size' or 'time'.")
 
 
 def setup_logging(
