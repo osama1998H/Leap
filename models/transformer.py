@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from typing import Dict, List, Optional, Tuple
 import logging
 import math
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -490,10 +491,22 @@ class TransformerPredictor:
 
         self.model.train()
 
-        for epoch in range(epochs):
+        # Progress bar for epochs
+        epoch_pbar = tqdm(range(epochs), desc="Training", unit="epoch", disable=not verbose)
+
+        for epoch in epoch_pbar:
             epoch_loss = 0.0
 
-            for batch_X, batch_y in train_loader:
+            # Progress bar for batches within each epoch
+            batch_pbar = tqdm(
+                train_loader,
+                desc=f"Epoch {epoch + 1}/{epochs}",
+                leave=False,
+                unit="batch",
+                disable=not verbose
+            )
+
+            for batch_X, batch_y in batch_pbar:
                 self.optimizer.zero_grad()
 
                 output = self.model(batch_X)
@@ -504,6 +517,7 @@ class TransformerPredictor:
                 self.optimizer.step()
 
                 epoch_loss += loss.item()
+                batch_pbar.set_postfix(loss=f"{loss.item():.6f}")
 
             avg_train_loss = epoch_loss / len(train_loader)
             self.train_losses.append(avg_train_loss)
@@ -522,16 +536,20 @@ class TransformerPredictor:
                 else:
                     patience_counter += 1
 
-                if verbose and (epoch + 1) % 10 == 0:
-                    logger.info(
-                        f"Epoch {epoch + 1}/{epochs} - "
-                        f"Train Loss: {avg_train_loss:.6f} - "
-                        f"Val Loss: {val_loss:.6f}"
-                    )
+                # Update epoch progress bar with metrics
+                epoch_pbar.set_postfix(
+                    train_loss=f"{avg_train_loss:.6f}",
+                    val_loss=f"{val_loss:.6f}",
+                    best=f"{best_val_loss:.6f}",
+                    patience=f"{patience_counter}/{patience}"
+                )
 
                 if patience_counter >= patience:
                     logger.info(f"Early stopping at epoch {epoch + 1}")
                     break
+            else:
+                # No validation - just show training loss
+                epoch_pbar.set_postfix(train_loss=f"{avg_train_loss:.6f}")
 
         # Restore best model
         if best_state is not None:
