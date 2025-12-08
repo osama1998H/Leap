@@ -314,9 +314,11 @@ class LeapTradingSystem:
 
             # Get features for prediction
             if predictor is not None and len(data) >= self.config.data.lookback_window:
-                # Prepare input
+                # Prepare input - include OHLCV + computed features to match training
                 recent_data = data.tail(self.config.data.lookback_window)
-                features = recent_data[market_data.feature_names].values if market_data.feature_names else None
+                ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+                feature_cols = ohlcv_cols + (list(market_data.feature_names) if market_data.feature_names else [])
+                features = recent_data[feature_cols].values
 
                 if features is not None:
                     # Make prediction
