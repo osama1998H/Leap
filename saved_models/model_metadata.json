@@ -1,0 +1,11 @@
+{
+  "predictor": {
+    "input_dim": 85,
+    "exists": true
+  },
+  "agent": {
+    "state_dim": 10208,
+    "action_dim": 4,
+    "exists": true
+  }
+}

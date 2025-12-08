@@ -1,0 +1,20 @@
+{
+  "predictor": [
+    {
+      "timestamp": "2025-12-08T13:51:11.355715",
+      "epochs": 100,
+      "final_train_loss": 0.012429745817103256,
+      "final_val_loss": 0.13243667781352997,
+      "best_val_loss": 0.015978926792740822
+    }
+  ],
+  "agent": [
+    {
+      "timestamp": "2025-12-08T13:53:09.294177",
+      "timesteps": 100000,
+      "final_reward": -32491.80577515877,
+      "total_episodes": 2
+    }
+  ],
+  "combined": []
+}
