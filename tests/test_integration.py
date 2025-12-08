@@ -396,6 +396,129 @@ def test_online_learning():
     return detector
 
 
+def test_monte_carlo_simulator():
+    """Test Monte Carlo simulation functionality."""
+    print("\n" + "="*60)
+    print("Testing Monte Carlo Simulator...")
+    print("="*60)
+
+    from evaluation.backtester import MonteCarloSimulator, Trade
+    from datetime import datetime, timedelta
+
+    # Create enough trades for simulation (minimum 10)
+    trades = []
+    base_time = datetime(2023, 1, 1)
+    np.random.seed(42)
+    for i in range(20):
+        pnl_pct = np.random.uniform(-0.02, 0.03)  # -2% to +3%
+        trade = Trade(
+            entry_time=base_time + timedelta(hours=i*4),
+            exit_time=base_time + timedelta(hours=i*4 + 2),
+            entry_price=1.1000,
+            exit_price=1.1000 * (1 + pnl_pct),
+            direction='long',
+            size=0.1,
+            pnl=1000 * pnl_pct,
+            pnl_pct=pnl_pct,
+            status='closed'
+        )
+        trades.append(trade)
+
+    # Create simulator
+    simulator = MonteCarloSimulator(n_simulations=500, confidence_level=0.95)
+    print("✓ Created MonteCarloSimulator with 500 simulations")
+
+    # Run simulation
+    result = simulator.simulate_from_trades(trades)
+
+    assert 'final_equity' in result, "Should have final_equity results"
+    assert 'max_drawdown' in result, "Should have max_drawdown results"
+    assert 'probability_of_profit' in result, "Should have probability_of_profit"
+    assert 'probability_of_ruin' in result, "Should have probability_of_ruin"
+
+    print("✓ Monte Carlo simulation completed:")
+    print(f"  - Final Equity (mean): {result['final_equity']['mean']:.2%}")
+    print(f"  - Max Drawdown (95th): {result['max_drawdown']['percentile_95']:.2%}")
+    print(f"  - Probability of Profit: {result['probability_of_profit']:.1%}")
+    print(f"  - Probability of Ruin: {result['probability_of_ruin']:.1%}")
+
+    # Test with too few trades
+    insufficient_result = simulator.simulate_from_trades(trades[:5])
+    assert insufficient_result == {}, "Should return empty dict for insufficient trades"
+    print("✓ Correctly handled insufficient trades case")
+
+    return result
+
+
+def test_monte_carlo_integration():
+    """Test Monte Carlo integration with PerformanceAnalyzer."""
+    print("\n" + "="*60)
+    print("Testing Monte Carlo + PerformanceAnalyzer Integration...")
+    print("="*60)
+
+    import pandas as pd
+    from evaluation.backtester import Backtester
+    from evaluation.metrics import PerformanceAnalyzer
+
+    # Create dummy data and run backtest
+    np.random.seed(42)
+    n_bars = 1000
+    dates = pd.date_range('2023-01-01', periods=n_bars, freq='H')
+    prices = 1.1 * np.exp(np.cumsum(np.random.randn(n_bars) * 0.005))
+
+    df = pd.DataFrame({
+        'open': prices * 0.999,
+        'high': prices * 1.003,
+        'low': prices * 0.997,
+        'close': prices,
+        'volume': np.random.uniform(1000, 5000, n_bars)
+    }, index=dates)
+
+    backtester = Backtester(initial_balance=10000.0, commission_rate=0.0001, spread_pips=1.5)
+
+    def simple_strategy(data, **kwargs):
+        if len(data) < 20:
+            return {'action': 'hold'}
+        close = data['close']
+        sma_fast = close.rolling(5).mean().iloc[-1]
+        sma_slow = close.rolling(20).mean().iloc[-1]
+        if sma_fast > sma_slow * 1.001:
+            return {'action': 'buy', 'stop_loss_pips': 50}
+        elif sma_fast < sma_slow * 0.999:
+            return {'action': 'sell', 'stop_loss_pips': 50}
+        return {'action': 'hold'}
+
+    result = backtester.run(df, simple_strategy, show_progress=False)
+
+    # Test with Monte Carlo enabled
+    analyzer_config = {
+        'enable_monte_carlo': True,
+        'n_simulations': 500,
+        'confidence_level': 0.95
+    }
+    analyzer = PerformanceAnalyzer(config=analyzer_config)
+    analysis = analyzer.analyze(result)
+
+    if len(result.trades) >= 10:
+        assert 'monte_carlo' in analysis, "Should have monte_carlo in analysis"
+        if 'warning' not in analysis['monte_carlo']:
+            print("✓ Monte Carlo results included in analysis")
+            mc = analysis['monte_carlo']
+            print(f"  - Probability of Profit: {mc['probability_of_profit']:.1%}")
+        else:
+            print(f"✓ Monte Carlo warning: {analysis['monte_carlo']['warning']}")
+    else:
+        print(f"✓ Not enough trades ({len(result.trades)}) for Monte Carlo")
+
+    # Test report generation includes Monte Carlo
+    report = analyzer.generate_report(analysis)
+    if 'monte_carlo' in analysis and 'warning' not in analysis.get('monte_carlo', {}):
+        assert 'Monte Carlo Analysis' in report, "Report should include Monte Carlo section"
+        print("✓ Report includes Monte Carlo section")
+
+    return analysis
+
+
 def test_full_integration():
     """Test full system integration."""
     print("\n" + "="*60)
@@ -432,6 +555,12 @@ def test_full_integration():
 
     # 9. Test online learning
     detector = test_online_learning()
+
+    # 10. Test Monte Carlo simulator
+    _mc_result = test_monte_carlo_simulator()
+
+    # 11. Test Monte Carlo integration with PerformanceAnalyzer
+    _mc_analysis = test_monte_carlo_integration()
 
     print("\n" + "="*60)
     print("ALL INTEGRATION TESTS PASSED!")

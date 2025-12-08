@@ -754,7 +754,6 @@ class WalkForwardOptimizer:
         }
 
 
-# UNUSED - Class defined but never instantiated or exported in __init__.py
 class MonteCarloSimulator:
     """
     Monte Carlo simulation for risk analysis.

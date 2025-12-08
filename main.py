@@ -311,7 +311,8 @@ class LeapTradingSystem:
         self,
         market_data,
         _strategy_type: str = 'combined',  # Reserved for future multi-strategy support
-        realistic_mode: bool = False
+        realistic_mode: bool = False,
+        enable_monte_carlo: bool = False
     ):
         """Run backtest on historical data.
 
@@ -389,7 +390,12 @@ class LeapTradingSystem:
         )
 
         # Analyze results
-        analyzer = PerformanceAnalyzer()
+        analyzer_config = {
+            'enable_monte_carlo': enable_monte_carlo,
+            'n_simulations': self.config.backtest.n_simulations,
+            'confidence_level': self.config.backtest.confidence_level
+        }
+        analyzer = PerformanceAnalyzer(config=analyzer_config)
         analysis = analyzer.analyze(result)
 
         # Print report
@@ -673,6 +679,12 @@ Examples:
     )
 
     parser.add_argument(
+        '--monte-carlo',
+        action='store_true',
+        help='Run Monte Carlo simulation for risk analysis'
+    )
+
+    parser.add_argument(
         '--config', '-c',
         help='Path to config file'
     )
@@ -757,21 +769,31 @@ Examples:
             system.load_models(args.model_dir)
 
         # Run backtest
-        _result, analysis = system.backtest(market_data, realistic_mode=args.realistic)
+        _result, analysis = system.backtest(
+            market_data,
+            realistic_mode=args.realistic,
+            enable_monte_carlo=args.monte_carlo
+        )
 
         # Save results
         results_dir = os.path.join(config.base_dir, 'results')
         os.makedirs(results_dir, exist_ok=True)
 
+        results_data = {
+            'total_return': analysis.get('total_return'),
+            'sharpe_ratio': analysis.get('sharpe_ratio'),
+            'max_drawdown': analysis.get('max_drawdown'),
+            'win_rate': analysis.get('win_rate'),
+            'total_trades': analysis.get('total_trades')
+        }
+
+        # Include Monte Carlo results if available
+        if 'monte_carlo' in analysis:
+            results_data['monte_carlo'] = analysis['monte_carlo']
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         with open(os.path.join(results_dir, f'backtest_{timestamp}.json'), 'w') as f:
-            json.dump({
-                'total_return': analysis.get('total_return'),
-                'sharpe_ratio': analysis.get('sharpe_ratio'),
-                'max_drawdown': analysis.get('max_drawdown'),
-                'win_rate': analysis.get('win_rate'),
-                'total_trades': analysis.get('total_trades')
-            }, f, indent=2)
+            json.dump(results_data, f, indent=2)
 
     elif args.command == 'walkforward':
         logger.info("Starting walk-forward analysis...")
