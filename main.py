@@ -466,6 +466,10 @@ class LeapTradingSystem:
         if directory is None:
             directory = os.path.join(self.config.base_dir, self.config.models_dir)
 
+        # Track what gets loaded
+        loaded_predictor = False
+        loaded_agent = False
+
         # Load config first
         config_path = os.path.join(directory, 'config.json')
         if os.path.exists(config_path):
@@ -482,54 +486,71 @@ class LeapTradingSystem:
 
         # Load predictor if it exists
         predictor_path = os.path.join(directory, 'predictor.pt')
-        if metadata.get('predictor', {}).get('exists') and os.path.exists(predictor_path):
-            input_dim = metadata['predictor']['input_dim']
-            # Build config dict matching initialize_models format
-            predictor_config = {
-                'd_model': self.config.transformer.d_model,
-                'n_heads': self.config.transformer.n_heads,
-                'n_encoder_layers': self.config.transformer.n_encoder_layers,
-                'd_ff': self.config.transformer.d_ff,
-                'dropout': self.config.transformer.dropout,
-                'max_seq_length': self.config.data.lookback_window,
-                'learning_rate': self.config.transformer.learning_rate,
-                'online_learning_rate': self.config.transformer.online_learning_rate
-            }
-            self._predictor = TransformerPredictor(
-                input_dim=input_dim,
-                config=predictor_config,
-                device=self.config.device
-            )
-            self._predictor.load(predictor_path)
-            logger.info(f"Loaded predictor with input_dim={input_dim}")
+        predictor_metadata = metadata.get('predictor', {})
+        if predictor_metadata.get('exists'):
+            if os.path.exists(predictor_path):
+                input_dim = predictor_metadata['input_dim']
+                # Build config dict matching initialize_models format
+                predictor_config = {
+                    'd_model': self.config.transformer.d_model,
+                    'n_heads': self.config.transformer.n_heads,
+                    'n_encoder_layers': self.config.transformer.n_encoder_layers,
+                    'd_ff': self.config.transformer.d_ff,
+                    'dropout': self.config.transformer.dropout,
+                    'max_seq_length': self.config.data.lookback_window,
+                    'learning_rate': self.config.transformer.learning_rate,
+                    'online_learning_rate': self.config.transformer.online_learning_rate
+                }
+                self._predictor = TransformerPredictor(
+                    input_dim=input_dim,
+                    config=predictor_config,
+                    device=self.config.device
+                )
+                self._predictor.load(predictor_path)
+                loaded_predictor = True
+                logger.info(f"Loaded predictor with input_dim={input_dim}")
+            else:
+                logger.warning(f"Predictor metadata exists but file not found: {predictor_path}")
 
         # Load agent if it exists
         agent_path = os.path.join(directory, 'agent.pt')
-        if metadata.get('agent', {}).get('exists') and os.path.exists(agent_path):
-            state_dim = metadata['agent']['state_dim']
-            action_dim = metadata['agent']['action_dim']
-            # Build config dict matching initialize_models format
-            agent_config = {
-                'learning_rate': self.config.ppo.learning_rate,
-                'gamma': self.config.ppo.gamma,
-                'gae_lambda': self.config.ppo.gae_lambda,
-                'clip_epsilon': self.config.ppo.clip_epsilon,
-                'entropy_coef': self.config.ppo.entropy_coef,
-                'n_steps': self.config.ppo.n_steps,
-                'n_epochs': self.config.ppo.n_epochs,
-                'batch_size': self.config.ppo.batch_size,
-                'hidden_sizes': self.config.ppo.actor_hidden_sizes
-            }
-            self._agent = PPOAgent(
-                state_dim=state_dim,
-                action_dim=action_dim,
-                config=agent_config,
-                device=self.config.device
-            )
-            self._agent.load(agent_path)
-            logger.info(f"Loaded agent with state_dim={state_dim}, action_dim={action_dim}")
+        agent_metadata = metadata.get('agent', {})
+        if agent_metadata.get('exists'):
+            if os.path.exists(agent_path):
+                state_dim = agent_metadata['state_dim']
+                action_dim = agent_metadata['action_dim']
+                # Build config dict matching initialize_models format
+                agent_config = {
+                    'learning_rate': self.config.ppo.learning_rate,
+                    'gamma': self.config.ppo.gamma,
+                    'gae_lambda': self.config.ppo.gae_lambda,
+                    'clip_epsilon': self.config.ppo.clip_epsilon,
+                    'entropy_coef': self.config.ppo.entropy_coef,
+                    'n_steps': self.config.ppo.n_steps,
+                    'n_epochs': self.config.ppo.n_epochs,
+                    'batch_size': self.config.ppo.batch_size,
+                    'hidden_sizes': self.config.ppo.actor_hidden_sizes
+                }
+                self._agent = PPOAgent(
+                    state_dim=state_dim,
+                    action_dim=action_dim,
+                    config=agent_config,
+                    device=self.config.device
+                )
+                self._agent.load(agent_path)
+                loaded_agent = True
+                logger.info(f"Loaded agent with state_dim={state_dim}, action_dim={action_dim}")
+            else:
+                logger.warning(f"Agent metadata exists but file not found: {agent_path}")
 
-        logger.info(f"Models loaded from {directory}")
+        # Log summary of what was actually loaded
+        if not (loaded_predictor or loaded_agent):
+            logger.warning(f"No models loaded from {directory} (check metadata and .pt files)")
+        else:
+            logger.info(
+                f"Models loaded from {directory} "
+                f"(predictor={loaded_predictor}, agent={loaded_agent})"
+            )
 
 
 def main():

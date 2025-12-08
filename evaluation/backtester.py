@@ -244,19 +244,8 @@ class Backtester:
             entry_price = price * (1 - self.spread_pips * self.pip_value / 2 - slippage)
 
         # Get stop loss and take profit from signal
+        # Validate stop_loss_pips FIRST to ensure consistency between pricing and sizing
         stop_loss_pips = signal.get('stop_loss_pips', 50)
-        take_profit_pips = signal.get('take_profit_pips', stop_loss_pips * 2)  # Default 2:1 R:R
-
-        # Calculate stop loss and take profit price levels
-        if direction == 'long':
-            stop_loss_price = entry_price * (1 - stop_loss_pips * self.pip_value)
-            take_profit_price = entry_price * (1 + take_profit_pips * self.pip_value)
-        else:
-            stop_loss_price = entry_price * (1 + stop_loss_pips * self.pip_value)
-            take_profit_price = entry_price * (1 - take_profit_pips * self.pip_value)
-
-        # Calculate position size based on risk
-        # Validate stop_loss_pips to prevent division by zero
         MIN_STOP_PIPS = 1.0  # Minimum 1 pip stop loss
         if stop_loss_pips <= 0:
             raise ValueError(
@@ -265,6 +254,19 @@ class Backtester:
             )
         safe_stop_pips = max(stop_loss_pips, MIN_STOP_PIPS)
 
+        # Use safe_stop_pips for take profit default to maintain R:R ratio
+        take_profit_pips = signal.get('take_profit_pips', safe_stop_pips * 2)  # Default 2:1 R:R
+
+        # Calculate stop loss and take profit price levels using safe_stop_pips
+        # This ensures pricing matches the stop distance used for position sizing
+        if direction == 'long':
+            stop_loss_price = entry_price * (1 - safe_stop_pips * self.pip_value)
+            take_profit_price = entry_price * (1 + take_profit_pips * self.pip_value)
+        else:
+            stop_loss_price = entry_price * (1 + safe_stop_pips * self.pip_value)
+            take_profit_price = entry_price * (1 - take_profit_pips * self.pip_value)
+
+        # Calculate position size based on risk (using same safe_stop_pips)
         risk_amount = self.balance * self.risk_per_trade
         size = risk_amount / (safe_stop_pips * self.pip_value * entry_price)
 
