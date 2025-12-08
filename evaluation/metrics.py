@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
+from .backtester import MonteCarloSimulator
+
 logger = logging.getLogger(__name__)
 
 
@@ -355,6 +357,10 @@ class PerformanceAnalyzer:
             risk_free_rate=self.config.get('risk_free_rate', 0.02),
             periods_per_year=self.config.get('periods_per_year', 252 * 24)
         )
+        # Monte Carlo configuration
+        self.enable_monte_carlo = self.config.get('enable_monte_carlo', False)
+        self.n_simulations = self.config.get('n_simulations', 1000)
+        self.confidence_level = self.config.get('confidence_level', 0.95)
 
     def analyze(
         self,
@@ -380,10 +386,27 @@ class PerformanceAnalyzer:
         # Add regime analysis
         metrics['regime_analysis'] = self._analyze_regimes(backtest_result)
 
+        # Add Monte Carlo analysis if enabled
+        if self.enable_monte_carlo:
+            metrics['monte_carlo'] = self._run_monte_carlo(trades)
+
         # Generate summary
         metrics['summary'] = self._generate_summary(metrics)
 
         return metrics
+
+    def _run_monte_carlo(self, trades: list) -> Dict:
+        """Run Monte Carlo simulation on trades."""
+        simulator = MonteCarloSimulator(
+            n_simulations=self.n_simulations,
+            confidence_level=self.confidence_level
+        )
+        result = simulator.simulate_from_trades(trades)
+
+        if not result:
+            return {'warning': 'Insufficient trades for Monte Carlo simulation (minimum 10 required)'}
+
+        return result
 
     def _run_statistical_tests(self, result) -> Dict:
         """Run statistical significance tests."""
@@ -614,6 +637,27 @@ class PerformanceAnalyzer:
         ])
         for rec in summary.get('recommendations', []):
             lines.append(f"  • {rec}")
+
+        # Monte Carlo results (if available)
+        if 'monte_carlo' in analysis and 'warning' not in analysis['monte_carlo']:
+            mc = analysis['monte_carlo']
+            lines.extend([
+                "",
+                "--- Monte Carlo Analysis ---",
+                f"Simulations: {self.n_simulations}",
+                f"Final Equity (mean): {mc['final_equity']['mean']:.2%}",
+                f"Final Equity (5th-95th): {mc['final_equity']['percentile_5']:.2%} - {mc['final_equity']['percentile_95']:.2%}",
+                f"Max Drawdown (mean): {mc['max_drawdown']['mean']:.2%}",
+                f"Max Drawdown (95th): {mc['max_drawdown']['percentile_95']:.2%}",
+                f"Probability of Profit: {mc['probability_of_profit']:.1%}",
+                f"Probability of Ruin: {mc['probability_of_ruin']:.1%}",
+            ])
+        elif 'monte_carlo' in analysis and 'warning' in analysis['monte_carlo']:
+            lines.extend([
+                "",
+                "--- Monte Carlo Analysis ---",
+                f"Warning: {analysis['monte_carlo']['warning']}"
+            ])
 
         lines.append("=" * 60)
 
