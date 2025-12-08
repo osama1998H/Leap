@@ -172,6 +172,8 @@ class AutoTrader:
         # Trade history for online learning
         self._recent_trades: List[OrderExecution] = []
         self._max_trade_history = 1000
+        # Store signal data for online learning (keyed by ticket)
+        self._pending_learning_data: Dict[int, Dict[str, Any]] = {}
 
         # Register position callbacks
         self.position_sync.register_callback(
@@ -483,6 +485,16 @@ class AutoTrader:
                 self._recent_trades.append(execution)
                 self._fire_callback('on_trade', {'execution': execution})
 
+                # Store learning data for when position closes
+                if execution.ticket and self.online_manager is not None:
+                    self._pending_learning_data[execution.ticket] = {
+                        'observation': env._get_observation() if env else None,
+                        'predicted_return': signal.metadata.get('predicted_return', 0.0),
+                        'action': signal.signal_type.value,
+                        'entry_price': execution.entry_price,
+                        'timestamp': datetime.now(timezone.utc)
+                    }
+
                 if self.config.log_trades:
                     logger.info(
                         f"Trade executed: {signal.signal_type.value} {symbol} "
@@ -704,50 +716,47 @@ class AutoTrader:
             logger.exception("Adaptation check failed")
 
     def _trigger_adaptation(self):
-        """Trigger online learning adaptation."""
+        """Trigger online learning adaptation.
+
+        Note: Learning data is accumulated via step() calls in _on_position_closed.
+        This method triggers the actual model adaptation when enough data is collected.
+        """
         if self.online_manager is None:
+            logger.warning("Online manager not available, skipping adaptation")
             return
 
-        logger.info("Triggering online learning adaptation...")
+        # Count trades that will be used for adaptation context
+        trade_count = sum(1 for ex in self._recent_trades if ex.executed)
+        logger.info(f"Triggering online learning adaptation with {trade_count} recent trades...")
 
-        # Prepare trade data for learning
-        trade_data = []
-        for execution in self._recent_trades:
-            if execution.executed:
-                trade_data.append({
-                    'symbol': execution.signal.symbol,
-                    'action': execution.signal.signal_type.value,
-                    'entry_price': execution.entry_price,
-                    'volume': execution.volume,
-                    'sl': execution.sl,
-                    'tp': execution.tp
-                })
-
-        if not trade_data:
-            logger.info("No trade data for adaptation, skipping")
+        if trade_count == 0:
+            logger.info("No executed trades for adaptation context, skipping")
             return
 
-        # Call online manager's adaptation
-        # The OnlineLearningManager uses _perform_adaptation internally
-        # which adapts both the predictor and agent based on accumulated data
+        # Perform adaptation using accumulated data from step() calls
         try:
-            # Access the internal adaptation method
-            # Note: The step() method should ideally be called during trading
-            # to accumulate data, then _perform_adaptation handles the update
-            if hasattr(self.online_manager, '_perform_adaptation'):
-                adaptation_result = self.online_manager._perform_adaptation()
-                logger.info(f"Adaptation completed: {adaptation_result}")
-            else:
-                # Fallback: log that adaptation interface needs implementation
-                logger.warning(
-                    "OnlineLearningManager._perform_adaptation not available. "
-                    "Consider calling online_manager.step() during trading loop."
+            adaptation_result = self.online_manager._perform_adaptation()
+
+            # Log detailed results
+            if adaptation_result:
+                predictor_updated = adaptation_result.get('predictor_updated', False)
+                agent_updated = adaptation_result.get('agent_updated', False)
+                regime = adaptation_result.get('regime', 'unknown')
+
+                logger.info(
+                    f"Adaptation completed: predictor_updated={predictor_updated}, "
+                    f"agent_updated={agent_updated}, regime={regime}"
                 )
+
+                if adaptation_result.get('predictor_loss') is not None:
+                    logger.info(f"  Predictor loss: {adaptation_result['predictor_loss']:.6f}")
+                if adaptation_result.get('agent_loss') is not None:
+                    logger.info(f"  Agent loss: {adaptation_result['agent_loss']:.6f}")
+            else:
+                logger.info("Adaptation completed with no updates (insufficient data in buffers)")
+
         except Exception:
             logger.exception("Adaptation failed")
-            return
-
-        logger.info(f"Adaptation completed with {len(trade_data)} trades")
 
     def _on_position_closed(self, change: PositionChange):
         """Handle position closed event."""
@@ -755,6 +764,7 @@ class AutoTrader:
             return
 
         profit = change.details.get('profit', 0.0)
+        ticket = change.ticket
 
         if self.session:
             self.session.total_pnl += profit
@@ -769,6 +779,41 @@ class AutoTrader:
                 drawdown = (self.session.start_balance - account.balance) / self.session.start_balance
                 if drawdown > self.session.max_drawdown:
                     self.session.max_drawdown = drawdown
+
+        # Feed data to online learning manager
+        if self.online_manager is not None and ticket in self._pending_learning_data:
+            learning_data = self._pending_learning_data.pop(ticket)
+            try:
+                # Calculate actual return (profit as percentage of entry)
+                entry_price = learning_data.get('entry_price', 1.0)
+                actual_return = profit / entry_price if entry_price else 0.0
+
+                # Map action string to int for step()
+                action_map = {'buy': 1, 'sell': 2, 'close': 3, 'hold': 0}
+                action_int = action_map.get(learning_data.get('action', 'hold'), 0)
+
+                # Prepare market data for step()
+                market_data = {
+                    'state': learning_data.get('observation'),
+                    'features': learning_data.get('observation'),
+                    'close': entry_price,
+                    'returns': actual_return
+                }
+
+                # Call step() to accumulate learning data
+                step_result = self.online_manager.step(
+                    market_data=market_data,
+                    prediction=learning_data.get('predicted_return', 0.0),
+                    actual=actual_return,
+                    trading_action=action_int,
+                    trading_reward=profit,
+                    done=True
+                )
+
+                logger.debug(f"Online learning step completed for ticket {ticket}: {step_result}")
+
+            except Exception:
+                logger.exception(f"Failed to feed learning data for ticket {ticket}")
 
     def _heartbeat(self):
         """Log heartbeat status (using UTC for consistency)."""
