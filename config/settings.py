@@ -147,6 +147,60 @@ class EvaluationConfig:
 
 
 @dataclass
+class AutoTraderConfig:
+    """Auto-trader configuration."""
+    # Trading settings
+    symbols: List[str] = field(default_factory=lambda: ['EURUSD'])
+    timeframe: str = '1h'
+
+    # Risk settings
+    risk_per_trade: float = 0.01  # 1% risk per trade
+    max_positions: int = 3
+    max_daily_loss: float = 0.05  # 5% max daily loss
+    max_drawdown: float = 0.10  # 10% max drawdown
+
+    # Stop loss / Take profit
+    default_sl_pips: float = 50.0
+    default_tp_pips: float = 100.0
+
+    # Trading hours (UTC)
+    trading_start_hour: int = 0  # 24/7 by default
+    trading_end_hour: int = 24
+    trading_days: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])  # Mon-Fri
+
+    # Execution
+    paper_mode: bool = True
+    loop_interval: float = 1.0  # Seconds between trading cycles
+    bar_interval: int = 3600  # Seconds per bar (for 1h = 3600)
+
+    # Model settings
+    min_confidence: float = 0.6
+    prediction_threshold: float = 0.001  # Min predicted return for entry
+
+    # Online learning
+    enable_online_learning: bool = True
+    adaptation_frequency: int = 100  # Trades between adaptations
+    max_adaptations_per_day: int = 10
+
+    # MT5 connection (optional - can also login via terminal)
+    # Sensitive credentials are loaded from environment variables for security
+    mt5_login: Optional[int] = field(
+        default_factory=lambda: int(os.environ.get('MT5_LOGIN', '0')) or None
+    )
+    mt5_password: Optional[str] = field(
+        default_factory=lambda: os.environ.get('MT5_PASSWORD')
+    )
+    mt5_server: Optional[str] = field(
+        default_factory=lambda: os.environ.get('MT5_SERVER')
+    )
+    magic_number: int = 234567
+
+    # Monitoring
+    log_trades: bool = True
+    heartbeat_interval: float = 60.0  # Seconds between heartbeat logs
+
+
+@dataclass
 class SystemConfig:
     """Main system configuration."""
     # Paths
@@ -177,20 +231,34 @@ class SystemConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+    auto_trader: AutoTraderConfig = field(default_factory=AutoTraderConfig)
 
     def save(self, path: str):
-        """Save configuration to JSON file."""
-        def serialize(obj):
+        """Save configuration to JSON file.
+
+        Note: Sensitive credentials (mt5_password) are excluded from serialization.
+        These should be loaded from environment variables.
+        """
+        # Fields to exclude from serialization (sensitive data)
+        sensitive_fields = {'mt5_password'}
+
+        def serialize(obj, exclude_sensitive=False):
             if hasattr(obj, '__dataclass_fields__'):
-                return {k: serialize(v) for k, v in obj.__dict__.items()}
+                result = {}
+                for k, v in obj.__dict__.items():
+                    # Skip sensitive fields
+                    if exclude_sensitive and k in sensitive_fields:
+                        continue
+                    result[k] = serialize(v, exclude_sensitive=True)
+                return result
             elif isinstance(obj, Enum):
                 return obj.value
             elif isinstance(obj, list):
-                return [serialize(v) for v in obj]
+                return [serialize(v, exclude_sensitive=exclude_sensitive) for v in obj]
             return obj
 
         with open(path, 'w') as f:
-            json.dump(serialize(self), f, indent=2)
+            json.dump(serialize(self, exclude_sensitive=True), f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> 'SystemConfig':
@@ -205,7 +273,8 @@ class SystemConfig:
             ppo=PPOConfig(**data.get('ppo', {})),
             risk=RiskConfig(**data.get('risk', {})),
             backtest=BacktestConfig(**data.get('backtest', {})),
-            evaluation=EvaluationConfig(**data.get('evaluation', {}))
+            evaluation=EvaluationConfig(**data.get('evaluation', {})),
+            auto_trader=AutoTraderConfig(**data.get('auto_trader', {}))
         )
 
         # Set top-level attributes

@@ -8,6 +8,7 @@ import logging
 import sys
 import os
 import json
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -24,6 +25,15 @@ from training.trainer import ModelTrainer
 from training.online_learning import OnlineLearningManager, AdaptiveTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
 from evaluation.metrics import PerformanceAnalyzer
+
+# Auto-trader imports (optional - may not be available on all platforms)
+try:
+    from core.mt5_broker import MT5BrokerGateway
+    from core.auto_trader import AutoTrader
+    from config.settings import AutoTraderConfig
+    AUTO_TRADER_AVAILABLE = True
+except ImportError:
+    AUTO_TRADER_AVAILABLE = False
 
 import numpy as np
 
@@ -585,7 +595,7 @@ Examples:
 
     parser.add_argument(
         'command',
-        choices=['train', 'backtest', 'live', 'evaluate', 'walkforward'],
+        choices=['train', 'backtest', 'live', 'evaluate', 'walkforward', 'autotrade'],
         help='Command to execute'
     )
 
@@ -783,6 +793,100 @@ Examples:
             # Evaluate agent
             avg_reward = system._agent.evaluate(env, n_episodes=10)
             print(f"Agent Avg Reward: {avg_reward:.2f}")
+
+    elif args.command == 'autotrade':
+        if not AUTO_TRADER_AVAILABLE:
+            logger.error("Auto-trader not available. MT5 requires Windows.")
+            sys.exit(1)
+
+        logger.info("Starting Auto-Trader...")
+
+        # Load models first
+        system.load_models(args.model_dir)
+
+        if system._predictor is None or system._agent is None:
+            logger.error("Models not loaded. Please train models first.")
+            sys.exit(1)
+
+        # Create broker gateway
+        broker = MT5BrokerGateway(
+            login=config.auto_trader.mt5_login,
+            password=config.auto_trader.mt5_password,
+            server=config.auto_trader.mt5_server,
+            magic_number=config.auto_trader.magic_number
+        )
+
+        # Create auto-trader config
+        trader_config = AutoTraderConfig(
+            symbols=[args.symbol],
+            timeframe=args.timeframe,
+            risk_per_trade=config.auto_trader.risk_per_trade,
+            max_positions=config.auto_trader.max_positions,
+            default_sl_pips=config.auto_trader.default_sl_pips,
+            default_tp_pips=config.auto_trader.default_tp_pips,
+            paper_mode=args.paper,
+            enable_online_learning=config.auto_trader.enable_online_learning
+        )
+
+        # Handle online learning manager (may be None if not initialized)
+        online_manager = system._online_manager
+        if trader_config.enable_online_learning and online_manager is None:
+            logger.warning("Online learning enabled but OnlineLearningManager not initialized. "
+                         "Online learning will be disabled.")
+            trader_config.enable_online_learning = False
+
+        # Create auto-trader
+        auto_trader = AutoTrader(
+            broker=broker,
+            predictor=system._predictor,
+            agent=system._agent,
+            risk_manager=system.risk_manager,
+            online_manager=online_manager,
+            data_pipeline=system.data_pipeline,
+            config=trader_config
+        )
+
+        # Start trading
+        mode = "PAPER" if args.paper else "LIVE"
+        print(f"\n{'='*60}")
+        print(f"  LEAP AUTO-TRADER - {mode} MODE")
+        print(f"  Symbol: {args.symbol}")
+        print(f"  Risk per trade: {trader_config.risk_per_trade*100:.1f}%")
+        print(f"  Max positions: {trader_config.max_positions}")
+        print(f"{'='*60}\n")
+
+        if not args.paper:
+            print("WARNING: LIVE TRADING MODE - Real money at risk!")
+            confirm = input("Type 'CONFIRM' to proceed: ")
+            if confirm != 'CONFIRM':
+                print("Aborted.")
+                sys.exit(0)
+
+        try:
+            auto_trader.start()
+            print("Auto-trader running. Press Ctrl+C to stop.")
+
+            # Keep main thread alive
+            while auto_trader.state.value == 'running':
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            print("\nStopping auto-trader...")
+            auto_trader.stop()
+
+        # Print final statistics
+        stats = auto_trader.get_statistics()
+        print("\n" + "="*60)
+        print("  SESSION SUMMARY")
+        print("="*60)
+        if stats.get('session'):
+            session = stats['session']
+            print(f"  Duration: {session.get('duration', 'N/A')}")
+            print(f"  Total Trades: {session.get('total_trades', 0)}")
+            print(f"  Win Rate: {session.get('win_rate', 0)*100:.1f}%")
+            print(f"  P&L: ${session.get('pnl', 0):.2f} ({session.get('pnl_percent', 0):.2f}%)")
+            print(f"  Max Drawdown: {session.get('max_drawdown', 0)*100:.1f}%")
+        print("="*60 + "\n")
 
 
 if __name__ == '__main__':
