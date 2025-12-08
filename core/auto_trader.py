@@ -157,6 +157,8 @@ class AutoTrader:
         self._adaptations_today: int = 0
         self._last_adaptation_date: Optional[datetime] = None
         self._daily_loss_limit_hit: bool = False  # Hysteresis flag for daily loss warning
+        self._consecutive_errors: int = 0  # Track consecutive loop errors
+        self._max_consecutive_errors: int = 10  # Threshold before ERROR state
 
         # Callbacks
         self._callbacks: Dict[str, List[Callable]] = {
@@ -218,7 +220,17 @@ class AutoTrader:
         self._daily_start_balance = self.session.start_balance
 
         # Initialize live environments
-        self._initialize_environments()
+        try:
+            self._initialize_environments()
+        except Exception:
+            logger.exception("Failed to initialize trading environments")
+            self._set_state(TraderState.ERROR)
+            return False
+
+        if not self.live_envs:
+            logger.error("No trading environments initialized")
+            self._set_state(TraderState.ERROR)
+            return False
 
         # Reset stop event
         self._stop_event.clear()
@@ -379,6 +391,11 @@ class AutoTrader:
 
         while not self._stop_event.is_set():
             try:
+                # Check if we're in ERROR state (should exit loop)
+                if self.state == TraderState.ERROR:
+                    logger.warning("Trading loop exiting due to ERROR state")
+                    break
+
                 # Check if we should trade
                 if self.state != TraderState.RUNNING:
                     time.sleep(self.config.loop_interval)
@@ -406,12 +423,29 @@ class AutoTrader:
                 # Check for online learning adaptation
                 self._check_adaptation()
 
+                # Reset consecutive error counter on successful iteration
+                self._consecutive_errors = 0
+
                 # Sleep until next cycle
                 time.sleep(self.config.loop_interval)
 
             except Exception as e:
-                logger.error(f"Error in trading loop: {e}", exc_info=True)
-                self._fire_callback('on_error', {'error': str(e)})
+                self._consecutive_errors += 1
+                logger.error(
+                    f"Error in trading loop ({self._consecutive_errors}/{self._max_consecutive_errors}): {e}",
+                    exc_info=True
+                )
+                self._fire_callback('on_error', {'error': str(e), 'consecutive_count': self._consecutive_errors})
+
+                # Transition to ERROR state after too many consecutive failures
+                if self._consecutive_errors >= self._max_consecutive_errors:
+                    logger.error(
+                        f"Max consecutive errors ({self._max_consecutive_errors}) reached. "
+                        "Transitioning to ERROR state."
+                    )
+                    self._set_state(TraderState.ERROR)
+                    break
+
                 time.sleep(5.0)  # Longer sleep on error
 
         logger.info("Trading loop stopped")
