@@ -29,7 +29,8 @@ def setup_logging(
     max_bytes: int = DEFAULT_MAX_BYTES,
     backup_count: int = DEFAULT_BACKUP_COUNT,
     console_output: bool = True,
-    auto_create_file: bool = True
+    auto_create_file: bool = True,
+    log_filename_prefix: str = 'leap'
 ) -> logging.Logger:
     """
     Setup unified logging configuration for the Leap Trading System.
@@ -44,6 +45,7 @@ def setup_logging(
         backup_count: Number of backup files to keep (default 5)
         console_output: Whether to output logs to console
         auto_create_file: Auto-create log file if logs_dir is provided
+        log_filename_prefix: Prefix for auto-generated log filenames (default 'leap')
 
     Returns:
         Root logger instance
@@ -92,7 +94,7 @@ def setup_logging(
         # Auto-create log file with timestamp
         os.makedirs(logs_dir, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d')
-        log_file_path = os.path.join(logs_dir, f'leap_{timestamp}.log')
+        log_file_path = os.path.join(logs_dir, f'{log_filename_prefix}_{timestamp}.log')
 
         file_handler = RotatingFileHandler(
             log_file_path,

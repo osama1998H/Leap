@@ -71,7 +71,8 @@ def initialize_logging(
         max_bytes=log_config.max_file_size_mb * 1024 * 1024,
         backup_count=log_config.backup_count,
         console_output=log_config.log_to_console,
-        auto_create_file=log_config.log_to_file
+        auto_create_file=log_config.log_to_file,
+        log_filename_prefix=log_config.log_filename_prefix
     )
 
 
