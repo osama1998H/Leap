@@ -152,12 +152,11 @@ class AutoTrader:
 
         # Trading state
         self._last_bar_time: Dict[str, datetime] = {}
-        self._daily_pnl: float = 0.0
         self._daily_start_balance: float = 0.0
         self._last_heartbeat: Optional[datetime] = None
-        self._trade_count_today: int = 0
         self._adaptations_today: int = 0
         self._last_adaptation_date: Optional[datetime] = None
+        self._daily_loss_limit_hit: bool = False  # Hysteresis flag for daily loss warning
 
         # Callbacks
         self._callbacks: Dict[str, List[Callable]] = {
@@ -397,6 +396,9 @@ class AutoTrader:
                     time.sleep(self.config.loop_interval)
                     continue
 
+                # Sync positions once per loop (not per symbol)
+                self.position_sync.sync()
+
                 # Run trading cycle for each symbol
                 for symbol in self.config.symbols:
                     self._run_trading_cycle(symbol)
@@ -416,8 +418,7 @@ class AutoTrader:
 
     def _run_trading_cycle(self, symbol: str):
         """Run one trading cycle for a symbol."""
-        # Sync positions
-        self.position_sync.sync()
+        # Note: position_sync.sync() is called once in the main loop, not per symbol
 
         # Check if new bar
         if not self._is_new_bar(symbol):
@@ -478,9 +479,11 @@ class AutoTrader:
 
                 prediction = self.predictor.predict(X)
                 predicted_return = prediction.get('prediction', np.array([[0.0]]))[0, 0]
-                prediction_confidence = 1.0 - prediction.get('uncertainty', 0.5)
-            except Exception as e:
-                logger.warning(f"Prediction failed: {e}")
+                # Clamp confidence to [0, 1] range
+                uncertainty = prediction.get('uncertainty', 0.5)
+                prediction_confidence = max(0.0, min(1.0, 1.0 - uncertainty))
+            except Exception:
+                logger.exception("Prediction failed")
 
         # Get action from PPO agent (if available)
         agent_action = Action.HOLD
@@ -490,8 +493,8 @@ class AutoTrader:
                 # select_action returns (action, log_prob, value) - we only need action
                 action, _, _ = self.agent.select_action(obs, deterministic=True)
                 agent_action = Action(action)
-            except Exception as e:
-                logger.warning(f"Agent action failed: {e}")
+            except Exception:
+                logger.exception("Agent action failed")
 
         # Combine prediction and agent decision
         signal_type = self._combine_signals(
@@ -566,8 +569,8 @@ class AutoTrader:
         return SignalType.HOLD
 
     def _is_new_bar(self, symbol: str) -> bool:
-        """Check if a new bar has formed."""
-        now = datetime.now()
+        """Check if a new bar has formed (using UTC for consistency)."""
+        now = datetime.now(timezone.utc)
 
         # Simple time-based check
         last_bar = self._last_bar_time.get(symbol)
@@ -604,12 +607,13 @@ class AutoTrader:
 
     def _check_daily_limits(self) -> bool:
         """Check if daily limits are hit. Returns True if trading should stop."""
-        # Reset daily counters at day change
-        now = datetime.now()
+        # Use UTC for consistency with trading hours
+        now = datetime.now(timezone.utc)
+
+        # Reset daily counters at day change (UTC)
         if self._last_adaptation_date and self._last_adaptation_date.date() != now.date():
-            self._trade_count_today = 0
             self._adaptations_today = 0
-            self._daily_pnl = 0.0
+            self._daily_loss_limit_hit = False  # Reset hysteresis flag
 
             account = self.broker.get_account_info()
             if account:
@@ -617,13 +621,15 @@ class AutoTrader:
 
         self._last_adaptation_date = now
 
-        # Check daily loss limit
+        # Check daily loss limit with hysteresis (only log once)
         account = self.broker.get_account_info()
         if account and self._daily_start_balance > 0:
             daily_pnl = (account.balance - self._daily_start_balance) / self._daily_start_balance
 
             if daily_pnl <= -self.config.max_daily_loss:
-                logger.warning(f"Daily loss limit hit: {daily_pnl:.2%}")
+                if not getattr(self, '_daily_loss_limit_hit', False):
+                    logger.warning(f"Daily loss limit hit: {daily_pnl:.2%}. Trading paused until next day.")
+                    self._daily_loss_limit_hit = True
                 return True
 
         return False
@@ -660,8 +666,8 @@ class AutoTrader:
             # Clear recent trades
             self._recent_trades.clear()
 
-        except Exception as e:
-            logger.error(f"Adaptation failed: {e}")
+        except Exception:
+            logger.exception("Adaptation check failed")
 
     def _trigger_adaptation(self):
         """Trigger online learning adaptation."""
@@ -703,8 +709,8 @@ class AutoTrader:
                     "OnlineLearningManager._perform_adaptation not available. "
                     "Consider calling online_manager.step() during trading loop."
                 )
-        except Exception as e:
-            logger.exception(f"Adaptation failed: {e}")
+        except Exception:
+            logger.exception("Adaptation failed")
             return
 
         logger.info(f"Adaptation completed with {len(trade_data)} trades")
@@ -731,8 +737,8 @@ class AutoTrader:
                     self.session.max_drawdown = drawdown
 
     def _heartbeat(self):
-        """Log heartbeat status."""
-        now = datetime.now()
+        """Log heartbeat status (using UTC for consistency)."""
+        now = datetime.now(timezone.utc)
 
         if self._last_heartbeat is None:
             self._last_heartbeat = now
@@ -741,15 +747,20 @@ class AutoTrader:
         if elapsed >= self.config.heartbeat_interval:
             self._last_heartbeat = now
 
-            account = self.broker.get_account_info()
-            positions = self.position_sync.get_positions_count()
+            try:
+                account = self.broker.get_account_info()
+                positions = self.position_sync.get_positions_count()
 
-            logger.info(
-                f"Heartbeat: balance=${account.balance:.2f}, "
-                f"equity=${account.equity:.2f}, "
-                f"positions={positions}"
-                if account else "Heartbeat: disconnected"
-            )
+                if account:
+                    logger.info(
+                        f"Heartbeat: balance=${account.balance:.2f}, "
+                        f"equity=${account.equity:.2f}, "
+                        f"positions={positions}"
+                    )
+                else:
+                    logger.info("Heartbeat: disconnected")
+            except Exception:
+                logger.exception("Heartbeat failed to get status")
 
     def _set_state(self, new_state: TraderState):
         """Set trader state and fire callback."""
@@ -766,8 +777,8 @@ class AutoTrader:
         for callback in callbacks:
             try:
                 callback(data)
-            except Exception as e:
-                logger.error(f"Callback error for {event}: {e}")
+            except Exception:
+                logger.exception(f"Callback error for {event}")
 
     def __enter__(self):
         """Context manager entry."""
