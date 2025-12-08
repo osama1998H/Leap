@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Optional, Dict, Any, List, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import numpy as np
 
@@ -18,6 +18,7 @@ from core.position_sync import PositionSynchronizer, PositionEvent, PositionChan
 from core.live_trading_env import LiveTradingEnvironment
 from core.data_pipeline import DataPipeline
 from core.trading_env import Action
+from config.settings import AutoTraderConfig  # Single source of truth for config
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -73,47 +74,7 @@ class TradingSession:
         return (self.end_balance - self.start_balance) / self.start_balance * 100
 
 
-@dataclass
-class AutoTraderConfig:
-    """Configuration for the auto-trader."""
-    # Trading settings
-    symbols: List[str] = field(default_factory=lambda: ['EURUSD'])
-    timeframe: str = '1h'
-
-    # Risk settings
-    risk_per_trade: float = 0.01  # 1% risk per trade
-    max_positions: int = 3
-    max_daily_loss: float = 0.05  # 5% max daily loss
-    max_drawdown: float = 0.10  # 10% max drawdown
-
-    # Stop loss / Take profit
-    default_sl_pips: float = 50.0
-    default_tp_pips: float = 100.0
-
-    # Trading hours (UTC)
-    trading_start_hour: int = 0  # 24/7 by default
-    trading_end_hour: int = 24
-
-    # Trading days (0=Monday, 6=Sunday)
-    trading_days: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])
-
-    # Execution
-    paper_mode: bool = True
-    loop_interval: float = 1.0  # Seconds between trading cycles
-    bar_interval: int = 3600  # Seconds per bar (for 1h = 3600)
-
-    # Model settings
-    min_confidence: float = 0.6
-    prediction_threshold: float = 0.001  # Min predicted return for entry
-
-    # Online learning
-    enable_online_learning: bool = True
-    adaptation_frequency: int = 100  # Trades between adaptations
-    max_adaptations_per_day: int = 10
-
-    # Monitoring
-    log_trades: bool = True
-    heartbeat_interval: float = 60.0  # Seconds between heartbeat logs
+# Note: AutoTraderConfig is imported from config.settings to maintain single source of truth
 
 
 class AutoTrader:
@@ -526,7 +487,8 @@ class AutoTrader:
 
         if self.agent is not None:
             try:
-                action, _ = self.agent.select_action(obs, deterministic=True)
+                # select_action returns (action, log_prob, value) - we only need action
+                action, _, _ = self.agent.select_action(obs, deterministic=True)
                 agent_action = Action(action)
             except Exception as e:
                 logger.warning(f"Agent action failed: {e}")
@@ -621,14 +583,15 @@ class AutoTrader:
         return False
 
     def _is_trading_time(self) -> bool:
-        """Check if we're within trading hours."""
-        now = datetime.now()
+        """Check if we're within trading hours (UTC)."""
+        # Use UTC time as documented in config
+        now = datetime.now(timezone.utc)
 
-        # Check day
+        # Check day (0=Monday, 6=Sunday)
         if now.weekday() not in self.config.trading_days:
             return False
 
-        # Check hour
+        # Check hour (in UTC)
         if self.config.trading_start_hour == 0 and self.config.trading_end_hour == 24:
             return True
 
@@ -720,9 +683,29 @@ class AutoTrader:
                     'tp': execution.tp
                 })
 
+        if not trade_data:
+            logger.info("No trade data for adaptation, skipping")
+            return
+
         # Call online manager's adaptation
-        # This would integrate with the existing online learning system
-        # self.online_manager.adapt(trade_data)
+        # The OnlineLearningManager uses _perform_adaptation internally
+        # which adapts both the predictor and agent based on accumulated data
+        try:
+            # Access the internal adaptation method
+            # Note: The step() method should ideally be called during trading
+            # to accumulate data, then _perform_adaptation handles the update
+            if hasattr(self.online_manager, '_perform_adaptation'):
+                adaptation_result = self.online_manager._perform_adaptation()
+                logger.info(f"Adaptation completed: {adaptation_result}")
+            else:
+                # Fallback: log that adaptation interface needs implementation
+                logger.warning(
+                    "OnlineLearningManager._perform_adaptation not available. "
+                    "Consider calling online_manager.step() during trading loop."
+                )
+        except Exception as e:
+            logger.exception(f"Adaptation failed: {e}")
+            return
 
         logger.info(f"Adaptation completed with {len(trade_data)} trades")
 

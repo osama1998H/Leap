@@ -183,9 +183,16 @@ class AutoTraderConfig:
     max_adaptations_per_day: int = 10
 
     # MT5 connection (optional - can also login via terminal)
-    mt5_login: Optional[int] = None
-    mt5_password: Optional[str] = None
-    mt5_server: Optional[str] = None
+    # Sensitive credentials are loaded from environment variables for security
+    mt5_login: Optional[int] = field(
+        default_factory=lambda: int(os.environ.get('MT5_LOGIN', '0')) or None
+    )
+    mt5_password: Optional[str] = field(
+        default_factory=lambda: os.environ.get('MT5_PASSWORD')
+    )
+    mt5_server: Optional[str] = field(
+        default_factory=lambda: os.environ.get('MT5_SERVER')
+    )
     magic_number: int = 234567
 
     # Monitoring
@@ -227,18 +234,31 @@ class SystemConfig:
     auto_trader: AutoTraderConfig = field(default_factory=AutoTraderConfig)
 
     def save(self, path: str):
-        """Save configuration to JSON file."""
-        def serialize(obj):
+        """Save configuration to JSON file.
+
+        Note: Sensitive credentials (mt5_password) are excluded from serialization.
+        These should be loaded from environment variables.
+        """
+        # Fields to exclude from serialization (sensitive data)
+        sensitive_fields = {'mt5_password'}
+
+        def serialize(obj, exclude_sensitive=False):
             if hasattr(obj, '__dataclass_fields__'):
-                return {k: serialize(v) for k, v in obj.__dict__.items()}
+                result = {}
+                for k, v in obj.__dict__.items():
+                    # Skip sensitive fields
+                    if exclude_sensitive and k in sensitive_fields:
+                        continue
+                    result[k] = serialize(v, exclude_sensitive=True)
+                return result
             elif isinstance(obj, Enum):
                 return obj.value
             elif isinstance(obj, list):
-                return [serialize(v) for v in obj]
+                return [serialize(v, exclude_sensitive=exclude_sensitive) for v in obj]
             return obj
 
         with open(path, 'w') as f:
-            json.dump(serialize(self), f, indent=2)
+            json.dump(serialize(self, exclude_sensitive=True), f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> 'SystemConfig':
