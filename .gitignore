@@ -58,6 +58,9 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
+
+# Leap trading system logs
+logs/
 db.sqlite3
 db.sqlite3-journal
 
