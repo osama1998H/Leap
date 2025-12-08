@@ -475,11 +475,39 @@ class OrderManager:
 
         return executions
 
-    # UNUSED - Placeholder method, always returns empty list
     def get_pending_orders(self) -> List[OrderExecution]:
-        """Get executions that are pending (for async systems)."""
-        # In this implementation, all orders are synchronous
-        return []
+        """Get executions whose positions are still open.
+
+        Returns executed orders where the position has not been closed yet.
+        Useful for tracking active trades initiated by this OrderManager.
+
+        Returns:
+            List of OrderExecution objects with currently open positions
+        """
+        open_executions = []
+
+        for execution in self.executions:
+            # Only consider successfully executed orders with valid tickets
+            if not execution.executed or execution.ticket <= 0:
+                continue
+
+            # Check if position still exists in broker
+            try:
+                positions = self.broker.get_positions(execution.signal.symbol)
+                # Look for matching ticket in open positions
+                for pos in positions:
+                    if pos.ticket == execution.ticket:
+                        open_executions.append(execution)
+                        break
+            except Exception:
+                # If broker check fails, skip this execution
+                continue
+
+        return open_executions
+
+    def get_open_trade_count(self) -> int:
+        """Get count of currently open trades from this manager."""
+        return len(self.get_pending_orders())
 
     def get_recent_executions(self, n: int = 10) -> List[OrderExecution]:
         """Get the n most recent executions."""

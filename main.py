@@ -72,7 +72,10 @@ def initialize_logging(
         backup_count=log_config.backup_count,
         console_output=log_config.log_to_console,
         auto_create_file=log_config.log_to_file,
-        log_filename_prefix=log_config.log_filename_prefix
+        log_filename_prefix=log_config.log_filename_prefix,
+        rotation_type=log_config.rotation_type,
+        rotation_when=log_config.rotation_when,
+        rotation_interval=log_config.rotation_interval
     )
 
 

@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 from datetime import datetime
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler  # UNUSED: TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from typing import Optional
 
 
@@ -20,6 +20,43 @@ DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 DEFAULT_BACKUP_COUNT = 5
 
 
+def _create_file_handler(
+    log_file: str,
+    rotation_type: str = 'size',
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    backup_count: int = DEFAULT_BACKUP_COUNT,
+    rotation_when: str = 'midnight',
+    rotation_interval: int = 1
+) -> logging.Handler:
+    """
+    Create appropriate file handler based on rotation type.
+
+    Args:
+        log_file: Path to log file
+        rotation_type: 'size' for size-based, 'time' for time-based rotation
+        max_bytes: Max file size before rotation (size-based only)
+        backup_count: Number of backup files to keep
+        rotation_when: When to rotate (time-based only): S, M, H, D, midnight, W0-W6
+        rotation_interval: Interval multiplier (time-based only)
+
+    Returns:
+        Configured file handler
+    """
+    if rotation_type == 'time':
+        return TimedRotatingFileHandler(
+            log_file,
+            when=rotation_when,
+            interval=rotation_interval,
+            backupCount=backup_count
+        )
+    else:  # 'size' (default)
+        return RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=backup_count
+        )
+
+
 def setup_logging(
     level: str = 'INFO',
     log_file: Optional[str] = None,
@@ -30,7 +67,10 @@ def setup_logging(
     backup_count: int = DEFAULT_BACKUP_COUNT,
     console_output: bool = True,
     auto_create_file: bool = True,
-    log_filename_prefix: str = 'leap'
+    log_filename_prefix: str = 'leap',
+    rotation_type: str = 'size',
+    rotation_when: str = 'midnight',
+    rotation_interval: int = 1
 ) -> logging.Logger:
     """
     Setup unified logging configuration for the Leap Trading System.
@@ -46,6 +86,9 @@ def setup_logging(
         console_output: Whether to output logs to console
         auto_create_file: Auto-create log file if logs_dir is provided
         log_filename_prefix: Prefix for auto-generated log filenames (default 'leap')
+        rotation_type: 'size' for size-based, 'time' for time-based rotation
+        rotation_when: When to rotate for time-based (S, M, H, D, midnight, W0-W6)
+        rotation_interval: Interval multiplier for time-based rotation
 
     Returns:
         Root logger instance
@@ -81,10 +124,13 @@ def setup_logging(
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
 
-        file_handler = RotatingFileHandler(
+        file_handler = _create_file_handler(
             log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count
+            rotation_type=rotation_type,
+            max_bytes=max_bytes,
+            backup_count=backup_count,
+            rotation_when=rotation_when,
+            rotation_interval=rotation_interval
         )
         file_handler.setLevel(log_level)
         file_handler.setFormatter(formatter)
@@ -96,10 +142,13 @@ def setup_logging(
         timestamp = datetime.now().strftime('%Y%m%d')
         log_file_path = os.path.join(logs_dir, f'{log_filename_prefix}_{timestamp}.log')
 
-        file_handler = RotatingFileHandler(
+        file_handler = _create_file_handler(
             log_file_path,
-            maxBytes=max_bytes,
-            backupCount=backup_count
+            rotation_type=rotation_type,
+            max_bytes=max_bytes,
+            backup_count=backup_count,
+            rotation_when=rotation_when,
+            rotation_interval=rotation_interval
         )
         file_handler.setLevel(log_level)
         file_handler.setFormatter(formatter)
@@ -130,8 +179,11 @@ def add_file_handler(
     log_file: str,
     level: str = 'DEBUG',
     max_bytes: int = DEFAULT_MAX_BYTES,
-    backup_count: int = DEFAULT_BACKUP_COUNT
-) -> logging.FileHandler:
+    backup_count: int = DEFAULT_BACKUP_COUNT,
+    rotation_type: str = 'size',
+    rotation_when: str = 'midnight',
+    rotation_interval: int = 1
+) -> logging.Handler:
     """
     Add a file handler to an existing logger.
 
@@ -141,8 +193,11 @@ def add_file_handler(
         logger: Logger instance to add handler to
         log_file: Path to log file
         level: Logging level for this handler
-        max_bytes: Max file size before rotation
+        max_bytes: Max file size before rotation (size-based only)
         backup_count: Number of backup files
+        rotation_type: 'size' for size-based, 'time' for time-based rotation
+        rotation_when: When to rotate for time-based (S, M, H, D, midnight, W0-W6)
+        rotation_interval: Interval multiplier for time-based rotation
 
     Returns:
         The created file handler
@@ -152,10 +207,13 @@ def add_file_handler(
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
 
-    handler = RotatingFileHandler(
+    handler = _create_file_handler(
         log_file,
-        maxBytes=max_bytes,
-        backupCount=backup_count
+        rotation_type=rotation_type,
+        max_bytes=max_bytes,
+        backup_count=backup_count,
+        rotation_when=rotation_when,
+        rotation_interval=rotation_interval
     )
     handler.setLevel(getattr(logging, level.upper(), logging.DEBUG))
     handler.setFormatter(logging.Formatter(DEFAULT_FORMAT, datefmt=DEFAULT_DATE_FORMAT))
