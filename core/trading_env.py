@@ -4,12 +4,15 @@ Gymnasium-compatible environment for reinforcement learning.
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import IntEnum
 import gymnasium as gym
 from gymnasium import spaces
 import logging
+
+if TYPE_CHECKING:
+    from core.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +78,8 @@ class TradingEnvironment(gym.Env):
         stop_loss_pct: float = 0.02,  # 2% stop loss
         take_profit_pct: float = 0.04,  # 4% take profit
         window_size: int = 60,
-        render_mode: Optional[str] = None
+        render_mode: Optional[str] = None,
+        risk_manager: Optional['RiskManager'] = None
     ):
         super().__init__()
 
@@ -91,6 +95,7 @@ class TradingEnvironment(gym.Env):
         self.take_profit_pct = take_profit_pct
         self.window_size = window_size
         self.render_mode = render_mode
+        self.risk_manager = risk_manager
 
         # Validate window_size against data length
         if data is not None and window_size >= len(data):
@@ -238,6 +243,11 @@ class TradingEnvironment(gym.Env):
         self.state.positions.append(position)
         self.state.total_trades += 1
 
+        # Notify risk manager of position opened
+        notional = size * entry_price
+        if self.risk_manager is not None:
+            self.risk_manager.on_position_opened(notional)
+
     def _close_position(self, position: Position, price: float):
         """Close a specific position."""
         # Apply spread and slippage
@@ -266,6 +276,11 @@ class TradingEnvironment(gym.Env):
             self.state.gross_loss += abs(pnl)
 
         self.state.positions.remove(position)
+
+        # Notify risk manager of position closed (use entry notional for consistency)
+        notional = position.size * position.entry_price
+        if self.risk_manager is not None:
+            self.risk_manager.on_position_closed(notional)
 
     def _close_all_positions(self, price: float):
         """Close all open positions."""
@@ -320,8 +335,14 @@ class TradingEnvironment(gym.Env):
         - Risk-adjusted reward
         - Drawdown penalty
         """
-        # Return component
-        returns = (self.state.equity - prev_equity) / prev_equity
+        # Guard against zero or negative prev_equity (account wiped out)
+        if prev_equity <= 0:
+            # Return large negative reward for bankruptcy
+            return -1.0
+
+        # Return component (use epsilon to avoid division by very small values)
+        safe_prev_equity = max(prev_equity, 1e-8)
+        returns = (self.state.equity - prev_equity) / safe_prev_equity
         return_reward = returns * 100  # Scale up
 
         # Drawdown penalty

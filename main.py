@@ -490,9 +490,21 @@ class LeapTradingSystem:
         predictor_path = os.path.join(directory, 'predictor.pt')
         if metadata.get('predictor', {}).get('exists') and os.path.exists(predictor_path):
             input_dim = metadata['predictor']['input_dim']
+            # Build config dict matching initialize_models format
+            predictor_config = {
+                'd_model': self.config.transformer.d_model,
+                'n_heads': self.config.transformer.n_heads,
+                'n_encoder_layers': self.config.transformer.n_encoder_layers,
+                'd_ff': self.config.transformer.d_ff,
+                'dropout': self.config.transformer.dropout,
+                'max_seq_length': self.config.data.lookback_window,
+                'learning_rate': self.config.transformer.learning_rate,
+                'online_learning_rate': self.config.transformer.online_learning_rate
+            }
             self._predictor = TransformerPredictor(
                 input_dim=input_dim,
-                config=self.config
+                config=predictor_config,
+                device=self.config.device
             )
             self._predictor.load(predictor_path)
             logger.info(f"Loaded predictor with input_dim={input_dim}")
@@ -502,10 +514,23 @@ class LeapTradingSystem:
         if metadata.get('agent', {}).get('exists') and os.path.exists(agent_path):
             state_dim = metadata['agent']['state_dim']
             action_dim = metadata['agent']['action_dim']
+            # Build config dict matching initialize_models format
+            agent_config = {
+                'learning_rate': self.config.ppo.learning_rate,
+                'gamma': self.config.ppo.gamma,
+                'gae_lambda': self.config.ppo.gae_lambda,
+                'clip_epsilon': self.config.ppo.clip_epsilon,
+                'entropy_coef': self.config.ppo.entropy_coef,
+                'n_steps': self.config.ppo.n_steps,
+                'n_epochs': self.config.ppo.n_epochs,
+                'batch_size': self.config.ppo.batch_size,
+                'hidden_sizes': self.config.ppo.actor_hidden_sizes
+            }
             self._agent = PPOAgent(
                 state_dim=state_dim,
                 action_dim=action_dim,
-                config=self.config
+                config=agent_config,
+                device=self.config.device
             )
             self._agent.load(agent_path)
             logger.info(f"Loaded agent with state_dim={state_dim}, action_dim={action_dim}")

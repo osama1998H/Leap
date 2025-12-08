@@ -5,13 +5,16 @@ Comprehensive backtesting with walk-forward optimization and Monte Carlo simulat
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Dict, List, Optional, Tuple, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import logging
 import json
 import os
+
+if TYPE_CHECKING:
+    from core.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +103,8 @@ class Backtester:
         pip_value: float = 0.0001,  # For forex pairs like EURUSD
         leverage: int = 100,
         risk_per_trade: float = 0.02,  # 2% risk per trade
-        max_positions: int = 5
+        max_positions: int = 5,
+        risk_manager: Optional['RiskManager'] = None
     ):
         self.initial_balance = initial_balance
         self.commission_rate = commission_rate
@@ -110,6 +114,7 @@ class Backtester:
         self.leverage = leverage
         self.risk_per_trade = risk_per_trade
         self.max_positions = max_positions
+        self.risk_manager = risk_manager
 
         # State
         self.balance = initial_balance
@@ -273,6 +278,11 @@ class Backtester:
 
         self.positions.append(trade)
 
+        # Notify risk manager of position opened
+        notional = size * entry_price
+        if self.risk_manager is not None:
+            self.risk_manager.on_position_opened(notional)
+
     def _close_position(
         self,
         position: Trade,
@@ -309,6 +319,11 @@ class Backtester:
         # Move to closed trades
         self.positions.remove(position)
         self.closed_trades.append(position)
+
+        # Notify risk manager of position closed (use entry notional for consistency)
+        notional = position.size * position.entry_price
+        if self.risk_manager is not None:
+            self.risk_manager.on_position_closed(notional)
 
     def _close_all_positions(self, price: float, timestamp: datetime):
         """Close all open positions."""
