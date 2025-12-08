@@ -433,9 +433,8 @@ class AutoTrader:
 
             except Exception as e:
                 self._consecutive_errors += 1
-                logger.error(
-                    f"Error in trading loop ({self._consecutive_errors}/{self._max_consecutive_errors}): {e}",
-                    exc_info=True
+                logger.exception(
+                    f"Error in trading loop ({self._consecutive_errors}/{self._max_consecutive_errors})"
                 )
                 self._fire_callback('on_error', {'error': str(e), 'consecutive_count': self._consecutive_errors})
 

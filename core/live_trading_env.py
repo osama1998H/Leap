@@ -5,7 +5,7 @@ Extends the standard trading environment with real MT5 integration.
 
 import numpy as np
 import logging
-from typing import Optional, Dict, List, Tuple, Any, TYPE_CHECKING
+from typing import Optional, Dict, List, Tuple, Any, ClassVar, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import IntEnum
@@ -55,7 +55,7 @@ class LiveTradingEnvironment(gym.Env):
     - Compatible with PPO agent interface
     """
 
-    metadata = {'render_modes': ['human', 'log']}
+    metadata: ClassVar[Dict[str, List[str]]] = {'render_modes': ['human', 'log']}
 
     def __init__(
         self,
@@ -430,13 +430,17 @@ class LiveTradingEnvironment(gym.Env):
         if tick is None:
             return
 
+        # Get contract size for accurate PnL calculation
+        symbol_info = self.broker.get_symbol_info(self.symbol)
+        contract_size = symbol_info.trade_contract_size if symbol_info else 100000
+
         for position in list(self._paper_positions):
             if position.type == 'long':
                 exit_price = tick.bid
-                pnl = (exit_price - position.entry_price) * position.size * 100000
+                pnl = (exit_price - position.entry_price) * position.size * contract_size
             else:
                 exit_price = tick.ask
-                pnl = (position.entry_price - exit_price) * position.size * 100000
+                pnl = (position.entry_price - exit_price) * position.size * contract_size
 
             self._paper_balance += pnl
             self.state.total_pnl += pnl
@@ -513,10 +517,14 @@ class LiveTradingEnvironment(gym.Env):
 
     def _close_paper_position(self, position: Position, exit_price: float):
         """Close a specific paper position."""
+        # Get contract size for accurate PnL calculation
+        symbol_info = self.broker.get_symbol_info(self.symbol)
+        contract_size = symbol_info.trade_contract_size if symbol_info else 100000
+
         if position.type == 'long':
-            pnl = (exit_price - position.entry_price) * position.size * 100000
+            pnl = (exit_price - position.entry_price) * position.size * contract_size
         else:
-            pnl = (position.entry_price - exit_price) * position.size * 100000
+            pnl = (position.entry_price - exit_price) * position.size * contract_size
 
         self._paper_balance += pnl
         self.state.total_pnl += pnl
@@ -536,12 +544,16 @@ class LiveTradingEnvironment(gym.Env):
         if tick is None:
             return 0.0
 
+        # Get contract size for accurate PnL calculation
+        symbol_info = self.broker.get_symbol_info(self.symbol)
+        contract_size = symbol_info.trade_contract_size if symbol_info else 100000
+
         unrealized = 0.0
         for position in self._paper_positions:
             if position.type == 'long':
-                unrealized += (tick.bid - position.entry_price) * position.size * 100000
+                unrealized += (tick.bid - position.entry_price) * position.size * contract_size
             else:
-                unrealized += (position.entry_price - tick.ask) * position.size * 100000
+                unrealized += (position.entry_price - tick.ask) * position.size * contract_size
 
         return unrealized
 

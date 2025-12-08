@@ -371,8 +371,8 @@ class PositionSynchronizer:
         for callback in callbacks:
             try:
                 callback(change)
-            except Exception as e:
-                logger.error(f"Callback error for {change.event}: {e}")
+            except Exception:
+                logger.exception(f"Callback error for {change.event}")
 
     def _record_change(self, change: PositionChange):
         """Record a change in history."""
