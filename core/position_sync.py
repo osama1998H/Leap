@@ -187,6 +187,9 @@ class PositionSynchronizer:
                     pos.magic == self.magic_number
                 )
 
+                # Check if truly new position BEFORE adding to known tickets
+                is_new_position = ticket not in self._known_tickets
+
                 synced = SyncedPosition(
                     mt5_position=pos,
                     opened_by_us=opened_by_us,
@@ -196,7 +199,7 @@ class PositionSynchronizer:
                 self._positions[ticket] = synced
                 self._known_tickets.add(ticket)
 
-                if ticket not in self._known_tickets:
+                if is_new_position:
                     # Truly new position
                     event = PositionEvent.OPENED if opened_by_us else PositionEvent.EXTERNAL_OPEN
                     change = PositionChange(
@@ -450,11 +453,12 @@ class PositionTracker:
 
         pos = self._positions[ticket]
 
-        # Update unrealized PnL
+        # Update unrealized PnL using contract size
+        contract_size = pos.contract_size if hasattr(pos, 'contract_size') and pos.contract_size else 100000
         if pos.is_long:
-            pos.unrealized_pnl = (current_price - pos.entry_price) * pos.volume * 100000
+            pos.unrealized_pnl = (current_price - pos.entry_price) * pos.volume * contract_size
         else:
-            pos.unrealized_pnl = (pos.entry_price - current_price) * pos.volume * 100000
+            pos.unrealized_pnl = (pos.entry_price - current_price) * pos.volume * contract_size
 
         # Update SL/TP if provided
         if sl is not None:

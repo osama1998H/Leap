@@ -386,9 +386,14 @@ class LiveTradingEnvironment(gym.Env):
             tp = entry_price - (self.default_tp_pips * pip_size)
             pos_type = 'short'
 
-        # Calculate volume (simplified)
+        # Calculate volume using symbol info for accurate pip value
         risk_amount = self._paper_balance * self.risk_per_trade
-        pip_value = 10.0  # Simplified for major pairs
+        try:
+            symbol_info = self.broker.get_symbol_info(self.symbol)
+            # pip_value = tick_value * (pip_size / tick_size) for 1 standard lot
+            pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
+        except Exception:
+            pip_value = 10.0  # Fallback for major pairs
         volume = risk_amount / (self.default_sl_pips * pip_value)
         volume = max(0.01, min(volume, 10.0))  # Clamp volume
 

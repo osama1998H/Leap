@@ -8,6 +8,7 @@ import logging
 import sys
 import os
 import json
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -28,7 +29,8 @@ from evaluation.metrics import PerformanceAnalyzer
 # Auto-trader imports (optional - may not be available on all platforms)
 try:
     from core.mt5_broker import MT5BrokerGateway
-    from core.auto_trader import AutoTrader, AutoTraderConfig
+    from core.auto_trader import AutoTrader
+    from config.settings import AutoTraderConfig
     AUTO_TRADER_AVAILABLE = True
 except ImportError:
     AUTO_TRADER_AVAILABLE = False
@@ -826,13 +828,20 @@ Examples:
             enable_online_learning=config.auto_trader.enable_online_learning
         )
 
+        # Handle online learning manager (may be None if not initialized)
+        online_manager = system._online_manager
+        if trader_config.enable_online_learning and online_manager is None:
+            logger.warning("Online learning enabled but OnlineLearningManager not initialized. "
+                         "Online learning will be disabled.")
+            trader_config.enable_online_learning = False
+
         # Create auto-trader
         auto_trader = AutoTrader(
             broker=broker,
             predictor=system._predictor,
             agent=system._agent,
             risk_manager=system.risk_manager,
-            online_manager=system._online_manager,
+            online_manager=online_manager,
             data_pipeline=system.data_pipeline,
             config=trader_config
         )
@@ -859,7 +868,6 @@ Examples:
 
             # Keep main thread alive
             while auto_trader.state.value == 'running':
-                import time
                 time.sleep(1)
 
         except KeyboardInterrupt:
