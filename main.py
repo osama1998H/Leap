@@ -390,7 +390,7 @@ class LeapTradingSystem:
             def simple_strategy(_data, **_kwargs):
                 return {'action': 'hold'}
 
-            return backtester.run(test_data, simple_strategy)
+            return backtester.run(test_data, simple_strategy, show_progress=False)
 
         # Run walk-forward
         results = optimizer.run(df, train_func, backtest_func)

@@ -139,7 +139,8 @@ class Backtester:
         data: pd.DataFrame,
         strategy: Callable,
         predictor=None,
-        agent=None
+        agent=None,
+        show_progress: bool = True
     ) -> BacktestResult:
         """
         Run backtest with given strategy.
@@ -149,6 +150,7 @@ class Backtester:
             strategy: Strategy function that returns actions
             predictor: Optional prediction model
             agent: Optional RL agent
+            show_progress: Whether to show tqdm progress bar (default True)
 
         Returns:
             BacktestResult with comprehensive metrics
@@ -158,7 +160,7 @@ class Backtester:
         n_steps = len(data)
         logger.info(f"Running backtest on {n_steps} bars...")
 
-        for i in tqdm(range(1, n_steps), desc="Backtesting", unit="bar"):
+        for i in tqdm(range(1, n_steps), desc="Backtesting", unit="bar", disable=not show_progress):
             current_bar = data.iloc[i]
             timestamp = current_bar.name if isinstance(current_bar.name, datetime) else datetime.now()
 
