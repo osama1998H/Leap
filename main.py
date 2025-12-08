@@ -278,9 +278,19 @@ class LeapTradingSystem:
     def backtest(
         self,
         market_data,
-        _strategy_type: str = 'combined'  # Reserved for future multi-strategy support
+        _strategy_type: str = 'combined',  # Reserved for future multi-strategy support
+        realistic_mode: bool = False
     ):
-        """Run backtest on historical data."""
+        """Run backtest on historical data.
+
+        Args:
+            market_data: Market data to backtest on
+            _strategy_type: Strategy type (reserved for future use)
+            realistic_mode: If True, applies realistic trading constraints:
+                - Minimum 4 hours between trades
+                - Maximum 5 trades per day
+                - Maximum position size of 10 lots (1M units)
+        """
         import pandas as pd
 
         # Prepare data as DataFrame
@@ -303,8 +313,12 @@ class LeapTradingSystem:
             commission_rate=self.config.backtest.commission_per_lot / 100000,
             spread_pips=self.config.backtest.spread_pips,
             slippage_pips=self.config.backtest.slippage_pips,
-            leverage=self.config.backtest.leverage
+            leverage=self.config.backtest.leverage,
+            realistic_mode=realistic_mode
         )
+
+        if realistic_mode:
+            logger.info("Running backtest with REALISTIC constraints (limited trades, capped position size)")
 
         # Define strategy
         def strategy(data, predictor=None, agent=None, positions=None):
@@ -621,6 +635,12 @@ Examples:
     )
 
     parser.add_argument(
+        '--realistic',
+        action='store_true',
+        help='Enable realistic backtesting constraints (limited trades, capped position size)'
+    )
+
+    parser.add_argument(
         '--config', '-c',
         help='Path to config file'
     )
@@ -700,7 +720,7 @@ Examples:
             system.load_models(args.model_dir)
 
         # Run backtest
-        _result, analysis = system.backtest(market_data)
+        _result, analysis = system.backtest(market_data, realistic_mode=args.realistic)
 
         # Save results
         results_dir = os.path.join(config.base_dir, 'results')

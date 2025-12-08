@@ -105,7 +105,12 @@ class Backtester:
         leverage: int = 100,
         risk_per_trade: float = 0.02,  # 2% risk per trade
         max_positions: int = 5,
-        risk_manager: Optional['RiskManager'] = None
+        risk_manager: Optional['RiskManager'] = None,
+        # Realistic constraints
+        min_bars_between_trades: int = 0,  # Cooldown between trades
+        max_position_size: Optional[float] = None,  # Cap position size (in units)
+        max_daily_trades: Optional[int] = None,  # Limit trades per day
+        realistic_mode: bool = False  # Enable all realistic constraints
     ):
         self.initial_balance = initial_balance
         self.commission_rate = commission_rate
@@ -117,6 +122,18 @@ class Backtester:
         self.max_positions = max_positions
         self.risk_manager = risk_manager
 
+        # Realistic constraints
+        self.min_bars_between_trades = min_bars_between_trades
+        self.max_position_size = max_position_size
+        self.max_daily_trades = max_daily_trades
+        self.realistic_mode = realistic_mode
+
+        # Apply realistic defaults if enabled
+        if realistic_mode:
+            self.min_bars_between_trades = max(min_bars_between_trades, 4)  # Min 4 hours between trades
+            self.max_position_size = max_position_size or 1000000  # Max 10 lots (1M units)
+            self.max_daily_trades = max_daily_trades or 5  # Max 5 trades per day
+
         # State
         self.balance = initial_balance
         self.equity = initial_balance
@@ -124,6 +141,9 @@ class Backtester:
         self.closed_trades: List[Trade] = []
         self.equity_curve: List[float] = []
         self.timestamps: List[datetime] = []
+        self._last_trade_bar: int = -999  # Track last trade for cooldown
+        self._daily_trade_count: int = 0
+        self._current_day: Optional[datetime] = None
 
     def reset(self):
         """Reset backtester state."""
@@ -133,6 +153,9 @@ class Backtester:
         self.closed_trades = []
         self.equity_curve = [self.initial_balance]
         self.timestamps = []
+        self._last_trade_bar = -999
+        self._daily_trade_count = 0
+        self._current_day = None
 
     def run(
         self,
@@ -164,6 +187,12 @@ class Backtester:
             current_bar = data.iloc[i]
             timestamp = current_bar.name if isinstance(current_bar.name, datetime) else datetime.now()
 
+            # Track daily trade count reset
+            current_day = timestamp.date() if hasattr(timestamp, 'date') else None
+            if current_day and current_day != self._current_day:
+                self._current_day = current_day
+                self._daily_trade_count = 0
+
             # Get current price
             current_price = current_bar['close']
             high = current_bar['high']
@@ -180,8 +209,8 @@ class Backtester:
                 positions=self.positions
             )
 
-            # Execute signal
-            self._execute_signal(signal, current_price, timestamp)
+            # Execute signal (with bar index for cooldown tracking)
+            self._execute_signal(signal, current_price, timestamp, bar_index=i)
 
             # Update equity
             self._update_equity(current_price)
@@ -211,16 +240,32 @@ class Backtester:
         self,
         signal: Dict,
         price: float,
-        timestamp: datetime
+        timestamp: datetime,
+        bar_index: int = 0
     ):
         """Execute trading signal."""
         action = signal.get('action', 'hold')
 
+        # Check cooldown constraint
+        bars_since_last_trade = bar_index - self._last_trade_bar
+        if bars_since_last_trade < self.min_bars_between_trades:
+            if action in ('buy', 'sell'):
+                return  # Skip trade due to cooldown
+
+        # Check daily trade limit
+        if self.max_daily_trades is not None and self._daily_trade_count >= self.max_daily_trades:
+            if action in ('buy', 'sell'):
+                return  # Skip trade due to daily limit
+
         if action == 'buy' and len(self.positions) < self.max_positions:
-            self._open_position('long', price, timestamp, signal)
+            if self._open_position('long', price, timestamp, signal):
+                self._last_trade_bar = bar_index
+                self._daily_trade_count += 1
 
         elif action == 'sell' and len(self.positions) < self.max_positions:
-            self._open_position('short', price, timestamp, signal)
+            if self._open_position('short', price, timestamp, signal):
+                self._last_trade_bar = bar_index
+                self._daily_trade_count += 1
 
         elif action == 'close':
             self._close_all_positions(price, timestamp)
@@ -237,8 +282,8 @@ class Backtester:
         price: float,
         timestamp: datetime,
         signal: Dict
-    ):
-        """Open a new position."""
+    ) -> bool:
+        """Open a new position. Returns True if position was opened."""
         # Apply slippage
         slippage = self.slippage_pips * self.pip_value
         if direction == 'long':
@@ -277,11 +322,15 @@ class Backtester:
         max_size = (self.balance * self.leverage) / entry_price
         size = min(size, max_size)
 
+        # Apply max position size cap (realistic constraint)
+        if self.max_position_size is not None:
+            size = min(size, self.max_position_size)
+
         # Commission - check balance sufficiency before deducting
         commission = size * entry_price * self.commission_rate
         if commission > self.balance:
             logger.warning(f"Insufficient balance for commission: {commission:.2f} > {self.balance:.2f}")
-            return  # Skip opening this position
+            return False  # Skip opening this position
         self.balance -= commission
 
         # Create trade with stop loss and take profit
@@ -304,6 +353,8 @@ class Backtester:
         notional = size * entry_price
         if self.risk_manager is not None:
             self.risk_manager.on_position_opened(notional)
+
+        return True
 
     def _close_position(
         self,
