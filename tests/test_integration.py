@@ -331,7 +331,7 @@ def test_backtester():
         return {'action': 'hold'}
 
     # Run backtest
-    result = backtester.run(df, simple_strategy)
+    result = backtester.run(df, simple_strategy, show_progress=False)
 
     print(f"✓ Backtest completed:")
     print(f"  - Total return: {result.total_return:.2%}")

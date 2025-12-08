@@ -457,18 +457,18 @@ class PerformanceAnalyzer:
         regimes = {
             'high_volatility': {
                 'periods': int(high_vol_periods.sum()),
-                'avg_return': float(returns[high_vol_periods.values[:-1]].mean()) if high_vol_periods.sum() > 0 else 0,
-                'volatility': float(returns[high_vol_periods.values[:-1]].std()) if high_vol_periods.sum() > 0 else 0
+                'avg_return': float(returns[high_vol_periods.values].mean()) if high_vol_periods.sum() > 0 else 0,
+                'volatility': float(returns[high_vol_periods.values].std()) if high_vol_periods.sum() > 0 else 0
             },
             'low_volatility': {
                 'periods': int(low_vol_periods.sum()),
-                'avg_return': float(returns[low_vol_periods.values[:-1]].mean()) if low_vol_periods.sum() > 0 else 0,
-                'volatility': float(returns[low_vol_periods.values[:-1]].std()) if low_vol_periods.sum() > 0 else 0
+                'avg_return': float(returns[low_vol_periods.values].mean()) if low_vol_periods.sum() > 0 else 0,
+                'volatility': float(returns[low_vol_periods.values].std()) if low_vol_periods.sum() > 0 else 0
             },
             'normal': {
                 'periods': int(normal_periods.sum()),
-                'avg_return': float(returns[normal_periods.values[:-1]].mean()) if normal_periods.sum() > 0 else 0,
-                'volatility': float(returns[normal_periods.values[:-1]].std()) if normal_periods.sum() > 0 else 0
+                'avg_return': float(returns[normal_periods.values].mean()) if normal_periods.sum() > 0 else 0,
+                'volatility': float(returns[normal_periods.values].std()) if normal_periods.sum() > 0 else 0
             }
         }
 
