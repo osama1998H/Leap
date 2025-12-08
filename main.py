@@ -678,9 +678,9 @@ Examples:
 
     parser.add_argument(
         '--log-level', '-l',
-        default='INFO',
+        default=None,
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        help='Logging level'
+        help='Logging level (default: from config or INFO)'
     )
 
     parser.add_argument(
@@ -697,9 +697,10 @@ Examples:
         config = get_config()
 
     # Setup logging with config and CLI overrides
+    # CLI args take precedence when explicitly provided (not None)
     initialize_logging(
         config=config,
-        log_level_override=args.log_level if args.log_level != 'INFO' else None,
+        log_level_override=args.log_level,
         log_file_override=args.log_file
     )
 
