@@ -12,6 +12,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import logging
 import json
 import os
+from tqdm import tqdm
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -157,7 +158,7 @@ class Backtester:
         n_steps = len(data)
         logger.info(f"Running backtest on {n_steps} bars...")
 
-        for i in range(1, n_steps):
+        for i in tqdm(range(1, n_steps), desc="Backtesting", unit="bar"):
             current_bar = data.iloc[i]
             timestamp = current_bar.name if isinstance(current_bar.name, datetime) else datetime.now()
 
