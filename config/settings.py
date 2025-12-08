@@ -147,6 +147,19 @@ class EvaluationConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """Logging configuration."""
+    level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_to_file: bool = True  # Enable file logging
+    log_to_console: bool = True  # Enable console logging
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    date_format: str = "%Y-%m-%d %H:%M:%S"
+    max_file_size_mb: int = 10  # Max log file size before rotation
+    backup_count: int = 5  # Number of backup log files to keep
+    log_filename_prefix: str = "leap"  # Prefix for auto-generated log files
+
+
+@dataclass
 class AutoTraderConfig:
     """Auto-trader configuration."""
     # Trading settings
@@ -218,8 +231,7 @@ class SystemConfig:
     use_mixed_precision: bool = True
     num_workers: int = 4
 
-    # Logging
-    log_level: str = "INFO"
+    # Monitoring
     tensorboard_enabled: bool = True
     wandb_enabled: bool = False
     wandb_project: str = "leap-trading"
@@ -231,6 +243,7 @@ class SystemConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
     auto_trader: AutoTraderConfig = field(default_factory=AutoTraderConfig)
 
     def save(self, path: str):
@@ -274,6 +287,7 @@ class SystemConfig:
             risk=RiskConfig(**data.get('risk', {})),
             backtest=BacktestConfig(**data.get('backtest', {})),
             evaluation=EvaluationConfig(**data.get('evaluation', {})),
+            logging=LoggingConfig(**data.get('logging', {})),
             auto_trader=AutoTraderConfig(**data.get('auto_trader', {}))
         )
 
@@ -281,7 +295,7 @@ class SystemConfig:
         for key in ['base_dir', 'models_dir', 'logs_dir', 'data_dir',
                     'checkpoints_dir', 'results_dir', 'trading_mode',
                     'device', 'seed', 'use_mixed_precision', 'num_workers',
-                    'log_level', 'tensorboard_enabled', 'wandb_enabled', 'wandb_project']:
+                    'tensorboard_enabled', 'wandb_enabled', 'wandb_project']:
             if key in data:
                 setattr(config, key, data[key])
 

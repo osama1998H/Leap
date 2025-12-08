@@ -4,7 +4,6 @@ Command-line interface and main entry point for the trading system.
 """
 
 import argparse
-import logging
 import sys
 import os
 import json
@@ -25,6 +24,7 @@ from training.trainer import ModelTrainer
 from training.online_learning import OnlineLearningManager, AdaptiveTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
 from evaluation.metrics import PerformanceAnalyzer
+from utils.logging_config import setup_logging, get_logger
 
 # Auto-trader imports (optional - may not be available on all platforms)
 try:
@@ -38,23 +38,44 @@ except ImportError:
 import numpy as np
 
 
-# Configure logging
-def setup_logging(level: str = 'INFO', log_file: Optional[str] = None):
-    """Setup logging configuration."""
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+def initialize_logging(
+    config: SystemConfig,
+    log_level_override: Optional[str] = None,
+    log_file_override: Optional[str] = None
+) -> None:
+    """
+    Initialize logging based on configuration and CLI overrides.
 
-    handlers = [logging.StreamHandler()]
-    if log_file:
-        handlers.append(logging.FileHandler(log_file))
+    Args:
+        config: System configuration
+        log_level_override: CLI override for log level
+        log_file_override: CLI override for log file path
+    """
+    log_config = config.logging
 
-    logging.basicConfig(
-        level=getattr(logging, level.upper()),
-        format=log_format,
-        handlers=handlers
+    # CLI overrides take precedence
+    level = log_level_override or log_config.level
+    log_file = log_file_override
+
+    # If no explicit log file but file logging is enabled, use logs_dir
+    logs_dir = None
+    if log_config.log_to_file and not log_file:
+        logs_dir = os.path.join(config.base_dir, config.logs_dir)
+
+    setup_logging(
+        level=level,
+        log_file=log_file,
+        logs_dir=logs_dir,
+        log_format=log_config.log_format,
+        date_format=log_config.date_format,
+        max_bytes=log_config.max_file_size_mb * 1024 * 1024,
+        backup_count=log_config.backup_count,
+        console_output=log_config.log_to_console,
+        auto_create_file=log_config.log_to_file
     )
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LeapTradingSystem:
@@ -669,14 +690,18 @@ Examples:
 
     args = parser.parse_args()
 
-    # Setup logging
-    setup_logging(args.log_level, args.log_file)
-
-    # Load config
+    # Load config first (needed for logging setup)
     if args.config and os.path.exists(args.config):
         config = SystemConfig.load(args.config)
     else:
         config = get_config()
+
+    # Setup logging with config and CLI overrides
+    initialize_logging(
+        config=config,
+        log_level_override=args.log_level if args.log_level != 'INFO' else None,
+        log_file_override=args.log_file
+    )
 
     # Create system
     system = LeapTradingSystem(config)

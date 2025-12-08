@@ -8,6 +8,7 @@ from .settings import (
     RiskConfig,
     BacktestConfig,
     EvaluationConfig,
+    LoggingConfig,
     TimeFrame,
     TradingMode,
     get_config
@@ -21,6 +22,7 @@ __all__ = [
     'RiskConfig',
     'BacktestConfig',
     'EvaluationConfig',
+    'LoggingConfig',
     'TimeFrame',
     'TradingMode',
     'get_config'
