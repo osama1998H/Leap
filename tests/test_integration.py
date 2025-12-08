@@ -426,7 +426,7 @@ def test_monte_carlo_simulator():
 
     # Create simulator
     simulator = MonteCarloSimulator(n_simulations=500, confidence_level=0.95)
-    print(f"✓ Created MonteCarloSimulator with 500 simulations")
+    print("✓ Created MonteCarloSimulator with 500 simulations")
 
     # Run simulation
     result = simulator.simulate_from_trades(trades)
@@ -436,7 +436,7 @@ def test_monte_carlo_simulator():
     assert 'probability_of_profit' in result, "Should have probability_of_profit"
     assert 'probability_of_ruin' in result, "Should have probability_of_ruin"
 
-    print(f"✓ Monte Carlo simulation completed:")
+    print("✓ Monte Carlo simulation completed:")
     print(f"  - Final Equity (mean): {result['final_equity']['mean']:.2%}")
     print(f"  - Max Drawdown (95th): {result['max_drawdown']['percentile_95']:.2%}")
     print(f"  - Probability of Profit: {result['probability_of_profit']:.1%}")
@@ -502,7 +502,7 @@ def test_monte_carlo_integration():
     if len(result.trades) >= 10:
         assert 'monte_carlo' in analysis, "Should have monte_carlo in analysis"
         if 'warning' not in analysis['monte_carlo']:
-            print(f"✓ Monte Carlo results included in analysis")
+            print("✓ Monte Carlo results included in analysis")
             mc = analysis['monte_carlo']
             print(f"  - Probability of Profit: {mc['probability_of_profit']:.1%}")
         else:
@@ -557,10 +557,10 @@ def test_full_integration():
     detector = test_online_learning()
 
     # 10. Test Monte Carlo simulator
-    mc_result = test_monte_carlo_simulator()
+    _mc_result = test_monte_carlo_simulator()
 
     # 11. Test Monte Carlo integration with PerformanceAnalyzer
-    mc_analysis = test_monte_carlo_integration()
+    _mc_analysis = test_monte_carlo_integration()
 
     print("\n" + "="*60)
     print("ALL INTEGRATION TESTS PASSED!")

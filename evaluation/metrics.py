@@ -395,7 +395,7 @@ class PerformanceAnalyzer:
 
         return metrics
 
-    def _run_monte_carlo(self, trades: list) -> Dict:
+    def _run_monte_carlo(self, trades: List) -> Dict:
         """Run Monte Carlo simulation on trades."""
         simulator = MonteCarloSimulator(
             n_simulations=self.n_simulations,
