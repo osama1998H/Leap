@@ -159,7 +159,6 @@ class Backtester:
 
         for i in range(1, n_steps):
             current_bar = data.iloc[i]
-            prev_bar = data.iloc[i - 1]
             timestamp = current_bar.name if isinstance(current_bar.name, datetime) else datetime.now()
 
             # Get current price
@@ -168,7 +167,7 @@ class Backtester:
             low = current_bar['low']
 
             # Update existing positions (check stop loss / take profit)
-            self._update_positions(current_price, high, low, timestamp)
+            self._update_positions(high, low, timestamp)
 
             # Get trading signal
             signal = strategy(
@@ -273,8 +272,11 @@ class Backtester:
         max_size = (self.balance * self.leverage) / entry_price
         size = min(size, max_size)
 
-        # Commission
+        # Commission - check balance sufficiency before deducting
         commission = size * entry_price * self.commission_rate
+        if commission > self.balance:
+            logger.warning(f"Insufficient balance for commission: {commission:.2f} > {self.balance:.2f}")
+            return  # Skip opening this position
         self.balance -= commission
 
         # Create trade with stop loss and take profit
@@ -358,7 +360,6 @@ class Backtester:
 
     def _update_positions(
         self,
-        price: float,
         high: float,
         low: float,
         timestamp: datetime
@@ -646,8 +647,8 @@ class WalkForwardOptimizer:
                 'result': result
             }
 
-        except Exception as e:
-            logger.error(f"Error in fold {fold_idx}: {e}")
+        except Exception:
+            logger.exception(f"Error in fold {fold_idx}")
             return None
 
     def _aggregate_results(self, results: List[Dict]) -> Dict:

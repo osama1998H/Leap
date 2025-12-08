@@ -4,7 +4,7 @@ Gymnasium-compatible environment for reinforcement learning.
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
+from typing import ClassVar, Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import IntEnum
 import gymnasium as gym
@@ -63,7 +63,7 @@ class TradingEnvironment(gym.Env):
     - Detailed state representation
     """
 
-    metadata = {'render_modes': ['human', 'rgb_array']}
+    metadata: ClassVar[Dict[str, List[str]]] = {'render_modes': ['human', 'rgb_array']}
 
     def __init__(
         self,
@@ -134,6 +134,7 @@ class TradingEnvironment(gym.Env):
     ) -> Tuple[np.ndarray, Dict]:
         """Reset environment to initial state."""
         super().reset(seed=seed)
+        _ = options  # Required by Gymnasium API but currently unused
 
         self.current_step = self.window_size
         self.state = TradingState(
@@ -358,6 +359,11 @@ class TradingEnvironment(gym.Env):
 
     def _get_observation(self) -> np.ndarray:
         """Get current observation."""
+        # Guard against out-of-bounds access after episode termination
+        max_step = len(self.data) - 1
+        if self.current_step > max_step:
+            self.current_step = max_step
+
         # Price window
         start_idx = self.current_step - self.window_size
         price_window = self.data[start_idx:self.current_step].flatten()

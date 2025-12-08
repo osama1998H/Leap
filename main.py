@@ -90,19 +90,13 @@ class LeapTradingSystem:
         return self._data_pipeline
 
     @property
-    def predictor(self) -> TransformerPredictor:
-        """Get or create predictor."""
-        if self._predictor is None:
-            # Will be initialized with proper input_dim when data is loaded
-            self._predictor = None
+    def predictor(self) -> Optional[TransformerPredictor]:
+        """Get predictor (initialized via initialize_models or load_models)."""
         return self._predictor
 
     @property
-    def agent(self) -> PPOAgent:
-        """Get or create RL agent."""
-        if self._agent is None:
-            # Will be initialized with proper state_dim when env is created
-            self._agent = None
+    def agent(self) -> Optional[PPOAgent]:
+        """Get RL agent (initialized via initialize_models or load_models)."""
         return self._agent
 
     @property
@@ -145,7 +139,7 @@ class LeapTradingSystem:
         """Prepare data for model training."""
         logger.info("Preparing training sequences...")
 
-        X, y, timestamps = self.data_pipeline.prepare_sequences(
+        X, y, _timestamps = self.data_pipeline.prepare_sequences(
             data=market_data,
             sequence_length=self.config.data.lookback_window,
             prediction_horizon=self.config.data.prediction_horizon
@@ -284,7 +278,7 @@ class LeapTradingSystem:
     def backtest(
         self,
         market_data,
-        strategy_type: str = 'combined'
+        _strategy_type: str = 'combined'  # Reserved for future multi-strategy support
     ):
         """Run backtest on historical data."""
         import pandas as pd
@@ -380,18 +374,18 @@ class LeapTradingSystem:
             step_size=self.config.backtest.test_window_days
         )
 
-        def train_func(train_data):
+        def train_func(_train_data):
             """Train model on training data."""
             # Simplified training for walk-forward
             return None  # Would train model here
 
-        def backtest_func(test_data, model):
+        def backtest_func(test_data, _model):
             """Backtest on test data."""
             backtester = Backtester(
                 initial_balance=self.config.backtest.initial_balance
             )
 
-            def simple_strategy(data, **kwargs):
+            def simple_strategy(_data, **_kwargs):
                 return {'action': 'hold'}
 
             return backtester.run(test_data, simple_strategy)
@@ -683,7 +677,7 @@ Examples:
             system.load_models(args.model_dir)
 
         # Run backtest
-        result, analysis = system.backtest(market_data)
+        _result, analysis = system.backtest(market_data)
 
         # Save results
         results_dir = os.path.join(config.base_dir, 'results')
