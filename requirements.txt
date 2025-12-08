@@ -1,0 +1,41 @@
+# Leap Trading System - Dependencies
+# AI-Powered Forex Trading with Online Learning
+
+# Core Deep Learning
+# Note: NumPy <2.0 required to avoid ABI breakage with PyTorch wheels
+torch>=2.2.0
+numpy>=1.24.0,<2.0
+pandas>=2.0.0
+
+# Scientific Computing
+# scipy and scikit-learn versions compatible with NumPy 1.x
+scipy>=1.11.0
+scikit-learn>=1.3.0
+
+# Reinforcement Learning
+gymnasium>=0.29.0
+
+# Trading Platform (optional - for live trading)
+# MetaTrader5>=5.0.45  # Windows only, uncomment if needed
+
+# Visualization (optional)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Logging and Monitoring
+tensorboard>=2.14.0
+
+# Configuration
+dataclasses-json>=0.6.0
+
+# Utilities
+tqdm>=4.65.0
+
+# Testing
+pytest>=7.4.0
+
+# Optional: Weights & Biases for experiment tracking
+# wandb>=0.15.0
+
+# Optional: Ray for distributed training
+# ray[rllib]>=2.7.0
