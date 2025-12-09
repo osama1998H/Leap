@@ -208,106 +208,9 @@ class FeatureEngineer:
         return df
 
     def _add_trend_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add trend-based indicators."""
-        period = 14  # Standard ADX period
-
-        # ============================================
-        # ADX (Average Directional Index) - Wilder's Method
-        # ============================================
-        # Step 1: Calculate Directional Movement (+DM and -DM)
-        # +DM = current high - previous high (when positive and > -DM)
-        # -DM = previous low - current low (when positive and > +DM)
-        high_diff = df['high'].diff()
-        low_diff = -df['low'].diff()  # previous low - current low
-
-        plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
-        minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
-
-        # Step 2: Apply Wilder's smoothing to TR, +DM, -DM
-        tr_smoothed = self._wilder_smoothing(df['tr'], period)
-        plus_dm_smoothed = self._wilder_smoothing(plus_dm, period)
-        minus_dm_smoothed = self._wilder_smoothing(minus_dm, period)
-
-        # Step 3: Calculate +DI and -DI
-        # +DI = 100 * Smoothed +DM / Smoothed TR
-        # -DI = 100 * Smoothed -DM / Smoothed TR
-        plus_di = 100 * (plus_dm_smoothed / (tr_smoothed + 1e-10))
-        minus_di = 100 * (minus_dm_smoothed / (tr_smoothed + 1e-10))
-
-        df['plus_di'] = plus_di
-        df['minus_di'] = minus_di
-
-        # Step 4: Calculate DX (Directional Movement Index)
-        # DX = 100 * |+DI - -DI| / (+DI + -DI)
-        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-
-        # Step 5: Calculate ADX using Wilder's smoothing on DX
-        # First ADX = mean of first 14 DX values
-        # Subsequent ADX = ((Prior ADX * 13) + Current DX) / 14
-        adx = pd.Series(index=df.index, dtype=float)
-
-        # Find first valid DX index
-        first_valid_dx = dx.first_valid_index()
-        if first_valid_dx is not None:
-            start_pos = df.index.get_loc(first_valid_dx)
-
-            # Need 14 valid DX values to start ADX
-            if len(dx) >= start_pos + period:
-                # First ADX = mean of first 14 DX values
-                first_adx_idx = start_pos + period - 1
-                adx.iloc[first_adx_idx] = dx.iloc[start_pos:start_pos + period].mean()
-
-                # Subsequent ADX values
-                for i in range(first_adx_idx + 1, len(df)):
-                    prior_adx = adx.iloc[i - 1]
-                    current_dx = dx.iloc[i]
-                    if pd.notna(prior_adx) and pd.notna(current_dx):
-                        adx.iloc[i] = ((prior_adx * (period - 1)) + current_dx) / period
-
-        df['adx'] = adx
-        df['dx'] = dx
-
-        # ============================================
-        # Additional ADX-derived features
-        # ============================================
-
-        # ADXR (ADX Rating) - Average of current ADX and ADX from 'period' bars ago
-        # Provides a smoother trend strength indicator
-        df['adxr'] = (adx + adx.shift(period)) / 2
-
-        # DI Crossover Signal
-        # 1 = +DI above -DI (bullish), 0 = -DI above +DI (bearish)
-        df['di_crossover'] = (plus_di > minus_di).astype(int)
-
-        # DI Spread - Normalized difference between +DI and -DI
-        # Positive = bullish trend, Negative = bearish trend
-        # Normalized by sum to get values roughly between -1 and 1
-        df['di_spread'] = (plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-
-        # ADX Slope - Rate of change of ADX
-        # Positive = trend strengthening, Negative = trend weakening
-        df['adx_slope'] = adx.diff(5)  # 5-period change
-
-        # ADX Strength Classification (useful for regime detection)
-        # 0 = weak (<20), 1 = moderate (20-40), 2 = strong (>40)
-        df['adx_strength'] = pd.cut(
-            adx,
-            bins=[-np.inf, 20, 40, np.inf],
-            labels=[0, 1, 2]
-        ).astype(float)
-
-        # ============================================
-        # Keep simple ADX for backward compatibility
-        # ============================================
-        tr_14_simple = df['tr'].rolling(period).sum()
-        plus_di_simple = 100 * (plus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
-        minus_di_simple = 100 * (minus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
-        dx_simple = 100 * np.abs(plus_di_simple - minus_di_simple) / (plus_di_simple + minus_di_simple + 1e-10)
-        df['adx_simple'] = dx_simple.rolling(period).mean()
-
-        # ============================================
-        # Other trend indicators
-        # ============================================
+        """Add trend-based indicators including ADX and CCI."""
+        # Compute ADX indicators (extracted for maintainability and testability)
+        df = self._compute_adx_indicators(df)
 
         # Parabolic SAR (simplified)
         df['trend'] = np.where(df['close'] > df['close'].shift(1), 1, -1)
@@ -318,6 +221,145 @@ class FeatureEngineer:
         sma_tp = typical_price.rolling(20).mean()
         mad = typical_price.rolling(20).apply(lambda x: np.abs(x - x.mean()).mean())
         df['cci'] = (typical_price - sma_tp) / (0.015 * mad + 1e-10)
+
+        return df
+
+    def _compute_adx_indicators(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+        """
+        Compute ADX (Average Directional Index) and related indicators.
+
+        Uses Wilder's smoothing technique for accurate calculation, which is preferred
+        over simple moving averages because:
+        - Reduces lag while maintaining smoothness
+        - More responsive to recent price action
+        - Matches the original indicator design by J. Welles Wilder
+        - Produces more stable signals in trending markets
+
+        The ADX requires approximately 2 * period bars for stable values due to
+        the double smoothing (TR/DM smoothing + DX smoothing).
+
+        Features computed:
+        - plus_di: Positive Directional Indicator (+DI)
+        - minus_di: Negative Directional Indicator (-DI)
+        - dx: Directional Movement Index
+        - adx: Average Directional Index (Wilder's smoothing)
+        - adxr: ADX Rating (smoothed ADX)
+        - di_crossover: Binary signal for +DI > -DI
+        - di_spread: Normalized (+DI - -DI)
+        - adx_slope: Rate of change of ADX
+        - adx_strength: Categorical strength (0=weak, 1=moderate, 2=strong)
+        - adx_simple: Backward-compatible simple rolling ADX
+
+        Args:
+            df: DataFrame with 'high', 'low', 'close', 'tr' columns
+            period: ADX period (default 14, industry standard)
+
+        Returns:
+            DataFrame with ADX indicators added
+        """
+        # Minimum data validation
+        min_bars_required = 2 * period  # Need 28 bars for stable 14-period ADX
+        if len(df) < min_bars_required:
+            logger.warning(
+                f"Insufficient data for stable ADX calculation. "
+                f"Have {len(df)} bars, recommend at least {min_bars_required}. "
+                f"ADX values may be unreliable."
+            )
+
+        # ============================================
+        # Step 1: Calculate Directional Movement (+DM and -DM)
+        # ============================================
+        # +DM = current high - previous high (when positive and > -DM)
+        # -DM = previous low - current low (when positive and > +DM)
+        high_diff = df['high'].diff()
+        low_diff = -df['low'].diff()  # previous low - current low
+
+        plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
+        minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
+
+        # ============================================
+        # Step 2: Apply Wilder's smoothing to TR, +DM, -DM
+        # ============================================
+        tr_smoothed = self._wilder_smoothing(df['tr'], period)
+        plus_dm_smoothed = self._wilder_smoothing(plus_dm, period)
+        minus_dm_smoothed = self._wilder_smoothing(minus_dm, period)
+
+        # ============================================
+        # Step 3: Calculate +DI and -DI
+        # ============================================
+        # +DI = 100 * Smoothed +DM / Smoothed TR
+        # -DI = 100 * Smoothed -DM / Smoothed TR
+        plus_di = 100 * (plus_dm_smoothed / (tr_smoothed + 1e-10))
+        minus_di = 100 * (minus_dm_smoothed / (tr_smoothed + 1e-10))
+
+        df['plus_di'] = plus_di
+        df['minus_di'] = minus_di
+
+        # ============================================
+        # Step 4: Calculate DX (Directional Movement Index)
+        # ============================================
+        # DX = 100 * |+DI - -DI| / (+DI + -DI)
+        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+        df['dx'] = dx
+
+        # ============================================
+        # Step 5: Calculate ADX using Wilder's smoothing on DX
+        # ============================================
+        # First ADX = mean of first 'period' DX values
+        # Subsequent ADX = ((Prior ADX * (period-1)) + Current DX) / period
+        adx = pd.Series(index=df.index, dtype=float)
+
+        first_valid_dx = dx.first_valid_index()
+        if first_valid_dx is not None:
+            start_pos = df.index.get_loc(first_valid_dx)
+
+            if len(dx) >= start_pos + period:
+                first_adx_idx = start_pos + period - 1
+                adx.iloc[first_adx_idx] = dx.iloc[start_pos:start_pos + period].mean()
+
+                for i in range(first_adx_idx + 1, len(df)):
+                    prior_adx = adx.iloc[i - 1]
+                    current_dx = dx.iloc[i]
+                    if pd.notna(prior_adx) and pd.notna(current_dx):
+                        adx.iloc[i] = ((prior_adx * (period - 1)) + current_dx) / period
+
+        df['adx'] = adx
+
+        # ============================================
+        # Step 6: Compute derived ADX features
+        # ============================================
+
+        # ADXR (ADX Rating) - Average of current ADX and ADX from 'period' bars ago
+        df['adxr'] = (adx + adx.shift(period)) / 2
+
+        # DI Crossover Signal (1 = bullish, 0 = bearish)
+        df['di_crossover'] = (plus_di > minus_di).astype(int)
+
+        # DI Spread - Normalized difference [-1, 1]
+        df['di_spread'] = (plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+
+        # ADX Slope - 5-period rate of change
+        df['adx_slope'] = adx.diff(5)
+
+        # ADX Strength Classification (industry-standard thresholds)
+        # 0 = weak (<20): No clear trend
+        # 1 = moderate (20-40): Developing trend
+        # 2 = strong (>40): Strong trend
+        df['adx_strength'] = pd.cut(
+            adx,
+            bins=[-np.inf, 20, 40, np.inf],
+            labels=[0, 1, 2]
+        ).astype(float)
+
+        # ============================================
+        # Step 7: Backward-compatible simple ADX
+        # ============================================
+        # Uses simple rolling sums instead of Wilder's smoothing
+        tr_14_simple = df['tr'].rolling(period).sum()
+        plus_di_simple = 100 * (plus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
+        minus_di_simple = 100 * (minus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
+        dx_simple = 100 * np.abs(plus_di_simple - minus_di_simple) / (plus_di_simple + minus_di_simple + 1e-10)
+        df['adx_simple'] = dx_simple.rolling(period).mean()
 
         return df
 
