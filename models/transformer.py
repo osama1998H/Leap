@@ -432,7 +432,7 @@ class TransformerPredictor:
         self.max_seq_length = self.config.get('max_seq_length', 120)
 
         # Initialize model
-        self.model = TemporalFusionTransformer(
+        self.network = TemporalFusionTransformer(
             input_dim=input_dim,
             d_model=self.d_model,
             n_heads=self.n_heads,
@@ -447,7 +447,7 @@ class TransformerPredictor:
         self.weight_decay = self.config.get('weight_decay', 1e-5)
 
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            self.network.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay
         )
@@ -459,6 +459,14 @@ class TransformerPredictor:
         # Training history
         self.train_losses = []
         self.val_losses = []
+
+    @property
+    def model(self):
+        """Backward compatibility alias for self.network.
+
+        Deprecated: Use .network attribute instead for consistency with PPOAgent.
+        """
+        return self.network
 
     def train(
         self,
@@ -506,7 +514,7 @@ class TransformerPredictor:
         patience_counter = 0
         best_state = None
 
-        self.model.train()
+        self.network.train()
 
         # Progress bar for epochs
         epoch_pbar = tqdm(range(epochs), desc="Training", unit="epoch", disable=not verbose)
@@ -526,11 +534,11 @@ class TransformerPredictor:
             for batch_X, batch_y in batch_pbar:
                 self.optimizer.zero_grad()
 
-                output = self.model(batch_X)
+                output = self.network(batch_X)
                 loss = self._compute_loss(output, batch_y)
 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1.0)
                 self.optimizer.step()
 
                 epoch_loss += loss.item()
@@ -549,7 +557,7 @@ class TransformerPredictor:
                     best_val_loss = val_loss
                     patience_counter = 0
                     # Deep copy state_dict to avoid tensor sharing during continued training
-                    best_state = {k: v.clone().detach().cpu() for k, v in self.model.state_dict().items()}
+                    best_state = {k: v.clone().detach().cpu() for k, v in self.network.state_dict().items()}
                 else:
                     patience_counter += 1
 
@@ -581,7 +589,7 @@ class TransformerPredictor:
 
         # Restore best model
         if best_state is not None:
-            self.model.load_state_dict(best_state)
+            self.network.load_state_dict(best_state)
 
         return {
             'train_losses': self.train_losses,
@@ -596,7 +604,7 @@ class TransformerPredictor:
 
         # Quantile loss
         quantile_loss = 0.0
-        for i, q in enumerate(self.model.quantiles):
+        for i, q in enumerate(self.network.quantiles):
             pred = output['quantiles'][:, i, :]
             errors = target - pred
             quantile_loss += torch.mean(torch.max(q * errors, (q - 1) * errors))
@@ -619,7 +627,7 @@ class TransformerPredictor:
         Returns:
             Average validation loss
         """
-        self.model.eval()
+        self.network.eval()
         total_loss = 0.0
         n_batches = 0
 
@@ -628,12 +636,12 @@ class TransformerPredictor:
 
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
-                output = self.model(batch_X)
+                output = self.network(batch_X)
                 loss = self._compute_loss(output, batch_y)
                 total_loss += loss.item()
                 n_batches += 1
 
-        self.model.train()
+        self.network.train()
         return total_loss / n_batches if n_batches > 0 else 0.0
 
     def predict(
@@ -642,11 +650,11 @@ class TransformerPredictor:
         return_uncertainty: bool = False
     ) -> Dict[str, np.ndarray]:
         """Make predictions."""
-        self.model.eval()
+        self.network.eval()
         X = torch.FloatTensor(X).to(self.device)
 
         with torch.no_grad():
-            output = self.model(X, return_attention=True)
+            output = self.network(X, return_attention=True)
 
         result = {
             'prediction': output['prediction'].cpu().numpy(),
@@ -684,14 +692,14 @@ class TransformerPredictor:
         if len(y.shape) == 1:
             y = y.unsqueeze(1)
 
-        self.model.train()
+        self.network.train()
         self.optimizer.zero_grad()
 
-        output = self.model(X)
+        output = self.network(X)
         loss = self._compute_loss(output, y)
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm_(self.network.parameters(), 0.5)
         self.optimizer.step()
 
         # Reset learning rate
@@ -712,7 +720,7 @@ class TransformerPredictor:
         )
         save_checkpoint(
             path=path,
-            model_state_dict=self.model.state_dict(),
+            model_state_dict=self.network.state_dict(),
             optimizer_state_dict=self.optimizer.state_dict(),
             config=self.config,
             training_history=training_history,
@@ -729,7 +737,7 @@ class TransformerPredictor:
         """
         checkpoint = load_checkpoint(path, self.device)
 
-        self.model.load_state_dict(checkpoint[CHECKPOINT_KEYS['MODEL_STATE']])
+        self.network.load_state_dict(checkpoint[CHECKPOINT_KEYS['MODEL_STATE']])
 
         if CHECKPOINT_KEYS['OPTIMIZER_STATE'] in checkpoint:
             self.optimizer.load_state_dict(checkpoint[CHECKPOINT_KEYS['OPTIMIZER_STATE']])
@@ -746,10 +754,10 @@ class TransformerPredictor:
 
     def get_attention_weights(self, X: np.ndarray) -> np.ndarray:
         """Get attention weights for interpretability."""
-        self.model.eval()
+        self.network.eval()
         X = torch.FloatTensor(X).to(self.device)
 
         with torch.no_grad():
-            output = self.model(X, return_attention=True)
+            output = self.network(X, return_attention=True)
 
         return output['temporal_attention'].cpu().numpy()

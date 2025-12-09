@@ -242,8 +242,17 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         if self.broker.is_connected:
             self.position_sync.sync()
 
-        # Execute action (with open_status check)
-        self._execute_action_live(action)
+        # Get current price for action execution
+        price = self._get_current_price()
+
+        # Execute action with open_status check for live trading
+        # BUY/SELL actions require open_status=True and close_only=False
+        if action in [Action.BUY, Action.SELL]:
+            if self.state.open_status and not self.state.close_only:
+                self._execute_action(action, price)
+        else:
+            # HOLD and CLOSE actions are always allowed
+            self._execute_action(action, price)
 
         # Update state from broker
         self._sync_with_broker()
@@ -269,24 +278,6 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         info = self._get_info()
 
         return obs, reward, terminated, truncated, info
-
-    def _execute_action_live(self, action: int):
-        """Execute trading action with open_status check."""
-        if action == Action.HOLD:
-            return
-
-        elif action == Action.BUY:
-            if self.state.open_status and not self.state.close_only:
-                if not self._has_position('long'):
-                    self._open_position('long', 0.0)  # Price handled by broker
-
-        elif action == Action.SELL:
-            if self.state.open_status and not self.state.close_only:
-                if not self._has_position('short'):
-                    self._open_position('short', 0.0)
-
-        elif action == Action.CLOSE:
-            self._close_all_positions(0.0)
 
     # -------------------------------------------------------------------------
     # Abstract method implementations
