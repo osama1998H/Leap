@@ -196,8 +196,8 @@ def test_adx_calculation():
     # Validate +DI and -DI ranges [0, 100]
     plus_di_valid = features['plus_di'].dropna()
     minus_di_valid = features['minus_di'].dropna()
-    assert plus_di_valid.min() >= 0, f"+DI min should be >= 0"
-    assert minus_di_valid.min() >= 0, f"-DI min should be >= 0"
+    assert plus_di_valid.min() >= 0, "+DI min should be >= 0"
+    assert minus_di_valid.min() >= 0, "-DI min should be >= 0"
     print(f"✓ +DI range: [{plus_di_valid.min():.2f}, {plus_di_valid.max():.2f}]")
     print(f"✓ -DI range: [{minus_di_valid.min():.2f}, {minus_di_valid.max():.2f}]")
 
@@ -209,8 +209,8 @@ def test_adx_calculation():
 
     # Validate DI spread is in [-1, 1]
     di_spread = features['di_spread'].dropna()
-    assert di_spread.min() >= -1.01, f"DI spread min should be >= -1"
-    assert di_spread.max() <= 1.01, f"DI spread max should be <= 1"
+    assert di_spread.min() >= -1.01, "DI spread min should be >= -1"
+    assert di_spread.max() <= 1.01, "DI spread max should be <= 1"
     print(f"✓ DI spread range: [{di_spread.min():.3f}, {di_spread.max():.3f}]")
 
     # Validate ADX strength categories
@@ -472,6 +472,38 @@ def test_wilder_atr_and_rsi():
     return True
 
 
+def test_non_unique_index_handling():
+    """Test that Wilder smoothing handles non-unique indexes correctly."""
+    print("\n" + "="*60)
+    print("Testing Non-Unique Index Handling...")
+    print("="*60)
+
+    fe = FeatureEngineer()
+
+    # Create series with non-unique index (duplicates)
+    values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+              11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0]
+    # Index with duplicates at positions 1 and 2
+    index = [0, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    series = pd.Series(values, index=index)
+
+    # This should not raise an error
+    result = fe._wilder_smoothing(series, period=14)
+
+    # Result should have same length as input
+    assert len(result) == len(series), f"Expected {len(series)} values, got {len(result)}"
+
+    # Should have some valid (non-NaN) values
+    valid_count = result.notna().sum()
+    assert valid_count > 0, "Should have some valid smoothed values"
+
+    print(f"✓ Non-unique index handled without error")
+    print(f"✓ Result length: {len(result)}, valid values: {valid_count}")
+    print("✓ Non-unique index handling test passed")
+
+    return True
+
+
 def test_tr_dm_alignment():
     """Test that TR and DM smoothing windows are aligned."""
     print("\n" + "="*60)
@@ -530,6 +562,7 @@ def run_all_tests():
         ("Feature Count and Names", test_feature_count_and_names),
         ("No Inf Values", test_no_inf_values),
         ("Wilder ATR and RSI", test_wilder_atr_and_rsi),
+        ("Non-Unique Index Handling", test_non_unique_index_handling),
         ("TR/DM Alignment", test_tr_dm_alignment),
     ]
 
@@ -540,9 +573,15 @@ def run_all_tests():
         try:
             test_func()
             passed += 1
-        except Exception as e:
+        except AssertionError as e:
             print(f"\n✗ FAILED: {name}")
-            print(f"  Error: {e}")
+            print(f"  Assertion Error: {e}")
+            import traceback
+            traceback.print_exc()
+            failed += 1
+        except (ValueError, TypeError, KeyError, IndexError, RuntimeError) as e:
+            print(f"\n✗ ERROR: {name}")
+            print(f"  {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
             failed += 1

@@ -325,9 +325,10 @@ class FeatureEngineer:
         # Subsequent ADX = ((Prior ADX * (period-1)) + Current DX) / period
         adx = pd.Series(index=df.index, dtype=float)
 
-        first_valid_dx = dx.first_valid_index()
-        if first_valid_dx is not None:
-            start_pos = df.index.get_loc(first_valid_dx)
+        # Find position of first valid DX value using numpy (handles non-unique indexes)
+        dx_not_na = dx.notna().to_numpy()
+        if dx_not_na.any():
+            start_pos = int(dx_not_na.argmax())
 
             if len(dx) >= start_pos + period:
                 first_adx_idx = start_pos + period - 1
@@ -490,11 +491,14 @@ class FeatureEngineer:
             Smoothed series using Wilder's method
         """
         # Handle edge cases
-        first_valid_idx = series.first_valid_index()
-        if first_valid_idx is None:
+        if series.isna().all():
             return pd.Series(index=series.index, dtype=float)
 
-        start_pos = series.index.get_loc(first_valid_idx)
+        # Find position of first valid value using numpy (handles non-unique indexes)
+        not_na_mask = series.notna().to_numpy()
+        if not not_na_mask.any():
+            return pd.Series(index=series.index, dtype=float)
+        start_pos = int(not_na_mask.argmax())
 
         if len(series) < start_pos + period:
             return pd.Series(index=series.index, dtype=float)
