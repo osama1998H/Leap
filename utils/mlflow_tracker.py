@@ -356,8 +356,18 @@ class MLflowTracker:
                         output = output[0]
                     if isinstance(output, dict):
                         # Handle dict outputs (e.g., TemporalFusionTransformer)
-                        # Extract the main prediction tensor
-                        output = output.get('prediction', output.get('output', list(output.values())[0]))
+                        # Prefer explicit keys, then fall back to first value
+                        if 'prediction' in output:
+                            output = output['prediction']
+                        elif 'output' in output:
+                            output = output['output']
+                        else:
+                            try:
+                                output = next(iter(output.values()))
+                            except StopIteration:
+                                raise ValueError(
+                                    "Model output dict is empty; cannot infer signature."
+                                )
 
                     output_np = output.cpu().numpy()
                     signature = infer_signature(input_example, output_np)
