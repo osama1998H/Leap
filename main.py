@@ -3,6 +3,15 @@ Leap Trading System - Main Orchestrator
 Command-line interface and main entry point for the trading system.
 """
 
+# Suppress urllib3 SSL warning for LibreSSL compatibility (macOS)
+# This must be done before any imports that load urllib3
+import warnings
+try:
+    from urllib3.exceptions import NotOpenSSLWarning
+    warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+except ImportError:
+    pass  # urllib3 < 2.0 doesn't have NotOpenSSLWarning
+
 import argparse
 import sys
 import os
