@@ -23,6 +23,12 @@ except ImportError:
     MLFLOW_AVAILABLE = False
     torch = None  # type: ignore
 
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 from config.settings import (
     MLflowConfig,
     TransformerConfig,
@@ -57,6 +63,7 @@ class MLflowTracker:
         self.config = config
         self.active_run = None
         self._is_setup = False
+        self._system_metrics_available = False
 
         if not MLFLOW_AVAILABLE:
             logger.warning(
@@ -90,13 +97,20 @@ class MLflowTracker:
                 f"(ID: {experiment.experiment_id})"
             )
 
-            # Enable system metrics logging if configured
+            # Enable system metrics logging if configured and psutil is available
             if self.config.log_system_metrics:
-                try:
-                    mlflow.enable_system_metrics_logging()
-                    logger.info("System metrics logging enabled")
-                except Exception as e:
-                    logger.warning(f"Could not enable system metrics: {e}")
+                if PSUTIL_AVAILABLE:
+                    try:
+                        mlflow.enable_system_metrics_logging()
+                        self._system_metrics_available = True
+                        logger.info("System metrics logging enabled")
+                    except Exception as e:
+                        logger.warning(f"Could not enable system metrics: {e}")
+                else:
+                    logger.warning(
+                        "System metrics logging disabled: psutil not installed. "
+                        "Install with: pip install psutil"
+                    )
 
             self._is_setup = True
             return True
@@ -132,7 +146,11 @@ class MLflowTracker:
             run_name = f"{self.config.run_name_prefix}_{timestamp}"
 
         try:
-            with mlflow.start_run(run_name=run_name, nested=nested) as run:
+            with mlflow.start_run(
+                run_name=run_name,
+                nested=nested,
+                log_system_metrics=self._system_metrics_available
+            ) as run:
                 self.active_run = run
 
                 # Add default tags
