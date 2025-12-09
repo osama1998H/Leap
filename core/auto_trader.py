@@ -18,6 +18,7 @@ from core.position_sync import PositionSynchronizer, PositionEvent, PositionChan
 from core.live_trading_env import LiveTradingEnvironment
 from core.data_pipeline import DataPipeline
 from core.trading_env import Action
+from core.trading_types import TradeStatistics  # Consolidated trade statistics
 from config.settings import AutoTraderConfig  # Single source of truth for config
 
 if TYPE_CHECKING:
@@ -41,7 +42,13 @@ class TraderState(Enum):
 
 @dataclass
 class TradingSession:
-    """Trading session statistics."""
+    """
+    Trading session statistics.
+
+    Note: Trade statistics fields (total_trades, winning_trades, etc.) mirror
+    TradeStatistics for backward compatibility. Use get_trade_statistics() to
+    get a TradeStatistics object for interoperability with other components.
+    """
     start_time: datetime = field(default_factory=datetime.now)
     end_time: Optional[datetime] = None
     start_balance: float = 0.0
@@ -72,6 +79,16 @@ class TradingSession:
         if self.start_balance == 0:
             return 0.0
         return (self.end_balance - self.start_balance) / self.start_balance * 100
+
+    def get_trade_statistics(self) -> TradeStatistics:
+        """Get trade statistics as a TradeStatistics object."""
+        return TradeStatistics(
+            total_trades=self.total_trades,
+            winning_trades=self.winning_trades,
+            losing_trades=self.losing_trades,
+            total_pnl=self.total_pnl,
+            max_drawdown=self.max_drawdown
+        )
 
 
 # Note: AutoTraderConfig is imported from config.settings to maintain single source of truth

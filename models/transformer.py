@@ -13,6 +13,8 @@ import logging
 import math
 from tqdm import tqdm
 
+from utils.device import resolve_device
+
 logger = logging.getLogger(__name__)
 
 
@@ -414,11 +416,8 @@ class TransformerPredictor:
         self.input_dim = input_dim
         self.config = config or {}
 
-        # Set device
-        if device == 'auto':
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        else:
-            self.device = torch.device(device)
+        # Set device using centralized utility
+        self.device = resolve_device(device)
 
         # Model parameters
         self.d_model = self.config.get('d_model', 128)

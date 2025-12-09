@@ -14,28 +14,12 @@ import json
 import os
 from tqdm import tqdm
 
+from core.trading_types import Trade  # Consolidated Trade dataclass
+
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Trade:
-    """Represents a single trade."""
-    entry_time: datetime
-    exit_time: Optional[datetime]
-    entry_price: float
-    exit_price: Optional[float]
-    direction: str  # 'long' or 'short'
-    size: float
-    stop_loss: Optional[float] = None  # Stop loss price level
-    take_profit: Optional[float] = None  # Take profit price level
-    pnl: float = 0.0
-    pnl_pct: float = 0.0
-    commission: float = 0.0
-    slippage: float = 0.0
-    status: str = 'open'  # 'open', 'closed', 'stopped'
 
 
 @dataclass

@@ -12,6 +12,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from collections import deque
 import logging
 
+from utils.device import resolve_device
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,11 +223,8 @@ class PPOAgent:
         self.action_dim = action_dim
         self.config = config or {}
 
-        # Device setup
-        if device == 'auto':
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        else:
-            self.device = torch.device(device)
+        # Device setup using centralized utility
+        self.device = resolve_device(device)
 
         # PPO hyperparameters
         self.gamma = self.config.get('gamma', 0.99)
