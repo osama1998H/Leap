@@ -69,6 +69,7 @@ Leap/
 │   ├── backtester.py          # Backtesting, walk-forward, Monte Carlo
 │   └── metrics.py             # 30+ performance metrics calculator
 ├── utils/
+│   ├── device.py              # Centralized PyTorch device management
 │   ├── logging_config.py      # Rotating log handler setup
 │   └── mlflow_tracker.py      # MLflow experiment tracking
 ├── tests/                     # pytest test suite (9 files)
@@ -97,6 +98,8 @@ Leap/
 | `AutoTrader` | `core/auto_trader.py` | Autonomous trading orchestrator |
 | `OnlineLearningManager` | `training/online_learning.py` | Continuous model adaptation |
 | `MLflowTracker` | `utils/mlflow_tracker.py` | Experiment tracking |
+| `Trade`, `TradeStatistics` | `core/trading_types.py` | Consolidated trade/position dataclasses |
+| `get_device`, `resolve_device` | `utils/device.py` | Centralized PyTorch device utilities |
 
 ### Data Flow
 

@@ -12,6 +12,8 @@ import os
 import json
 import time
 
+from utils.device import resolve_device
+
 if TYPE_CHECKING:
     from utils.mlflow_tracker import MLflowTracker
 
@@ -44,10 +46,8 @@ class ModelTrainer:
         self.config = config or {}
         self.mlflow_tracker = mlflow_tracker
 
-        if device == 'auto':
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        else:
-            self.device = torch.device(device)
+        # Device setup using centralized utility
+        self.device = resolve_device(device)
 
         # Training configuration
         self.predictor_epochs = self.config.get('predictor_epochs', 100)

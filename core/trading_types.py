@@ -4,8 +4,9 @@ Common types and configurations used across trading environments.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import IntEnum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 class Action(IntEnum):
@@ -77,3 +78,108 @@ class LiveTradingState(TradingState):
     session_start_balance: float = 0.0
     session_pnl: float = 0.0
     session_trades: int = 0
+
+
+@dataclass
+class Trade:
+    """
+    Represents a single trade (open or closed).
+
+    Consolidated dataclass used across backtester, auto_trader, and other modules.
+    """
+    entry_time: Union[datetime, int]
+    entry_price: float
+    direction: str  # 'long' or 'short'
+    size: float
+    exit_time: Optional[Union[datetime, int]] = None
+    exit_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    pnl: float = 0.0
+    pnl_pct: float = 0.0
+    commission: float = 0.0
+    slippage: float = 0.0
+    status: str = 'open'  # 'open', 'closed', 'stopped'
+
+    @property
+    def is_closed(self) -> bool:
+        """Check if trade is closed."""
+        return self.status in ('closed', 'stopped')
+
+    @property
+    def is_winning(self) -> bool:
+        """Check if trade is a winner (closed with positive PnL)."""
+        return self.is_closed and self.pnl > 0
+
+
+@dataclass
+class TradeStatistics:
+    """
+    Reusable trade statistics.
+
+    Used by TradingState, TradingSession, and BacktestResult to avoid duplication.
+
+    Note: max_drawdown requires equity curve tracking and cannot be computed from
+    individual trade PnL alone. When using update_from_trade(), max_drawdown will
+    not be updated. Set max_drawdown explicitly when you have access to equity data,
+    or use TradingSession which tracks drawdown via account balance.
+    """
+    total_trades: int = 0
+    winning_trades: int = 0
+    losing_trades: int = 0
+    breakeven_trades: int = 0  # Trades with pnl == 0
+    gross_profit: float = 0.0
+    gross_loss: float = 0.0
+    total_pnl: float = 0.0
+    max_drawdown: float = 0.0  # Must be set externally; not updated by update_from_trade()
+
+    @property
+    def win_rate(self) -> float:
+        """Calculate win rate as a ratio (0.0 to 1.0)."""
+        if self.total_trades == 0:
+            return 0.0
+        return self.winning_trades / self.total_trades
+
+    @property
+    def profit_factor(self) -> float:
+        """
+        Calculate profit factor (gross profit / gross loss).
+
+        Returns:
+            float('inf') when there are only winning trades (gross_loss == 0).
+            0.0 when there are no trades or only losing/breakeven trades.
+        """
+        if self.gross_loss == 0:
+            return float('inf') if self.gross_profit > 0 else 0.0
+        return self.gross_profit / self.gross_loss
+
+    @property
+    def avg_winner(self) -> float:
+        """Calculate average winning trade."""
+        if self.winning_trades == 0:
+            return 0.0
+        return self.gross_profit / self.winning_trades
+
+    @property
+    def avg_loser(self) -> float:
+        """Calculate average losing trade."""
+        if self.losing_trades == 0:
+            return 0.0
+        return self.gross_loss / self.losing_trades
+
+    def update_from_trade(self, trade: Trade) -> None:
+        """Update statistics from a closed trade."""
+        if not trade.is_closed:
+            return
+
+        self.total_trades += 1
+        self.total_pnl += trade.pnl
+
+        if trade.pnl > 0:
+            self.winning_trades += 1
+            self.gross_profit += trade.pnl
+        elif trade.pnl < 0:
+            self.losing_trades += 1
+            self.gross_loss += abs(trade.pnl)
+        else:
+            self.breakeven_trades += 1

@@ -13,6 +13,11 @@ from utils.mlflow_tracker import (
     create_tracker,
     MLFLOW_AVAILABLE,
 )
+from utils.device import (
+    get_device,
+    get_device_string,
+    resolve_device,
+)
 
 __all__ = [
     'setup_logging',
@@ -22,4 +27,7 @@ __all__ = [
     'MLflowTracker',
     'create_tracker',
     'MLFLOW_AVAILABLE',
+    'get_device',
+    'get_device_string',
+    'resolve_device',
 ]
