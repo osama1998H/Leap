@@ -139,7 +139,7 @@ def test_ppo_agent(state_dim: int):
             'n_steps': 128,
             'n_epochs': 4,
             'batch_size': 32,
-            'hidden_sizes': [64, 64]
+            'hidden_sizes': [64, 64, 32]
         },
         device='cpu'
     )
