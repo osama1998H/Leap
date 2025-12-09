@@ -165,9 +165,18 @@ def get_logger(name: str) -> logging.Logger:
     """
     Get a logger with the specified name.
 
-    This is the recommended way to get a logger in any module:
-        from utils.logging_config import get_logger
-        logger = get_logger(__name__)
+    NOTE: The recommended pattern for module-level logging is:
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+    This function is provided for convenience but using the standard
+    logging.getLogger(__name__) pattern directly is preferred as it:
+    - Has no import dependency on this module
+    - Is the standard Python logging pattern
+    - Is already used consistently across the codebase
+
+    Only use this function if you need specific functionality from this module.
 
     Args:
         name: Logger name (typically __name__)
