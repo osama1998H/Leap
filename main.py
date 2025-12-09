@@ -110,6 +110,9 @@ class LeapTradingSystem:
         self._online_manager = None
         self._mlflow_tracker = None
 
+        # Feature names used for model training (for inference compatibility)
+        self._model_feature_names = None
+
         logger.info("Leap Trading System initialized")
 
     @property
@@ -281,6 +284,11 @@ class LeapTradingSystem:
             symbol: Trading symbol (for MLflow tracking)
             timeframe: Timeframe (for MLflow tracking)
         """
+        # Store feature names used during training for inference compatibility
+        if market_data.feature_names:
+            self._model_feature_names = list(market_data.feature_names)
+            logger.info(f"Training with {len(self._model_feature_names)} computed features")
+
         # Prepare data
         splits, input_dim = self.prepare_training_data(market_data)
 
@@ -417,6 +425,32 @@ class LeapTradingSystem:
         if realistic_mode:
             logger.info("Running backtest with REALISTIC constraints (limited trades, capped position size)")
 
+        # Determine which feature names to use for inference
+        # Use saved model feature names if available, otherwise use current features
+        if self._model_feature_names:
+            inference_feature_names = self._model_feature_names
+            # Validate that all required features exist in current data
+            current_features = set(market_data.feature_names) if market_data.feature_names else set()
+            missing_features = set(inference_feature_names) - current_features
+            if missing_features:
+                logger.warning(
+                    f"Model requires {len(missing_features)} features not in current data: "
+                    f"{list(missing_features)[:5]}{'...' if len(missing_features) > 5 else ''}"
+                )
+        else:
+            inference_feature_names = list(market_data.feature_names) if market_data.feature_names else []
+            if self._predictor is not None:
+                # Check for mismatch when using old model without saved feature names
+                current_dim = 5 + len(inference_feature_names)  # OHLCV + features
+                if current_dim != self._predictor.input_dim:
+                    raise ValueError(
+                        f"Feature dimension mismatch: model expects {self._predictor.input_dim} features, "
+                        f"but current data has {current_dim} (5 OHLCV + {len(inference_feature_names)} computed). "
+                        f"The saved model does not have feature_names metadata, so automatic "
+                        f"feature matching is not possible. Please retrain the model with:\n"
+                        f"  python main.py train --symbol {market_data.symbol}"
+                    )
+
         # Define strategy
         def strategy(data, predictor=None, agent=None, positions=None):
             """Combined prediction + RL strategy."""
@@ -428,7 +462,7 @@ class LeapTradingSystem:
                 # Prepare input - include OHLCV + computed features to match training
                 recent_data = data.tail(self.config.data.lookback_window)
                 ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
-                feature_cols = ohlcv_cols + (list(market_data.feature_names) if market_data.feature_names else [])
+                feature_cols = ohlcv_cols + inference_feature_names
                 features = recent_data[feature_cols].values
 
                 if features is not None:
@@ -558,7 +592,8 @@ class LeapTradingSystem:
             self._predictor.save(os.path.join(directory, 'predictor.pt'))
             metadata['predictor'] = {
                 'input_dim': self._predictor.input_dim,
-                'exists': True
+                'exists': True,
+                'feature_names': self._model_feature_names if self._model_feature_names else []
             }
 
         if self._agent:
@@ -626,7 +661,13 @@ class LeapTradingSystem:
                 )
                 self._predictor.load(predictor_path)
                 loaded_predictor = True
-                logger.info(f"Loaded predictor with input_dim={input_dim}")
+
+                # Load feature names used during training
+                self._model_feature_names = predictor_metadata.get('feature_names')
+                if self._model_feature_names:
+                    logger.info(f"Loaded predictor with input_dim={input_dim}, {len(self._model_feature_names)} saved features")
+                else:
+                    logger.info(f"Loaded predictor with input_dim={input_dim}")
             else:
                 logger.warning(f"Predictor metadata exists but file not found: {predictor_path}")
 
