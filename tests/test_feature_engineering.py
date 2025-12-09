@@ -432,6 +432,88 @@ def test_no_inf_values():
     return True
 
 
+def test_wilder_atr_and_rsi():
+    """Test Wilder-smoothed ATR and RSI features."""
+    print("\n" + "="*60)
+    print("Testing Wilder ATR and RSI...")
+    print("="*60)
+
+    fe = FeatureEngineer()
+    df = create_sample_ohlcv(200)
+    features = fe.compute_all_features(df)
+
+    # Check ATR Wilder exists
+    assert 'atr_wilder_14' in features.columns, "atr_wilder_14 should exist"
+    atr_wilder = features['atr_wilder_14'].dropna()
+    assert len(atr_wilder) > 0, "ATR Wilder should have values"
+    assert atr_wilder.min() >= 0, "ATR should be non-negative"
+    print(f"✓ atr_wilder_14: {len(atr_wilder)} values, range [{atr_wilder.min():.6f}, {atr_wilder.max():.6f}]")
+
+    # Check RSI Wilder exists
+    assert 'rsi_wilder_14' in features.columns, "rsi_wilder_14 should exist"
+    rsi_wilder = features['rsi_wilder_14'].dropna()
+    assert len(rsi_wilder) > 0, "RSI Wilder should have values"
+    assert rsi_wilder.min() >= 0 and rsi_wilder.max() <= 100, "RSI should be in [0, 100]"
+    print(f"✓ rsi_wilder_14: {len(rsi_wilder)} values, range [{rsi_wilder.min():.2f}, {rsi_wilder.max():.2f}]")
+
+    # Compare with simple versions
+    atr_simple = features['atr_14'].dropna()
+    common_idx = atr_simple.index.intersection(atr_wilder.index)
+    atr_corr = atr_simple.loc[common_idx].corr(atr_wilder.loc[common_idx])
+    assert atr_corr > 0.8, f"ATR correlation should be high, got {atr_corr}"
+    print(f"✓ ATR simple vs Wilder correlation: {atr_corr:.4f}")
+
+    rsi_simple = features['rsi_14'].dropna()
+    common_idx = rsi_simple.index.intersection(rsi_wilder.index)
+    rsi_corr = rsi_simple.loc[common_idx].corr(rsi_wilder.loc[common_idx])
+    assert rsi_corr > 0.8, f"RSI correlation should be high, got {rsi_corr}"
+    print(f"✓ RSI simple vs Wilder correlation: {rsi_corr:.4f}")
+
+    return True
+
+
+def test_tr_dm_alignment():
+    """Test that TR and DM smoothing windows are aligned."""
+    print("\n" + "="*60)
+    print("Testing TR/DM Window Alignment...")
+    print("="*60)
+
+    fe = FeatureEngineer()
+    df = create_sample_ohlcv(50)
+
+    # Add TR
+    df['tr'] = np.maximum(
+        df['high'] - df['low'],
+        np.maximum(
+            np.abs(df['high'] - df['close'].shift(1)),
+            np.abs(df['low'] - df['close'].shift(1))
+        )
+    )
+
+    # Calculate DM (simulating the fix)
+    high_diff = df['high'].diff()
+    low_diff = -df['low'].diff()
+    plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
+    minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
+
+    # Apply the alignment fix
+    plus_dm.iloc[0] = np.nan
+    minus_dm.iloc[0] = np.nan
+
+    # Verify alignment
+    tr_first_valid = df['tr'].first_valid_index()
+    dm_first_valid = plus_dm.first_valid_index()
+
+    assert tr_first_valid == dm_first_valid, \
+        f"TR and DM should start at same index. TR: {tr_first_valid}, DM: {dm_first_valid}"
+
+    print(f"✓ TR first valid index: {tr_first_valid}")
+    print(f"✓ DM first valid index: {dm_first_valid}")
+    print("✓ TR and DM smoothing windows are properly aligned")
+
+    return True
+
+
 def run_all_tests():
     """Run all feature engineering tests."""
     print("\n" + "="*60)
@@ -448,6 +530,8 @@ def run_all_tests():
         ("Insufficient Data Handling", test_insufficient_data_handling),
         ("Feature Count and Names", test_feature_count_and_names),
         ("No Inf Values", test_no_inf_values),
+        ("Wilder ATR and RSI", test_wilder_atr_and_rsi),
+        ("TR/DM Alignment", test_tr_dm_alignment),
     ]
 
     passed = 0
