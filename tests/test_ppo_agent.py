@@ -501,9 +501,9 @@ class TestPPOAgentEvaluation:
 
         assert isinstance(avg_reward, float)
 
-    def test_evaluate_uses_deterministic_actions(self, ppo_agent, mock_env):
-        """Test evaluation uses deterministic policy."""
-        # Run evaluation twice, should get similar results
+    def test_evaluate_returns_finite_results(self, ppo_agent, mock_env):
+        """Test evaluation returns finite reward values."""
+        # Run evaluation twice
         reward1 = ppo_agent.evaluate(mock_env, n_episodes=3)
         reward2 = ppo_agent.evaluate(mock_env, n_episodes=3)
 

@@ -190,7 +190,7 @@ class TestLeapTradingSystemInitialization:
 
     def test_initialization_creates_directories(self, mock_config):
         """Test that initialization creates necessary directories."""
-        system = LeapTradingSystem(config=mock_config)
+        _system = LeapTradingSystem(config=mock_config)  # noqa: F841
 
         models_dir = os.path.join(mock_config.base_dir, 'models')
         logs_dir = os.path.join(mock_config.base_dir, 'logs')
@@ -687,10 +687,9 @@ class TestEdgeCases:
         assert trading_system._predictor is None
         assert trading_system._agent is None
 
-        # start_live_trading should handle this
-        with patch('builtins.print'):
-            trading_system.start_live_trading(paper=True)
-            # Should not crash, just log error
+        # start_live_trading should handle this gracefully (logs error and returns)
+        trading_system.start_live_trading(paper=True)
+        # Should not crash - method logs error via logger and returns early
 
     def test_save_models_without_predictor(self, trading_system, temp_dir):
         """Test save_models with only agent."""

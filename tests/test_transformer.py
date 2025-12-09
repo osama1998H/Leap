@@ -154,7 +154,7 @@ class TestMultiHeadAttention:
         # Create causal mask
         mask = torch.tril(torch.ones(10, 10))
 
-        output, attn_weights = mha(x, x, x, mask=mask)
+        output, _attn_weights = mha(x, x, x, mask=mask)
 
         assert output.shape == (4, 10, 32)
 
@@ -378,8 +378,8 @@ class TestTransformerPredictorTraining:
         assert 'train_losses' in results
         assert 'val_losses' in results
 
-    def test_train_loss_decreases(self, predictor, training_data):
-        """Test that training loss generally decreases."""
+    def test_train_records_losses_per_epoch(self, predictor, training_data):
+        """Test that training records loss for each epoch."""
         X_train, y_train, X_val, y_val = training_data
 
         results = predictor.train(
@@ -393,8 +393,7 @@ class TestTransformerPredictorTraining:
         )
 
         train_losses = results['train_losses']
-        # First loss should be >= last loss (generally)
-        # Allow for some variation
+        # Should have one loss value per epoch
         assert len(train_losses) == 5
 
     def test_train_with_callback(self, predictor, training_data):

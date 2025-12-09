@@ -93,7 +93,7 @@ class TestRiskLimits:
 # PositionSizing Tests
 # ============================================================================
 
-class TestPositionSizing:
+class TestPositionSizingDataclass:
     """Tests for PositionSizing dataclass."""
 
     def test_default_values(self):
@@ -284,7 +284,7 @@ class TestTradeRecording:
         rm = default_risk_manager
 
         # Default max is 5
-        for i in range(5):
+        for _ in range(5):
             rm.record_trade(-10.0)
 
         assert rm.state.is_trading_allowed is False

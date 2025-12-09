@@ -330,7 +330,7 @@ class TestModelTrainerInitialization:
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_dir = os.path.join(tmpdir, 'checkpoints')
 
-            trainer = ModelTrainer(
+            _trainer = ModelTrainer(  # noqa: F841
                 predictor=mock_predictor,
                 agent=mock_agent,
                 data_pipeline=mock_data_pipeline,
@@ -462,7 +462,7 @@ class TestAgentTraining:
 
     def test_train_agent_uses_default_timesteps(self, trainer, mock_env):
         """Test that default timesteps from config are used."""
-        results = trainer.train_agent(env=mock_env)
+        _results = trainer.train_agent(env=mock_env)  # noqa: F841
 
         # Should use config's agent_timesteps
         assert trainer.agent.trained
@@ -568,7 +568,7 @@ class TestCombinedTraining:
 class TestEvaluation:
     """Tests for model evaluation."""
 
-    def test_evaluate_predictor(self, trainer, mock_env):
+    def test_evaluate_predictor(self, trainer):
         """Test predictor evaluation."""
         test_data = MockMarketData(n_bars=200)
 
@@ -736,7 +736,7 @@ class TestEdgeCases:
         X_train, y_train, X_val, y_val = training_data
 
         # Run training multiple times
-        for i in range(3):
+        for _ in range(3):
             trainer.train_predictor(X_train, y_train, X_val, y_val, epochs=1)
             trainer.train_agent(mock_env, total_timesteps=100)
 

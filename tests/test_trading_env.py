@@ -321,11 +321,8 @@ class TestActionExecution:
         positions = trading_env.state.positions
         assert len(positions) == 1
 
-        # Entry price should be higher than market price due to spread/slippage
-        market_price = trading_env._get_current_price()
+        # Verify position was created with valid entry price
         position = positions[0]
-        # Entry was at previous price, so we can't directly compare
-        # Just verify position was created
         assert position.entry_price > 0
 
     def test_sell_applies_spread_and_slippage(self, trading_env):
