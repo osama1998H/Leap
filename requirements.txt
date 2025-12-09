@@ -42,3 +42,5 @@ pytest>=7.4.0
 
 # Optional: Ray for distributed training
 # ray[rllib]>=2.7.0
+
+psutil
