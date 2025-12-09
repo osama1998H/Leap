@@ -227,6 +227,7 @@ class LeapTradingSystem:
                 'dropout': self.config.transformer.dropout,
                 'max_seq_length': self.config.data.lookback_window,
                 'learning_rate': self.config.transformer.learning_rate,
+                'weight_decay': self.config.transformer.weight_decay,
                 'online_learning_rate': self.config.transformer.online_learning_rate
             },
             device=self.config.device
@@ -242,6 +243,8 @@ class LeapTradingSystem:
                 'gae_lambda': self.config.ppo.gae_lambda,
                 'clip_epsilon': self.config.ppo.clip_epsilon,
                 'entropy_coef': self.config.ppo.entropy_coef,
+                'value_coef': self.config.ppo.value_coef,
+                'max_grad_norm': self.config.ppo.max_grad_norm,
                 'n_steps': self.config.ppo.n_steps,
                 'n_epochs': self.config.ppo.n_epochs,
                 'batch_size': self.config.ppo.batch_size,
