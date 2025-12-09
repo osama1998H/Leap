@@ -354,6 +354,10 @@ class MLflowTracker:
 
                     if isinstance(output, tuple):
                         output = output[0]
+                    if isinstance(output, dict):
+                        # Handle dict outputs (e.g., TemporalFusionTransformer)
+                        # Extract the main prediction tensor
+                        output = output.get('prediction', output.get('output', list(output.values())[0]))
 
                     output_np = output.cpu().numpy()
                     signature = infer_signature(input_example, output_np)
