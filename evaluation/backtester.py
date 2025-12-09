@@ -348,6 +348,12 @@ class Backtester:
             stop_loss_pips=safe_stop_pips
         )
 
+        # Respect RiskManager gating / invalid sizing by skipping zero or negative sizes
+        # RiskManager.calculate_position_size() returns 0 when trading is halted
+        if size <= 0:
+            logger.debug("Skipping trade: computed position size is non-positive")
+            return False
+
         # Commission - check balance sufficiency before deducting
         commission = size * entry_price * self.commission_rate
         if commission > self.balance:

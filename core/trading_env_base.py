@@ -282,25 +282,21 @@ class BaseTradingEnvironment(gym.Env, ABC):
     # Statistics methods
     # -------------------------------------------------------------------------
 
-    def _calculate_sharpe_ratio(
-        self, returns: np.ndarray, risk_free_rate: float = 0.02
-    ) -> float:
+    def _calculate_sharpe_ratio(self, returns: np.ndarray) -> float:
         """
         Calculate Sharpe ratio using centralized MetricsCalculator.
 
         Delegates to MetricsCalculator for consistent metric calculations
-        across the codebase.
+        across the codebase. Risk-free rate is configured at initialization.
         """
         return self._metrics_calculator.sharpe_ratio(returns)
 
-    def _calculate_sortino_ratio(
-        self, returns: np.ndarray, risk_free_rate: float = 0.02
-    ) -> float:
+    def _calculate_sortino_ratio(self, returns: np.ndarray) -> float:
         """
         Calculate Sortino ratio using centralized MetricsCalculator.
 
         Delegates to MetricsCalculator for consistent metric calculations
-        across the codebase.
+        across the codebase. Risk-free rate is configured at initialization.
         """
         return self._metrics_calculator.sortino_ratio(returns)
 
