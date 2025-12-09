@@ -17,9 +17,18 @@ Leap is an AI-powered forex trading system combining Transformer-based price pre
 ## Common Commands
 
 ```bash
-# Training
+# Training (single symbol)
 python main.py train --symbol EURUSD --timeframe 1h --epochs 100 --timesteps 100000
 python main.py train --config config/custom_config.json
+
+# Training (multi-symbol - trains each symbol sequentially)
+python main.py train --symbols EURUSD GBPUSD USDJPY
+
+# Training (multi-timeframe - uses additional_timeframes from config as features)
+python main.py train --multi-timeframe --config config/my_config.json
+
+# Training (multi-symbol + multi-timeframe)
+python main.py train --symbols EURUSD GBPUSD --multi-timeframe
 
 # Backtesting
 python main.py backtest --symbol EURUSD --bars 50000
@@ -175,6 +184,8 @@ config.save("config.json")
 - **Gymnasium Integration**: Trading environments follow Gymnasium API for RL compatibility
 - **Walk-Forward Optimization**: Rolling train/test splits to prevent overfitting
 - **Event-Driven Architecture**: Position synchronizer uses callbacks for state changes
+- **Multi-Symbol Training**: CLI supports `--symbols` for training on multiple symbols sequentially
+- **Multi-Timeframe Features**: `--multi-timeframe` flag enables features from additional timeframes (config: `additional_timeframes`)
 
 ## Coding Conventions
 

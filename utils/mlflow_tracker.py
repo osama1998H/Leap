@@ -264,19 +264,32 @@ class MLflowTracker:
         except Exception as e:
             logger.warning(f"Failed to log artifacts from {local_dir}: {e}")
 
-    def log_predictor_params(self, config: TransformerConfig) -> None:
+    def log_predictor_params(
+        self,
+        config: TransformerConfig,
+        max_seq_length_override: Optional[int] = None
+    ) -> None:
         """Log Transformer predictor hyperparameters.
 
         Args:
             config: TransformerConfig dataclass
+            max_seq_length_override: Override for max_seq_length (use data.lookback_window)
+                                     to log the actual value used by the model
         """
+        # Use override if provided (this ensures we log the actual value used)
+        actual_max_seq_length = (
+            max_seq_length_override
+            if max_seq_length_override is not None
+            else config.max_seq_length
+        )
+
         params = {
             "predictor.d_model": config.d_model,
             "predictor.n_heads": config.n_heads,
             "predictor.n_encoder_layers": config.n_encoder_layers,
             "predictor.d_ff": config.d_ff,
             "predictor.dropout": config.dropout,
-            "predictor.max_seq_length": config.max_seq_length,
+            "predictor.max_seq_length": actual_max_seq_length,
             "predictor.learning_rate": config.learning_rate,
             "predictor.weight_decay": config.weight_decay,
             "predictor.batch_size": config.batch_size,
