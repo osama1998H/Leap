@@ -14,6 +14,10 @@ import math
 from tqdm import tqdm
 
 from utils.device import resolve_device
+from utils.checkpoint import (
+    save_checkpoint, load_checkpoint, TrainingHistory, CheckpointMetadata,
+    CHECKPOINT_KEYS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -697,31 +701,47 @@ class TransformerPredictor:
         return loss.item()
 
     def save(self, path: str):
-        """Save model checkpoint."""
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
-            'input_dim': self.input_dim,
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses
-        }, path)
-        logger.info(f"Model saved to {path}")
+        """Save model checkpoint using standardized format."""
+        training_history = TrainingHistory(
+            train_losses=self.train_losses,
+            val_losses=self.val_losses
+        )
+        metadata = CheckpointMetadata(
+            model_type='transformer',
+            input_dim=self.input_dim
+        )
+        save_checkpoint(
+            path=path,
+            model_state_dict=self.model.state_dict(),
+            optimizer_state_dict=self.optimizer.state_dict(),
+            config=self.config,
+            training_history=training_history,
+            metadata=metadata
+        )
 
     def load(self, path: str):
         """
-        Load model checkpoint.
+        Load model checkpoint with backward compatibility.
 
+        Supports both new standardized format and legacy checkpoint format.
         Note: Callers must construct TransformerPredictor with matching input_dim
         so the model architecture matches the loaded weights.
         """
-        # weights_only=False required for loading optimizer state and custom objects
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.config = checkpoint.get('config', self.config)
-        self.train_losses = checkpoint.get('train_losses', [])
-        self.val_losses = checkpoint.get('val_losses', [])
+        checkpoint = load_checkpoint(path, self.device)
+
+        self.model.load_state_dict(checkpoint[CHECKPOINT_KEYS['MODEL_STATE']])
+
+        if CHECKPOINT_KEYS['OPTIMIZER_STATE'] in checkpoint:
+            self.optimizer.load_state_dict(checkpoint[CHECKPOINT_KEYS['OPTIMIZER_STATE']])
+
+        if CHECKPOINT_KEYS['CONFIG'] in checkpoint:
+            self.config = checkpoint[CHECKPOINT_KEYS['CONFIG']]
+
+        # Extract training history
+        training_history = checkpoint.get(CHECKPOINT_KEYS['TRAINING_HISTORY'], TrainingHistory())
+        self.train_losses = training_history.train_losses
+        self.val_losses = training_history.val_losses
+
         logger.info(f"Model loaded from {path}")
 
     def get_attention_weights(self, X: np.ndarray) -> np.ndarray:

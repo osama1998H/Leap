@@ -48,7 +48,8 @@ class BaseTradingEnvironment(gym.Env, ABC):
         Initialize base trading environment.
 
         Args:
-            config: Optional EnvConfig dataclass (overrides individual params)
+            config: Optional EnvConfig dataclass (overrides individual params).
+                    If provided, individual params are ignored.
             initial_balance: Starting account balance
             commission: Commission rate per trade
             spread: Bid/ask spread
@@ -63,29 +64,33 @@ class BaseTradingEnvironment(gym.Env, ABC):
         """
         super().__init__()
 
-        # Use config if provided, otherwise use individual params
-        if config is not None:
-            self.initial_balance = config.initial_balance
-            self.commission = config.commission
-            self.spread = config.spread
-            self.slippage = config.slippage
-            self.leverage = config.leverage
-            self.max_position_size = config.max_position_size
-            self.stop_loss_pct = config.stop_loss_pct
-            self.take_profit_pct = config.take_profit_pct
-            self.window_size = config.window_size
-            self.max_drawdown_threshold = config.max_drawdown_threshold
-        else:
-            self.initial_balance = initial_balance
-            self.commission = commission
-            self.spread = spread
-            self.slippage = slippage
-            self.leverage = leverage
-            self.max_position_size = max_position_size
-            self.stop_loss_pct = stop_loss_pct
-            self.take_profit_pct = take_profit_pct
-            self.window_size = window_size
-            self.max_drawdown_threshold = 0.5
+        # Use config if provided, otherwise create from individual params
+        # EnvConfig.from_params() handles defaults centrally
+        if config is None:
+            config = EnvConfig.from_params(
+                initial_balance=initial_balance,
+                commission=commission,
+                spread=spread,
+                slippage=slippage,
+                leverage=leverage,
+                max_position_size=max_position_size,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                window_size=window_size
+            )
+
+        # Store config and extract values (single source of truth)
+        self._config = config
+        self.initial_balance = config.initial_balance
+        self.commission = config.commission
+        self.spread = config.spread
+        self.slippage = config.slippage
+        self.leverage = config.leverage
+        self.max_position_size = config.max_position_size
+        self.stop_loss_pct = config.stop_loss_pct
+        self.take_profit_pct = config.take_profit_pct
+        self.window_size = config.window_size
+        self.max_drawdown_threshold = config.max_drawdown_threshold
 
         self.render_mode = render_mode
         self.risk_manager = risk_manager

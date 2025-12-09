@@ -13,6 +13,10 @@ from collections import deque
 import logging
 
 from utils.device import resolve_device
+from utils.checkpoint import (
+    save_checkpoint, load_checkpoint, TrainingHistory, CheckpointMetadata,
+    CHECKPOINT_KEYS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -660,28 +664,58 @@ class PPOAgent:
         return {'online_loss': total_loss / n_epochs}
 
     def save(self, path: str):
-        """Save agent checkpoint."""
-        torch.save({
-            'network_state_dict': self.network.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
-            'training_stats': self.training_stats
-        }, path)
-        logger.info(f"Agent saved to {path}")
+        """Save agent checkpoint using standardized format."""
+        training_history = TrainingHistory(
+            policy_losses=self.training_stats.get('policy_losses', []),
+            value_losses=self.training_stats.get('value_losses', []),
+            entropy_losses=self.training_stats.get('entropy_losses', []),
+            total_losses=self.training_stats.get('total_losses', []),
+            approx_kl=self.training_stats.get('approx_kl', []),
+            clip_fraction=self.training_stats.get('clip_fraction', [])
+        )
+        metadata = CheckpointMetadata(
+            model_type='ppo',
+            state_dim=self.state_dim,
+            action_dim=self.action_dim
+        )
+        save_checkpoint(
+            path=path,
+            model_state_dict=self.network.state_dict(),
+            optimizer_state_dict=self.optimizer.state_dict(),
+            config=self.config,
+            training_history=training_history,
+            metadata=metadata
+        )
 
     def load(self, path: str):
         """
-        Load agent checkpoint.
+        Load agent checkpoint with backward compatibility.
 
+        Supports both new standardized format and legacy checkpoint format.
         Note: Callers must construct PPOAgent with matching state_dim/action_dim
         so the network architecture matches the loaded weights.
         """
-        # weights_only=False required for loading optimizer state and custom objects
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.network.load_state_dict(checkpoint['network_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.config = checkpoint.get('config', self.config)
-        self.training_stats = checkpoint.get('training_stats', self.training_stats)
+        checkpoint = load_checkpoint(path, self.device)
+
+        self.network.load_state_dict(checkpoint[CHECKPOINT_KEYS['MODEL_STATE']])
+
+        if CHECKPOINT_KEYS['OPTIMIZER_STATE'] in checkpoint:
+            self.optimizer.load_state_dict(checkpoint[CHECKPOINT_KEYS['OPTIMIZER_STATE']])
+
+        if CHECKPOINT_KEYS['CONFIG'] in checkpoint:
+            self.config = checkpoint[CHECKPOINT_KEYS['CONFIG']]
+
+        # Extract training history into training_stats dict
+        training_history = checkpoint.get(CHECKPOINT_KEYS['TRAINING_HISTORY'], TrainingHistory())
+        self.training_stats = {
+            'policy_losses': training_history.policy_losses,
+            'value_losses': training_history.value_losses,
+            'entropy_losses': training_history.entropy_losses,
+            'total_losses': training_history.total_losses,
+            'approx_kl': training_history.approx_kl,
+            'clip_fraction': training_history.clip_fraction
+        }
+
         logger.info(f"Agent loaded from {path}")
 
     def get_policy_distribution(self, state: np.ndarray) -> np.ndarray:

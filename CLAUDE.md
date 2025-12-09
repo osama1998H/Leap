@@ -70,6 +70,7 @@ Leap/
 │   └── metrics.py             # 30+ performance metrics calculator
 ├── utils/
 │   ├── device.py              # Centralized PyTorch device management
+│   ├── checkpoint.py          # Standardized model checkpoint save/load utilities
 │   ├── logging_config.py      # Rotating log handler setup
 │   └── mlflow_tracker.py      # MLflow experiment tracking
 ├── tests/                     # pytest test suite (9 files)
@@ -193,7 +194,9 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | Utility | Location | Usage |
 |---------|----------|-------|
 | Device management | `utils/device.py` | Use `resolve_device(device)` for PyTorch device handling |
+| Model checkpoints | `utils/checkpoint.py` | Use `save_checkpoint()` / `load_checkpoint()` for consistent model persistence |
 | Trade types | `core/trading_types.py` | Use `Trade`, `TradeStatistics` dataclasses |
+| Environment config | `core/trading_types.py` | Use `EnvConfig` or `EnvConfig.from_params()` factory |
 | Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
 | Position sizing | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` |
 
@@ -211,6 +214,49 @@ When validating trades:
 2. Calculate position parameters (entry, SL, TP)
 3. Call `RiskManager.should_take_trade()` with all 4 required parameters:
    - `entry_price`, `stop_loss_price`, `take_profit_price`, `direction`
+
+### Model Checkpoints
+
+Use the standardized checkpoint system (`utils/checkpoint.py`) for model save/load:
+
+```python
+from utils.checkpoint import save_checkpoint, load_checkpoint, TrainingHistory, CheckpointMetadata
+
+# Saving (in TransformerPredictor or PPOAgent)
+training_history = TrainingHistory(train_losses=losses, val_losses=val_losses)
+metadata = CheckpointMetadata(model_type='transformer', input_dim=128)
+save_checkpoint(path, model.state_dict(), optimizer.state_dict(), config, training_history, metadata)
+
+# Loading (with backward compatibility)
+checkpoint = load_checkpoint(path, device)
+model.load_state_dict(checkpoint['model_state_dict'])
+```
+
+**Standard checkpoint keys:**
+- `model_state_dict`: PyTorch model weights
+- `optimizer_state_dict`: Optimizer state
+- `config`: Model configuration dictionary
+- `training_history`: TrainingHistory object with losses/stats
+- `metadata`: CheckpointMetadata with architecture info
+
+Legacy checkpoints (using `network_state_dict`, `training_stats`, etc.) are automatically converted.
+
+### Environment Configuration
+
+Use `EnvConfig` for trading environment configuration:
+
+```python
+from core.trading_types import EnvConfig
+
+# Option 1: Direct instantiation
+config = EnvConfig(initial_balance=50000.0, leverage=50)
+
+# Option 2: Factory method (only overrides specified params)
+config = EnvConfig.from_params(initial_balance=50000.0, leverage=50)
+
+# Pass to environment
+env = TradingEnvironment(data=data, config=config)
+```
 
 ## Auto-Trader System
 
