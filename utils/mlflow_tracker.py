@@ -440,6 +440,10 @@ class MLflowTracker:
                     elif 'output' in output:
                         output = output['output']
                     else:
+                        if not output:
+                            raise ValueError(
+                                "Model output dict is empty; cannot infer signature."
+                            )
                         output = next(iter(output.values()))
 
                 output_np = output.cpu().numpy()
