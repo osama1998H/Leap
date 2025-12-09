@@ -5,11 +5,15 @@ Unified training interface for all models.
 
 import numpy as np
 import torch
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Dict, List, Optional, Tuple, Callable, TYPE_CHECKING
 from datetime import datetime
 import logging
 import os
 import json
+import time
+
+if TYPE_CHECKING:
+    from utils.mlflow_tracker import MLflowTracker
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +35,14 @@ class ModelTrainer:
         agent,
         data_pipeline,
         config: Optional[Dict] = None,
-        device: str = 'auto'
+        device: str = 'auto',
+        mlflow_tracker: Optional['MLflowTracker'] = None
     ):
         self.predictor = predictor
         self.agent = agent
         self.data_pipeline = data_pipeline
         self.config = config or {}
+        self.mlflow_tracker = mlflow_tracker
 
         if device == 'auto':
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -70,9 +76,20 @@ class ModelTrainer:
     ) -> Dict:
         """Train the prediction model."""
         epochs = epochs or self.predictor_epochs
+        start_time = time.time()
 
         logger.info(f"Training Transformer predictor for {epochs} epochs...")
         logger.info(f"Training data shape: {X_train.shape}")
+
+        # Create MLflow callback for epoch-level logging
+        mlflow_callback = None
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            def mlflow_callback(metrics: Dict, epoch: int):
+                self.mlflow_tracker.log_metrics({
+                    "predictor.train_loss": metrics.get("train_loss", 0),
+                    "predictor.val_loss": metrics.get("val_loss", 0),
+                    "predictor.learning_rate": metrics.get("learning_rate", 0),
+                }, step=epoch)
 
         results = self.predictor.train(
             X_train=X_train,
@@ -80,16 +97,39 @@ class ModelTrainer:
             X_val=X_val,
             y_val=y_val,
             epochs=epochs,
-            batch_size=self.batch_size
+            batch_size=self.batch_size,
+            mlflow_callback=mlflow_callback
         )
+
+        training_duration = time.time() - start_time
 
         self.training_history['predictor'].append({
             'timestamp': datetime.now().isoformat(),
             'epochs': epochs,
             'final_train_loss': results['train_losses'][-1] if results['train_losses'] else None,
             'final_val_loss': results['val_losses'][-1] if results['val_losses'] else None,
-            'best_val_loss': results.get('best_val_loss')
+            'best_val_loss': results.get('best_val_loss'),
+            'training_duration_seconds': training_duration
         })
+
+        # Log training summary to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            final_metrics = {
+                "train_loss": results['train_losses'][-1] if results['train_losses'] else 0,
+                "val_loss": results['val_losses'][-1] if results['val_losses'] else 0,
+                "best_val_loss": results.get('best_val_loss', 0),
+            }
+            self.mlflow_tracker.log_training_summary(
+                "predictor", final_metrics, training_duration
+            )
+
+            # Log model to MLflow
+            if hasattr(self.predictor, 'model') and hasattr(self.predictor, 'input_dim'):
+                self.mlflow_tracker.log_predictor_model(
+                    model=self.predictor.model,
+                    input_dim=self.predictor.input_dim,
+                    seq_length=X_train.shape[1] if len(X_train.shape) > 1 else 120
+                )
 
         # Save checkpoint
         self._save_predictor_checkpoint(results)
@@ -109,22 +149,68 @@ class ModelTrainer:
     ) -> Dict:
         """Train the RL agent."""
         timesteps = total_timesteps or self.agent_timesteps
+        start_time = time.time()
 
         logger.info(f"Training PPO agent for {timesteps} timesteps...")
+
+        # Create MLflow callback for step-level logging
+        mlflow_callback = None
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            def mlflow_callback(metrics: Dict, step: int):
+                mlflow_metrics = {}
+                if "policy_loss" in metrics:
+                    mlflow_metrics["agent.policy_loss"] = metrics["policy_loss"]
+                if "value_loss" in metrics:
+                    mlflow_metrics["agent.value_loss"] = metrics["value_loss"]
+                if "entropy" in metrics:
+                    mlflow_metrics["agent.entropy"] = metrics["entropy"]
+                if "clip_fraction" in metrics:
+                    mlflow_metrics["agent.clip_fraction"] = metrics["clip_fraction"]
+                if "episode_reward" in metrics:
+                    mlflow_metrics["agent.episode_reward"] = metrics["episode_reward"]
+                if "episode_length" in metrics:
+                    mlflow_metrics["agent.episode_length"] = metrics["episode_length"]
+
+                if mlflow_metrics:
+                    self.mlflow_tracker.log_metrics(mlflow_metrics, step=step)
 
         results = self.agent.train_on_env(
             env=env,
             total_timesteps=timesteps,
             eval_env=eval_env,
-            eval_frequency=10000
+            eval_frequency=10000,
+            mlflow_callback=mlflow_callback
         )
+
+        training_duration = time.time() - start_time
+
+        final_reward = np.mean(results['episode_rewards'][-10:]) if results['episode_rewards'] else None
 
         self.training_history['agent'].append({
             'timestamp': datetime.now().isoformat(),
             'timesteps': timesteps,
-            'final_reward': np.mean(results['episode_rewards'][-10:]) if results['episode_rewards'] else None,
-            'total_episodes': len(results['episode_rewards'])
+            'final_reward': final_reward,
+            'total_episodes': len(results['episode_rewards']),
+            'training_duration_seconds': training_duration
         })
+
+        # Log training summary to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            final_metrics = {
+                "final_reward": final_reward if final_reward is not None else 0,
+                "total_episodes": len(results['episode_rewards']),
+                "avg_episode_length": np.mean(results.get('episode_lengths', [0])) if results.get('episode_lengths') else 0,
+            }
+            self.mlflow_tracker.log_training_summary(
+                "agent", final_metrics, training_duration
+            )
+
+            # Log model to MLflow
+            if hasattr(self.agent, 'network') and hasattr(self.agent, 'state_dim'):
+                self.mlflow_tracker.log_agent_model(
+                    model=self.agent.network,
+                    state_dim=self.agent.state_dim
+                )
 
         # Save checkpoint
         self._save_agent_checkpoint(results)

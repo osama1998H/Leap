@@ -25,6 +25,9 @@ seaborn>=0.12.0
 # Logging and Monitoring
 tensorboard>=2.14.0
 
+# Experiment Tracking
+mlflow>=2.10.0
+
 # Configuration
 dataclasses-json>=0.6.0
 

@@ -25,6 +25,7 @@ from training.online_learning import OnlineLearningManager, AdaptiveTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
 from evaluation.metrics import PerformanceAnalyzer
 from utils.logging_config import setup_logging, get_logger
+from utils.mlflow_tracker import MLflowTracker, create_tracker, MLFLOW_AVAILABLE
 
 # Auto-trader imports (optional - may not be available on all platforms)
 try:
@@ -107,8 +108,16 @@ class LeapTradingSystem:
         self._trainer = None
         self._backtester = None
         self._online_manager = None
+        self._mlflow_tracker = None
 
         logger.info("Leap Trading System initialized")
+
+    @property
+    def mlflow_tracker(self) -> Optional[MLflowTracker]:
+        """Get or create MLflow tracker."""
+        if self._mlflow_tracker is None and self.config.mlflow.enabled:
+            self._mlflow_tracker = create_tracker(self.config)
+        return self._mlflow_tracker
 
     def _setup_directories(self):
         """Create necessary directories."""
@@ -259,9 +268,19 @@ class LeapTradingSystem:
         self,
         market_data,
         predictor_epochs: Optional[int] = None,
-        agent_timesteps: Optional[int] = None
+        agent_timesteps: Optional[int] = None,
+        symbol: str = 'EURUSD',
+        timeframe: str = '1h'
     ):
-        """Train both models."""
+        """Train both models.
+
+        Args:
+            market_data: Market data for training
+            predictor_epochs: Number of epochs for predictor training
+            agent_timesteps: Number of timesteps for agent training
+            symbol: Trading symbol (for MLflow tracking)
+            timeframe: Timeframe (for MLflow tracking)
+        """
         # Prepare data
         splits, input_dim = self.prepare_training_data(market_data)
 
@@ -272,7 +291,7 @@ class LeapTradingSystem:
         # Initialize models
         self.initialize_models(input_dim, state_dim)
 
-        # Create trainer
+        # Create trainer with MLflow tracker
         trainer = ModelTrainer(
             predictor=self._predictor,
             agent=self._agent,
@@ -282,33 +301,75 @@ class LeapTradingSystem:
                 'agent_timesteps': agent_timesteps or self.config.ppo.total_timesteps,
                 'batch_size': self.config.transformer.batch_size,
                 'checkpoint_dir': os.path.join(self.config.base_dir, self.config.checkpoints_dir)
+            },
+            mlflow_tracker=self.mlflow_tracker
+        )
+
+        # Start MLflow run if enabled
+        tracker = self.mlflow_tracker
+        run_context = None
+
+        if tracker and tracker.is_enabled:
+            run_name = f"train-{symbol}-{timeframe}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_context = tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "command": "train"
+                }
+            )
+            run_context.__enter__()
+
+            # Log configuration parameters
+            tracker.log_params({
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "n_bars": len(market_data.close),
+                "input_dim": input_dim,
+                "state_dim": state_dim,
+            })
+            tracker.log_predictor_params(self.config.transformer)
+            tracker.log_agent_params(self.config.ppo)
+
+        try:
+            # Train predictor
+            logger.info("Training prediction model...")
+            predictor_results = trainer.train_predictor(
+                X_train=splits['train'][0],
+                y_train=splits['train'][1],
+                X_val=splits['val'][0],
+                y_val=splits['val'][1]
+            )
+
+            # Train agent
+            logger.info("Training RL agent...")
+            agent_results = trainer.train_agent(
+                env=env,
+                total_timesteps=agent_timesteps or self.config.ppo.total_timesteps
+            )
+
+            # Save models
+            save_dir = os.path.join(self.config.base_dir, self.config.models_dir)
+            trainer.save_all(save_dir)
+
+            # Log artifacts to MLflow
+            if tracker and tracker.is_enabled:
+                config_path = os.path.join(save_dir, 'config.json')
+                if os.path.exists(config_path):
+                    tracker.log_artifact(config_path)
+                history_path = os.path.join(save_dir, 'training_history.json')
+                if os.path.exists(history_path):
+                    tracker.log_artifact(history_path)
+
+            return {
+                'predictor': predictor_results,
+                'agent': agent_results
             }
-        )
 
-        # Train predictor
-        logger.info("Training prediction model...")
-        predictor_results = trainer.train_predictor(
-            X_train=splits['train'][0],
-            y_train=splits['train'][1],
-            X_val=splits['val'][0],
-            y_val=splits['val'][1]
-        )
-
-        # Train agent
-        logger.info("Training RL agent...")
-        agent_results = trainer.train_agent(
-            env=env,
-            total_timesteps=agent_timesteps or self.config.ppo.total_timesteps
-        )
-
-        # Save models
-        save_dir = os.path.join(self.config.base_dir, self.config.models_dir)
-        trainer.save_all(save_dir)
-
-        return {
-            'predictor': predictor_results,
-            'agent': agent_results
-        }
+        finally:
+            if run_context is not None:
+                run_context.__exit__(None, None, None)
 
     def backtest(
         self,
@@ -704,6 +765,25 @@ Examples:
         help='Log file path'
     )
 
+    # MLflow arguments
+    parser.add_argument(
+        '--mlflow-experiment',
+        default=None,
+        help='MLflow experiment name (default: from config)'
+    )
+
+    parser.add_argument(
+        '--mlflow-tracking-uri',
+        default=None,
+        help='MLflow tracking URI (default: mlruns)'
+    )
+
+    parser.add_argument(
+        '--no-mlflow',
+        action='store_true',
+        help='Disable MLflow tracking'
+    )
+
     args = parser.parse_args()
 
     # Load config first (needed for logging setup)
@@ -712,6 +792,14 @@ Examples:
     else:
         config = get_config()
 
+    # Apply MLflow CLI overrides
+    if args.no_mlflow:
+        config.mlflow.enabled = False
+    if args.mlflow_experiment:
+        config.mlflow.experiment_name = args.mlflow_experiment
+    if args.mlflow_tracking_uri:
+        config.mlflow.tracking_uri = args.mlflow_tracking_uri
+
     # Setup logging with config and CLI overrides
     # CLI args take precedence when explicitly provided (not None)
     initialize_logging(
@@ -719,6 +807,12 @@ Examples:
         log_level_override=args.log_level,
         log_file_override=args.log_file
     )
+
+    # Log MLflow status
+    if config.mlflow.enabled and MLFLOW_AVAILABLE:
+        logger.info(f"MLflow tracking enabled: experiment='{config.mlflow.experiment_name}'")
+    elif config.mlflow.enabled and not MLFLOW_AVAILABLE:
+        logger.warning("MLflow is enabled in config but not installed. Install with: pip install mlflow")
 
     # Create system
     system = LeapTradingSystem(config)
@@ -742,7 +836,9 @@ Examples:
         results = system.train(
             market_data=market_data,
             predictor_epochs=args.epochs,
-            agent_timesteps=args.timesteps
+            agent_timesteps=args.timesteps,
+            symbol=args.symbol,
+            timeframe=args.timeframe
         )
 
         # Save
@@ -795,8 +891,39 @@ Examples:
             results_data['monte_carlo'] = analysis['monte_carlo']
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        with open(os.path.join(results_dir, f'backtest_{timestamp}.json'), 'w') as f:
+        results_file = os.path.join(results_dir, f'backtest_{timestamp}.json')
+        with open(results_file, 'w') as f:
             json.dump(results_data, f, indent=2)
+
+        # Log backtest results to MLflow
+        tracker = system.mlflow_tracker
+        if tracker and tracker.is_enabled:
+            run_name = f"backtest-{args.symbol}-{args.timeframe}-{timestamp}"
+            with tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": args.symbol,
+                    "timeframe": args.timeframe,
+                    "command": "backtest",
+                    "realistic_mode": str(args.realistic)
+                }
+            ):
+                # Log parameters
+                tracker.log_params({
+                    "symbol": args.symbol,
+                    "timeframe": args.timeframe,
+                    "n_bars": args.bars,
+                    "realistic_mode": args.realistic,
+                    "monte_carlo": args.monte_carlo
+                })
+
+                # Log backtest metrics
+                tracker.log_backtest_results(analysis)
+
+                # Log results file as artifact
+                tracker.log_artifact(results_file)
+
+                logger.info(f"Backtest results logged to MLflow: {run_name}")
 
     elif args.command == 'walkforward':
         logger.info("Starting walk-forward analysis...")

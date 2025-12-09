@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 from collections import deque
 import logging
 
@@ -497,10 +497,20 @@ class PPOAgent:
         total_timesteps: int,
         eval_env=None,
         eval_frequency: int = 10000,
-        verbose: bool = True
+        verbose: bool = True,
+        mlflow_callback: Optional[Callable] = None
     ) -> Dict:
         """
         Train agent on environment.
+
+        Args:
+            env: Training environment
+            total_timesteps: Total timesteps to train
+            eval_env: Optional evaluation environment
+            eval_frequency: Evaluation frequency in timesteps
+            verbose: Whether to log progress
+            mlflow_callback: Optional callback for MLflow logging.
+                Called with (metrics_dict, step) after each policy update.
         """
         state, _ = env.reset()
         episode_rewards = []
@@ -548,6 +558,19 @@ class PPOAgent:
                     f"Avg Reward (10 ep): {avg_reward:.2f} | "
                     f"Policy Loss: {update_stats['policy_loss']:.4f}"
                 )
+
+            # MLflow callback for tracking
+            if mlflow_callback is not None:
+                callback_metrics = {
+                    "policy_loss": update_stats['policy_loss'],
+                    "value_loss": update_stats['value_loss'],
+                    "entropy": update_stats['entropy_loss'],
+                    "clip_fraction": update_stats.get('clip_fraction', 0),
+                }
+                if len(episode_rewards) > 0:
+                    callback_metrics["episode_reward"] = episode_rewards[-1]
+                    callback_metrics["avg_reward_10ep"] = np.mean(episode_rewards[-10:])
+                mlflow_callback(callback_metrics, timestep)
 
             # Evaluation
             if eval_env is not None and timestep % eval_frequency < self.n_steps:
