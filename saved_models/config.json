@@ -164,5 +164,20 @@
     "magic_number": 234567,
     "log_trades": true,
     "heartbeat_interval": 60.0
+  },
+  "mlflow": {
+    "enabled": true,
+    "tracking_uri": "mlruns",
+    "experiment_name": "leap-trading",
+    "run_name_prefix": "training",
+    "log_models": true,
+    "log_system_metrics": true,
+    "log_artifacts": true,
+    "register_models": true,
+    "registered_model_name_predictor": "leap-predictor",
+    "registered_model_name_agent": "leap-ppo-agent",
+    "autolog_enabled": false,
+    "log_every_n_epoch": 1,
+    "log_every_n_step": null
   }
 }

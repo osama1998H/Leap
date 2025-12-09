@@ -1,19 +1,21 @@
 {
   "predictor": [
     {
-      "timestamp": "2025-12-08T20:32:34.628771",
+      "timestamp": "2025-12-09T19:57:27.029942",
       "epochs": 100,
-      "final_train_loss": 0.013301355971727902,
-      "final_val_loss": 0.1322421282529831,
-      "best_val_loss": 0.015793945640325546
+      "final_train_loss": 0.013403441889796598,
+      "final_val_loss": 0.10106598986312747,
+      "best_val_loss": 0.015353526594117284,
+      "training_duration_seconds": 876.2020418643951
     }
   ],
   "agent": [
     {
-      "timestamp": "2025-12-08T20:34:24.261071",
+      "timestamp": "2025-12-09T20:05:34.541822",
       "timesteps": 100000,
-      "final_reward": -52573.284003127075,
-      "total_episodes": 2
+      "final_reward": -67043.58026271564,
+      "total_episodes": 2,
+      "training_duration_seconds": 484.0798327922821
     }
   ],
   "combined": []
