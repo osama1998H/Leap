@@ -168,26 +168,43 @@ class LeapTradingSystem:
         self,
         symbol: str = 'EURUSD',
         timeframe: str = '1h',
-        n_bars: int = 50000
+        n_bars: int = 50000,
+        additional_timeframes: Optional[list] = None
     ):
-        """Load and prepare market data."""
+        """Load and prepare market data with optional multi-timeframe features.
+
+        Args:
+            symbol: Trading symbol (e.g., 'EURUSD')
+            timeframe: Primary timeframe (e.g., '1h')
+            n_bars: Number of bars to load
+            additional_timeframes: List of additional timeframes to use as features
+                                   (e.g., ['15m', '4h', '1d'])
+
+        Returns:
+            MarketData object with features from all timeframes
+        """
         logger.info(f"Loading data for {symbol} {timeframe}...")
 
         # Connect to data source
         self.data_pipeline.connect()
 
-        # Fetch historical data
+        # Fetch historical data with multi-timeframe features
         market_data = self.data_pipeline.fetch_historical_data(
             symbol=symbol,
             timeframe=timeframe,
-            n_bars=n_bars
+            n_bars=n_bars,
+            additional_timeframes=additional_timeframes
         )
 
         if market_data is None:
             logger.error("Failed to load market data")
             return None
 
-        logger.info(f"Loaded {len(market_data.close)} bars with {len(market_data.feature_names)} features")
+        n_features = len(market_data.feature_names) if market_data.feature_names else 0
+        logger.info(f"Loaded {len(market_data.close)} bars with {n_features} features")
+
+        if additional_timeframes:
+            logger.info(f"Multi-timeframe features included from: {additional_timeframes}")
 
         return market_data
 
@@ -285,7 +302,8 @@ class LeapTradingSystem:
         predictor_epochs: Optional[int] = None,
         agent_timesteps: Optional[int] = None,
         symbol: str = 'EURUSD',
-        timeframe: str = '1h'
+        timeframe: str = '1h',
+        additional_timeframes: Optional[list] = None
     ):
         """Train both models.
 
@@ -295,6 +313,7 @@ class LeapTradingSystem:
             agent_timesteps: Number of timesteps for agent training
             symbol: Trading symbol (for MLflow tracking)
             timeframe: Timeframe (for MLflow tracking)
+            additional_timeframes: List of additional timeframes used for features
         """
         # Store feature names used during training for inference compatibility
         if market_data.feature_names:
@@ -343,14 +362,22 @@ class LeapTradingSystem:
             run_context.__enter__()
 
             # Log configuration parameters
-            tracker.log_params({
+            params = {
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "n_bars": len(market_data.close),
                 "input_dim": input_dim,
                 "state_dim": state_dim,
-            })
-            tracker.log_predictor_params(self.config.transformer)
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
+            tracker.log_predictor_params(
+                self.config.transformer,
+                max_seq_length_override=self.config.data.lookback_window
+            )
             tracker.log_agent_params(self.config.ppo)
 
         try:
@@ -754,35 +781,48 @@ Examples:
 
     parser.add_argument(
         '--symbol', '-s',
-        default='EURUSD',
-        help='Trading symbol (default: EURUSD)'
+        default=None,
+        help='Trading symbol (default: from config or EURUSD). For multi-symbol training, use --multi-symbol'
+    )
+
+    parser.add_argument(
+        '--symbols',
+        nargs='+',
+        default=None,
+        help='Multiple symbols for training (e.g., --symbols EURUSD GBPUSD). Overrides --symbol'
     )
 
     parser.add_argument(
         '--timeframe', '-t',
-        default='1h',
-        help='Timeframe (default: 1h)'
+        default=None,
+        help='Primary timeframe (default: from config or 1h)'
+    )
+
+    parser.add_argument(
+        '--multi-timeframe',
+        action='store_true',
+        help='Enable multi-timeframe features (uses additional_timeframes from config)'
     )
 
     parser.add_argument(
         '--bars', '-b',
         type=int,
-        default=50000,
+        default=None,
         help='Number of bars to load (default: 50000)'
     )
 
     parser.add_argument(
         '--epochs', '-e',
         type=int,
-        default=100,
-        help='Training epochs for predictor (default: 100)'
+        default=None,
+        help='Training epochs for predictor (default: from config or 100)'
     )
 
     parser.add_argument(
         '--timesteps',
         type=int,
-        default=100000,
-        help='Training timesteps for agent (default: 100000)'
+        default=None,
+        help='Training timesteps for agent (default: from config or 100000)'
     )
 
     parser.add_argument(
@@ -861,6 +901,35 @@ Examples:
     if args.mlflow_tracking_uri:
         config.mlflow.tracking_uri = args.mlflow_tracking_uri
 
+    # Resolve CLI defaults from config (CLI takes precedence over config)
+    # Symbols: --symbols > --symbol > config.data.symbols[0] > 'EURUSD'
+    if args.symbols:
+        symbols = args.symbols
+    elif args.symbol:
+        symbols = [args.symbol]
+    elif config.data.symbols:
+        symbols = config.data.symbols
+    else:
+        symbols = ['EURUSD']
+
+    # Primary symbol for single-symbol commands
+    primary_symbol = symbols[0]
+
+    # Timeframe: CLI > config > '1h'
+    timeframe = args.timeframe or config.data.primary_timeframe or '1h'
+
+    # Additional timeframes for multi-timeframe features
+    additional_timeframes = config.data.additional_timeframes if args.multi_timeframe else []
+
+    # Bars: CLI > 50000
+    n_bars = args.bars if args.bars is not None else 50000
+
+    # Epochs: CLI > config > 100
+    epochs = args.epochs if args.epochs is not None else config.transformer.epochs
+
+    # Timesteps: CLI > config > 100000
+    timesteps = args.timesteps if args.timesteps is not None else config.ppo.total_timesteps
+
     # Setup logging with config and CLI overrides
     # CLI args take precedence when explicitly provided (not None)
     initialize_logging(
@@ -882,43 +951,70 @@ Examples:
     if args.command == 'train':
         logger.info("Starting training...")
 
-        # Load data
-        market_data = system.load_data(
-            symbol=args.symbol,
-            timeframe=args.timeframe,
-            n_bars=args.bars
-        )
+        # Multi-symbol training
+        if len(symbols) > 1:
+            logger.info(f"Multi-symbol training enabled for: {symbols}")
 
-        if market_data is None:
-            logger.error("Failed to load data. Exiting.")
-            sys.exit(1)
+        all_results = {}
+        for symbol in symbols:
+            logger.info(f"{'='*50}")
+            logger.info(f"Training on {symbol} ({timeframe})")
+            logger.info(f"{'='*50}")
 
-        # Train
-        results = system.train(
-            market_data=market_data,
-            predictor_epochs=args.epochs,
-            agent_timesteps=args.timesteps,
-            symbol=args.symbol,
-            timeframe=args.timeframe
-        )
+            # Load data with optional multi-timeframe features
+            market_data = system.load_data(
+                symbol=symbol,
+                timeframe=timeframe,
+                n_bars=n_bars,
+                additional_timeframes=additional_timeframes
+            )
 
-        # Save
-        system.save_models(args.model_dir)
+            if market_data is None:
+                logger.error(f"Failed to load data for {symbol}. Skipping...")
+                continue
+
+            # Train
+            results = system.train(
+                market_data=market_data,
+                predictor_epochs=epochs,
+                agent_timesteps=timesteps,
+                symbol=symbol,
+                timeframe=timeframe,
+                additional_timeframes=additional_timeframes
+            )
+
+            all_results[symbol] = results
+
+            # Save models per symbol if multi-symbol
+            if len(symbols) > 1:
+                symbol_model_dir = os.path.join(args.model_dir, symbol)
+                system.save_models(symbol_model_dir)
+                logger.info(f"Models for {symbol} saved to {symbol_model_dir}")
+
+        # Save to default location for single symbol
+        if len(symbols) == 1:
+            system.save_models(args.model_dir)
 
         logger.info("Training complete!")
-        print(json.dumps({
-            'predictor_final_loss': results['predictor']['train_losses'][-1] if results['predictor']['train_losses'] else None,
-            'agent_episodes': len(results['agent']['episode_rewards'])
-        }, indent=2))
+
+        # Print summary
+        summary = {}
+        for symbol, results in all_results.items():
+            summary[symbol] = {
+                'predictor_final_loss': results['predictor']['train_losses'][-1] if results['predictor']['train_losses'] else None,
+                'agent_episodes': len(results['agent']['episode_rewards'])
+            }
+        print(json.dumps(summary, indent=2))
 
     elif args.command == 'backtest':
         logger.info("Starting backtest...")
 
         # Load data
         market_data = system.load_data(
-            symbol=args.symbol,
-            timeframe=args.timeframe,
-            n_bars=args.bars
+            symbol=primary_symbol,
+            timeframe=timeframe,
+            n_bars=n_bars,
+            additional_timeframes=additional_timeframes
         )
 
         if market_data is None:
@@ -959,21 +1055,21 @@ Examples:
         # Log backtest results to MLflow
         tracker = system.mlflow_tracker
         if tracker and tracker.is_enabled:
-            run_name = f"backtest-{args.symbol}-{args.timeframe}-{timestamp}"
+            run_name = f"backtest-{primary_symbol}-{timeframe}-{timestamp}"
             with tracker.start_run(
                 run_name=run_name,
                 tags={
-                    "symbol": args.symbol,
-                    "timeframe": args.timeframe,
+                    "symbol": primary_symbol,
+                    "timeframe": timeframe,
                     "command": "backtest",
                     "realistic_mode": str(args.realistic)
                 }
             ):
                 # Log parameters
                 tracker.log_params({
-                    "symbol": args.symbol,
-                    "timeframe": args.timeframe,
-                    "n_bars": args.bars,
+                    "symbol": primary_symbol,
+                    "timeframe": timeframe,
+                    "n_bars": n_bars,
                     "realistic_mode": args.realistic,
                     "monte_carlo": args.monte_carlo
                 })
@@ -990,9 +1086,10 @@ Examples:
         logger.info("Starting walk-forward analysis...")
 
         market_data = system.load_data(
-            symbol=args.symbol,
-            timeframe=args.timeframe,
-            n_bars=args.bars
+            symbol=primary_symbol,
+            timeframe=timeframe,
+            n_bars=n_bars,
+            additional_timeframes=additional_timeframes
         )
 
         if market_data is None:
@@ -1009,9 +1106,10 @@ Examples:
         logger.info("Evaluating models...")
 
         market_data = system.load_data(
-            symbol=args.symbol,
-            timeframe=args.timeframe,
-            n_bars=args.bars
+            symbol=primary_symbol,
+            timeframe=timeframe,
+            n_bars=n_bars,
+            additional_timeframes=additional_timeframes
         )
 
         if market_data is None:
@@ -1058,8 +1156,8 @@ Examples:
 
         # Create auto-trader config
         trader_config = AutoTraderConfig(
-            symbols=[args.symbol],
-            timeframe=args.timeframe,
+            symbols=symbols,
+            timeframe=timeframe,
             risk_per_trade=config.auto_trader.risk_per_trade,
             max_positions=config.auto_trader.max_positions,
             default_sl_pips=config.auto_trader.default_sl_pips,
@@ -1090,7 +1188,7 @@ Examples:
         mode = "PAPER" if args.paper else "LIVE"
         print(f"\n{'='*60}")
         print(f"  LEAP AUTO-TRADER - {mode} MODE")
-        print(f"  Symbol: {args.symbol}")
+        print(f"  Symbols: {', '.join(symbols)}")
         print(f"  Risk per trade: {trader_config.risk_per_trade*100:.1f}%")
         print(f"  Max positions: {trader_config.max_positions}")
         print(f"{'='*60}\n")

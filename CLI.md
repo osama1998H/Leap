@@ -38,15 +38,28 @@ python main.py train [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--symbol` | `-s` | string | `EURUSD` | Trading symbol (e.g., EURUSD, GBPUSD, USDJPY) |
-| `--timeframe` | `-t` | string | `1h` | Timeframe for data (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w) |
+| `--symbol` | `-s` | string | from config | Trading symbol (e.g., EURUSD, GBPUSD, USDJPY) |
+| `--symbols` | | list | from config | Multiple symbols for training (e.g., `--symbols EURUSD GBPUSD`) |
+| `--timeframe` | `-t` | string | from config | Primary timeframe for data (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w) |
+| `--multi-timeframe` | | flag | `False` | Enable multi-timeframe features (uses `additional_timeframes` from config) |
 | `--bars` | `-b` | integer | `50000` | Number of historical bars to load for training |
-| `--epochs` | `-e` | integer | `100` | Training epochs for the Transformer predictor |
-| `--timesteps` | | integer | `100000` | Training timesteps for the PPO agent |
+| `--epochs` | `-e` | integer | from config | Training epochs for the Transformer predictor |
+| `--timesteps` | | integer | from config | Training timesteps for the PPO agent |
 | `--model-dir` | `-m` | string | `./saved_models` | Directory to save trained models |
 | `--config` | `-c` | string | | Path to configuration JSON file |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
 | `--log-file` | | string | | Custom log file path |
+
+**Multi-Symbol Training:**
+When using `--symbols` or multiple symbols in config, models are trained for each symbol:
+- Models saved to `{model-dir}/{symbol}/` for each symbol
+- MLflow tracks each symbol's training separately
+
+**Multi-Timeframe Features:**
+When `--multi-timeframe` is enabled:
+- Fetches data for additional timeframes defined in config (`additional_timeframes`)
+- Key indicators from higher/lower timeframes are added as features
+- Provides multi-scale market context (e.g., 1h training with 15m/4h/1d features)
 
 **Training Flow:**
 1. Loads market data (OHLCV + 100+ computed features)
@@ -57,7 +70,7 @@ python main.py train [OPTIONS]
 
 **Examples:**
 ```bash
-# Train with default settings
+# Train with default settings (uses config values)
 python main.py train
 
 # Train on GBPUSD with custom epochs
@@ -68,6 +81,15 @@ python main.py train --config config/custom_config.json
 
 # Train with verbose logging
 python main.py train --log-level DEBUG --log-file ./training.log
+
+# Multi-symbol training (from config or CLI)
+python main.py train --symbols EURUSD GBPUSD USDJPY
+
+# Multi-timeframe training (uses additional_timeframes from config)
+python main.py train --multi-timeframe --config config/my_config.json
+
+# Full multi-symbol + multi-timeframe training
+python main.py train --symbols EURUSD GBPUSD --multi-timeframe
 ```
 
 ---
@@ -507,9 +529,24 @@ python main.py evaluate --config config/aggressive.json
 ### Multi-Symbol Analysis
 
 ```bash
-# Train and backtest multiple symbols
+# Method 1: Native multi-symbol training (recommended)
+# Trains on all symbols from config or CLI in one command
+python main.py train --symbols EURUSD GBPUSD USDJPY
+
+# Method 2: Shell loop for more control
 for symbol in EURUSD GBPUSD USDJPY; do
     python main.py train --symbol $symbol --model-dir ./models_$symbol
     python main.py backtest --symbol $symbol --model-dir ./models_$symbol --realistic
 done
+```
+
+### Multi-Timeframe Training
+
+```bash
+# Enable multi-timeframe features (uses additional_timeframes from config)
+# Config example: "additional_timeframes": ["15m", "4h", "1d"]
+python main.py train --multi-timeframe --config config/my_config.json
+
+# Multi-symbol + multi-timeframe combined
+python main.py train --symbols EURUSD GBPUSD --multi-timeframe --config config/my_config.json
 ```

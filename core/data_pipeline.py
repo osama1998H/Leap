@@ -578,9 +578,22 @@ class DataPipeline:
         symbol: str,
         timeframe: str = "1h",
         n_bars: int = 10000,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
+        additional_timeframes: Optional[List[str]] = None
     ) -> Optional[MarketData]:
-        """Fetch historical OHLCV data."""
+        """Fetch historical OHLCV data with optional multi-timeframe features.
+
+        Args:
+            symbol: Trading symbol (e.g., 'EURUSD')
+            timeframe: Primary timeframe for the data
+            n_bars: Number of bars to fetch
+            end_date: End date for data (default: now)
+            additional_timeframes: List of additional timeframes to include as features
+                                   (e.g., ['15m', '4h', '1d'])
+
+        Returns:
+            MarketData object with features from all requested timeframes
+        """
         if end_date is None:
             end_date = datetime.now()
 
@@ -595,23 +608,131 @@ class DataPipeline:
             df = pd.DataFrame(rates)
             df['timestamp'] = pd.to_datetime(df['time'], unit='s')
 
+            # Fetch additional timeframe data if requested
+            additional_data = {}
+            if additional_timeframes:
+                for add_tf in additional_timeframes:
+                    add_tf_enum = self.TIMEFRAME_MAP.get(add_tf)
+                    if add_tf_enum:
+                        # Calculate how many bars we need for the additional timeframe
+                        add_n_bars = self._calculate_additional_bars(
+                            n_bars, timeframe, add_tf
+                        )
+                        add_rates = mt5.copy_rates_from(
+                            symbol, add_tf_enum, end_date, add_n_bars
+                        )
+                        if add_rates is not None and len(add_rates) > 0:
+                            add_df = pd.DataFrame(add_rates)
+                            add_df['timestamp'] = pd.to_datetime(add_df['time'], unit='s')
+                            additional_data[add_tf] = add_df
+                            logger.info(f"Fetched {len(add_df)} bars for {add_tf} timeframe")
+                        else:
+                            logger.warning(f"Failed to fetch {add_tf} timeframe data")
+
         else:
             # Generate synthetic data for testing
             logger.info(f"Generating synthetic data for {symbol}")
-            df = self._generate_synthetic_data(n_bars, end_date)
+            df = self._generate_synthetic_data(n_bars, end_date, timeframe)
 
-        return self._process_raw_data(df, symbol, timeframe)
+            # Generate additional timeframe data if requested
+            additional_data = {}
+            if additional_timeframes:
+                for add_tf in additional_timeframes:
+                    add_n_bars = self._calculate_additional_bars(
+                        n_bars, timeframe, add_tf
+                    )
+                    add_df = self._generate_synthetic_data(add_n_bars, end_date, add_tf)
+                    additional_data[add_tf] = add_df
+                    logger.info(f"Generated {len(add_df)} synthetic bars for {add_tf} timeframe")
 
-    def _generate_synthetic_data(self, n_bars: int, end_date: datetime) -> pd.DataFrame:
-        """Generate synthetic OHLCV data for testing."""
-        np.random.seed(42)
+        return self._process_raw_data(
+            df, symbol, timeframe,
+            additional_timeframes_data=additional_data if additional_timeframes else None
+        )
+
+    # Mapping from timeframe string to pandas frequency
+    TIMEFRAME_FREQ_MAP = {
+        "1m": "1min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1D",
+        "1w": "1W",
+    }
+
+    # Mapping from timeframe string to minutes
+    TIMEFRAME_MINUTES = {
+        "1m": 1,
+        "5m": 5,
+        "15m": 15,
+        "30m": 30,
+        "1h": 60,
+        "4h": 240,
+        "1d": 1440,
+        "1w": 10080,
+    }
+
+    def _calculate_additional_bars(
+        self,
+        primary_bars: int,
+        primary_tf: str,
+        additional_tf: str
+    ) -> int:
+        """Calculate how many bars needed for an additional timeframe.
+
+        For higher timeframes (e.g., 4h when primary is 1h), we need fewer bars.
+        For lower timeframes (e.g., 15m when primary is 1h), we need more bars.
+
+        Args:
+            primary_bars: Number of bars in primary timeframe
+            primary_tf: Primary timeframe string (e.g., '1h')
+            additional_tf: Additional timeframe string (e.g., '4h')
+
+        Returns:
+            Number of bars needed for the additional timeframe
+        """
+        primary_minutes = self.TIMEFRAME_MINUTES.get(primary_tf, 60)
+        additional_minutes = self.TIMEFRAME_MINUTES.get(additional_tf, 60)
+
+        # Calculate total minutes covered by primary data
+        total_minutes = primary_bars * primary_minutes
+
+        # Calculate bars needed for additional timeframe (with buffer for features)
+        additional_bars = int(total_minutes / additional_minutes) + 200
+
+        return max(additional_bars, 500)  # Minimum 500 bars for feature computation
+
+    def _generate_synthetic_data(
+        self,
+        n_bars: int,
+        end_date: datetime,
+        timeframe: str = "1h"
+    ) -> pd.DataFrame:
+        """Generate synthetic OHLCV data for testing.
+
+        Args:
+            n_bars: Number of bars to generate
+            end_date: End date for the data
+            timeframe: Timeframe for frequency generation
+
+        Returns:
+            DataFrame with synthetic OHLCV data
+        """
+        # Use different seed for different timeframes to get varied but consistent data
+        seed = 42 + hash(timeframe) % 1000
+        np.random.seed(seed)
 
         # Generate realistic price series
         returns = np.random.normal(0.0001, 0.01, n_bars)
         prices = 1.1000 * np.exp(np.cumsum(returns))
 
+        # Get frequency for this timeframe
+        freq = self.TIMEFRAME_FREQ_MAP.get(timeframe, "1h")
+
         # Generate OHLCV
-        timestamps = pd.date_range(end=end_date, periods=n_bars, freq='h')
+        timestamps = pd.date_range(end=end_date, periods=n_bars, freq=freq)
 
         df = pd.DataFrame({
             'timestamp': timestamps,
@@ -632,17 +753,36 @@ class DataPipeline:
         self,
         df: pd.DataFrame,
         symbol: str,
-        timeframe: str
+        timeframe: str,
+        additional_timeframes_data: Optional[Dict[str, pd.DataFrame]] = None
     ) -> MarketData:
-        """Process raw OHLCV data into MarketData object."""
-        # Compute features
+        """Process raw OHLCV data into MarketData object with optional multi-timeframe features.
+
+        Args:
+            df: Primary timeframe DataFrame with OHLCV data
+            symbol: Trading symbol
+            timeframe: Primary timeframe string
+            additional_timeframes_data: Dict mapping timeframe string to DataFrame
+                                        for additional timeframe data
+
+        Returns:
+            MarketData object with all features combined
+        """
+        # Compute features for primary timeframe
         df = self.feature_engineer.compute_all_features(df)
 
         # Handle missing values
         df = df.ffill().bfill()
 
-        # Get feature columns
-        feature_cols = self.feature_engineer.feature_names
+        # Get primary feature columns
+        feature_cols = list(self.feature_engineer.feature_names)
+
+        # Add multi-timeframe features if provided
+        if additional_timeframes_data:
+            df = self._add_multi_timeframe_features(
+                df, additional_timeframes_data, feature_cols
+            )
+
         features = df[feature_cols].values if feature_cols else None
 
         return MarketData(
@@ -657,6 +797,127 @@ class DataPipeline:
             features=features,
             feature_names=feature_cols
         )
+
+    def _add_multi_timeframe_features(
+        self,
+        primary_df: pd.DataFrame,
+        additional_data: Dict[str, pd.DataFrame],
+        feature_cols: List[str]
+    ) -> pd.DataFrame:
+        """Add features from additional timeframes to the primary DataFrame.
+
+        This aligns higher/lower timeframe data to the primary timeframe using
+        forward-fill for higher timeframes (e.g., daily data aligned to hourly)
+        and aggregation for lower timeframes.
+
+        Args:
+            primary_df: Primary timeframe DataFrame with timestamp column
+            additional_data: Dict mapping timeframe string to DataFrame
+            feature_cols: List to append new feature column names to
+
+        Returns:
+            Primary DataFrame with additional timeframe features added
+        """
+        logger.info(f"Adding multi-timeframe features from: {list(additional_data.keys())}")
+
+        # Ensure primary_df has datetime index for merging
+        primary_df = primary_df.copy()
+        primary_df['timestamp'] = pd.to_datetime(primary_df['timestamp'])
+        primary_df = primary_df.set_index('timestamp', drop=False)
+
+        for tf_name, tf_df in additional_data.items():
+            # Create a separate feature engineer for this timeframe
+            tf_engineer = FeatureEngineer(self.config)
+
+            # Compute features for the additional timeframe
+            tf_df = tf_engineer.compute_all_features(tf_df.copy())
+            tf_df = tf_df.ffill().bfill()
+
+            # Select key features to include (not all features to avoid explosion)
+            key_features = self._select_key_features(tf_engineer.feature_names)
+
+            if not key_features:
+                logger.warning(f"No features selected for {tf_name} timeframe")
+                continue
+
+            # Ensure tf_df has datetime index
+            tf_df['timestamp'] = pd.to_datetime(tf_df['timestamp'])
+            tf_df = tf_df.set_index('timestamp')
+
+            # Select only the key features
+            tf_features = tf_df[key_features].copy()
+
+            # Rename columns with timeframe prefix
+            tf_features.columns = [f"{tf_name}_{col}" for col in tf_features.columns]
+
+            # Merge using merge_asof for time-based alignment
+            # This forward-fills higher timeframe data to lower timeframe
+            primary_df = primary_df.reset_index(drop=True)
+            primary_df = primary_df.sort_values('timestamp')
+            tf_features = tf_features.reset_index().sort_values('timestamp')
+
+            # Use merge_asof to align timeframes
+            merged = pd.merge_asof(
+                primary_df,
+                tf_features,
+                on='timestamp',
+                direction='backward'  # Use most recent available value
+            )
+
+            # Add the new feature columns to primary_df
+            for col in tf_features.columns:
+                if col != 'timestamp' and col in merged.columns:
+                    primary_df[col] = merged[col].values
+                    feature_cols.append(col)
+
+            logger.info(f"Added {len(tf_features.columns) - 1} features from {tf_name} timeframe")
+
+        # Handle any new NaN values from the merge
+        primary_df = primary_df.ffill().bfill()
+
+        # Restore index
+        primary_df = primary_df.reset_index(drop=True)
+
+        return primary_df
+
+    def _select_key_features(self, feature_names: List[str]) -> List[str]:
+        """Select key features to include from an additional timeframe.
+
+        To avoid feature explosion, we select only the most informative features
+        from each additional timeframe.
+
+        Args:
+            feature_names: List of all available feature names
+
+        Returns:
+            List of selected key feature names
+        """
+        # Key feature patterns to include from additional timeframes
+        key_patterns = [
+            'returns', 'log_returns',           # Price returns
+            'rsi_14', 'rsi_wilder_14',          # RSI
+            'macd', 'macd_signal', 'macd_hist', # MACD
+            'atr_14', 'atr_wilder_14',          # ATR
+            'adx', 'plus_di', 'minus_di',       # ADX
+            'bb_position_20', 'bb_width_20',    # Bollinger Bands
+            'sma_20', 'ema_20',                 # Key MAs
+            'close_sma_20_ratio',               # Price relative to MA
+            'volatility_20',                    # Volatility
+            'trend_strength',                   # Trend
+            'volume_ratio',                     # Volume
+            'stoch_k_14', 'stoch_d_14',         # Stochastic
+            'cci',                              # CCI
+            'mfi',                              # Money Flow Index
+        ]
+
+        selected = []
+        for pattern in key_patterns:
+            for feature in feature_names:
+                if feature == pattern or feature.endswith(f'_{pattern}'):
+                    selected.append(feature)
+                    break  # Only add first match per pattern
+
+        return selected
 
     def prepare_sequences(
         self,

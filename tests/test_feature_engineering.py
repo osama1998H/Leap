@@ -545,6 +545,157 @@ def test_tr_dm_alignment():
     return True
 
 
+def test_multi_timeframe_features():
+    """Test multi-timeframe feature engineering."""
+    print("\n" + "="*60)
+    print("Testing Multi-Timeframe Features...")
+    print("="*60)
+
+    # Import DataPipeline
+    DataPipeline = data_pipeline.DataPipeline
+
+    pipeline = DataPipeline()
+
+    # Test 1: Calculate additional bars needed for higher timeframe
+    primary_bars = 1000
+    primary_tf = "1h"
+    additional_tf = "4h"
+    additional_bars = pipeline._calculate_additional_bars(primary_bars, primary_tf, additional_tf)
+
+    # For 1h -> 4h, we need fewer bars (1000 * 60 / 240 = 250, plus buffer)
+    assert additional_bars >= 250, f"Expected at least 250 bars for 4h, got {additional_bars}"
+    print(f"✓ Additional bars for 4h (from 1h): {additional_bars}")
+
+    # Test 2: Calculate additional bars for lower timeframe
+    additional_tf_lower = "15m"
+    additional_bars_lower = pipeline._calculate_additional_bars(primary_bars, primary_tf, additional_tf_lower)
+
+    # For 1h -> 15m, we need more bars (1000 * 60 / 15 = 4000, plus buffer)
+    assert additional_bars_lower >= 4000, f"Expected at least 4000 bars for 15m, got {additional_bars_lower}"
+    print(f"✓ Additional bars for 15m (from 1h): {additional_bars_lower}")
+
+    # Test 3: Select key features
+    fe = FeatureEngineer()
+    df = create_sample_ohlcv(200)
+    fe.compute_all_features(df)
+
+    selected = pipeline._select_key_features(fe.feature_names)
+    assert len(selected) > 0, "Should select some key features"
+    assert len(selected) < len(fe.feature_names), "Should select subset of features"
+    print(f"✓ Selected {len(selected)}/{len(fe.feature_names)} key features")
+
+    # Key features should include important indicators
+    key_patterns = ['returns', 'rsi_14', 'macd', 'atr_14', 'adx']
+    for pattern in key_patterns:
+        found = any(pattern in f for f in selected)
+        assert found, f"Key feature pattern '{pattern}' should be selected"
+    print("✓ Key feature patterns included")
+
+    # Test 4: Timeframe frequency mapping
+    freq_map = DataPipeline.TIMEFRAME_FREQ_MAP
+    assert "1h" in freq_map, "1h should be in frequency map"
+    assert "4h" in freq_map, "4h should be in frequency map"
+    assert "1d" in freq_map, "1d should be in frequency map"
+    print("✓ Timeframe frequency mapping valid")
+
+    # Test 5: Timeframe minutes mapping
+    min_map = DataPipeline.TIMEFRAME_MINUTES
+    assert min_map["1h"] == 60, "1h should be 60 minutes"
+    assert min_map["4h"] == 240, "4h should be 240 minutes"
+    assert min_map["1d"] == 1440, "1d should be 1440 minutes"
+    print("✓ Timeframe minutes mapping valid")
+
+    return True
+
+
+def test_multi_timeframe_data_generation():
+    """Test synthetic data generation for multiple timeframes."""
+    print("\n" + "="*60)
+    print("Testing Multi-Timeframe Data Generation...")
+    print("="*60)
+
+    DataPipeline = data_pipeline.DataPipeline
+    pipeline = DataPipeline()
+
+    from datetime import datetime
+    end_date = datetime.now()
+
+    # Generate synthetic data for different timeframes
+    df_1h = pipeline._generate_synthetic_data(100, end_date, "1h")
+    df_4h = pipeline._generate_synthetic_data(100, end_date, "4h")
+    df_1d = pipeline._generate_synthetic_data(100, end_date, "1d")
+
+    # Verify different timeframes have different frequencies
+    assert len(df_1h) == 100, "1h data should have 100 bars"
+    assert len(df_4h) == 100, "4h data should have 100 bars"
+    assert len(df_1d) == 100, "1d data should have 100 bars"
+    print("✓ All timeframes generated with correct length")
+
+    # Check timestamps have correct frequency
+    # 1h should have ~1 hour between bars
+    time_diff_1h = (df_1h['timestamp'].iloc[-1] - df_1h['timestamp'].iloc[-2]).total_seconds() / 3600
+    assert abs(time_diff_1h - 1.0) < 0.1, f"1h should have 1 hour between bars, got {time_diff_1h}"
+    print(f"✓ 1h time diff: {time_diff_1h:.2f} hours")
+
+    # 4h should have ~4 hours between bars
+    time_diff_4h = (df_4h['timestamp'].iloc[-1] - df_4h['timestamp'].iloc[-2]).total_seconds() / 3600
+    assert abs(time_diff_4h - 4.0) < 0.1, f"4h should have 4 hours between bars, got {time_diff_4h}"
+    print(f"✓ 4h time diff: {time_diff_4h:.2f} hours")
+
+    # 1d should have ~24 hours between bars
+    time_diff_1d = (df_1d['timestamp'].iloc[-1] - df_1d['timestamp'].iloc[-2]).total_seconds() / 3600
+    assert abs(time_diff_1d - 24.0) < 0.1, f"1d should have 24 hours between bars, got {time_diff_1d}"
+    print(f"✓ 1d time diff: {time_diff_1d:.2f} hours")
+
+    return True
+
+
+def test_fetch_historical_with_additional_timeframes():
+    """Test fetching data with additional timeframes."""
+    print("\n" + "="*60)
+    print("Testing Fetch Historical with Additional Timeframes...")
+    print("="*60)
+
+    DataPipeline = data_pipeline.DataPipeline
+    pipeline = DataPipeline()
+
+    # Fetch data with additional timeframes (synthetic mode)
+    market_data = pipeline.fetch_historical_data(
+        symbol="EURUSD",
+        timeframe="1h",
+        n_bars=500,
+        additional_timeframes=["4h", "1d"]
+    )
+
+    assert market_data is not None, "Should return market data"
+    assert market_data.features is not None, "Should have features"
+    assert market_data.feature_names is not None, "Should have feature names"
+
+    # Check that multi-timeframe features were added
+    mtf_features = [f for f in market_data.feature_names if f.startswith("4h_") or f.startswith("1d_")]
+    assert len(mtf_features) > 0, "Should have multi-timeframe features"
+    print(f"✓ Added {len(mtf_features)} multi-timeframe features")
+
+    # Check specific timeframe prefixes
+    has_4h = any(f.startswith("4h_") for f in market_data.feature_names)
+    has_1d = any(f.startswith("1d_") for f in market_data.feature_names)
+    assert has_4h, "Should have 4h features"
+    assert has_1d, "Should have 1d features"
+    print("✓ Both 4h and 1d features present")
+
+    # Verify data shape
+    n_features = len(market_data.feature_names)
+    assert market_data.features.shape == (len(market_data.close), n_features), \
+        f"Feature shape mismatch: {market_data.features.shape} vs expected ({len(market_data.close)}, {n_features})"
+    print(f"✓ Feature shape: {market_data.features.shape}")
+
+    # Verify no inf values in features
+    assert not np.isinf(market_data.features).any(), "Should have no inf values in features"
+    print("✓ No inf values in multi-timeframe features")
+
+    return True
+
+
 def run_all_tests():
     """Run all feature engineering tests."""
     print("\n" + "="*60)
@@ -564,6 +715,9 @@ def run_all_tests():
         ("Wilder ATR and RSI", test_wilder_atr_and_rsi),
         ("Non-Unique Index Handling", test_non_unique_index_handling),
         ("TR/DM Alignment", test_tr_dm_alignment),
+        ("Multi-Timeframe Features", test_multi_timeframe_features),
+        ("Multi-Timeframe Data Generation", test_multi_timeframe_data_generation),
+        ("Fetch Historical with Additional Timeframes", test_fetch_historical_with_additional_timeframes),
     ]
 
     passed = 0
