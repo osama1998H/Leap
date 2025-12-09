@@ -4,7 +4,7 @@ Common types and configurations used across trading environments.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import IntEnum
 from typing import List, Optional, Union
 
@@ -134,7 +134,7 @@ class TradeStatistics:
 
     @property
     def win_rate(self) -> float:
-        """Calculate win rate as a percentage."""
+        """Calculate win rate as a ratio (0.0 to 1.0)."""
         if self.total_trades == 0:
             return 0.0
         return self.winning_trades / self.total_trades
