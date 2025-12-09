@@ -35,6 +35,12 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
 
     metadata: ClassVar[Dict[str, List[str]]] = {'render_modes': ['human', 'log']}
 
+    # Constants for observation space dimensions
+    N_PRICE_FEATURES = 5  # OHLCV
+    N_BASE_ACCOUNT_FEATURES = 8  # From base class
+    N_LIVE_EXTRA_FEATURES = 4  # Live-specific: open_status, close_only, session_pnl, session_trades
+    DEFAULT_ADDITIONAL_FEATURES = 100  # Default when feature_dim not provided
+
     def __init__(
         self,
         broker: MT5BrokerGateway,
@@ -49,7 +55,8 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         default_tp_pips: float = 100.0,
         risk_per_trade: float = 0.01,
         render_mode: Optional[str] = None,
-        paper_mode: bool = True
+        paper_mode: bool = True,
+        feature_dim: Optional[int] = None
     ):
         """
         Initialize live trading environment.
@@ -68,6 +75,8 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             risk_per_trade: Risk per trade as fraction
             render_mode: Rendering mode
             paper_mode: If True, simulate trades; if False, execute real trades
+            feature_dim: Number of additional features (from FeatureEngineer).
+                         If None, attempts to infer from data_pipeline or uses default.
         """
         # Initialize base class
         super().__init__(
@@ -117,13 +126,15 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         self._feature_buffer: List[np.ndarray] = []
         self._max_buffer_size = window_size + 100
 
+        # Determine feature dimension (MAJOR-1 fix: dynamic instead of hardcoded)
+        self.n_additional_features = self._resolve_feature_dim(feature_dim, data_pipeline)
+
         # Calculate observation dimension
-        n_price_features = 5
-        n_additional_features = 100  # Estimated, adjusted on first observation
-        n_account_features = 12  # Extended account features for live trading
+        # Account features = base class (8) + live-specific (4) = 12
+        n_account_features = self.N_BASE_ACCOUNT_FEATURES + self.N_LIVE_EXTRA_FEATURES
 
         obs_dim = (
-            window_size * (n_price_features + n_additional_features) +
+            window_size * (self.N_PRICE_FEATURES + self.n_additional_features) +
             n_account_features
         )
 
@@ -147,6 +158,42 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         self._paper_balance = initial_balance
 
         logger.info(f"Live trading environment initialized for {symbol}")
+
+    # -------------------------------------------------------------------------
+    # Helper methods
+    # -------------------------------------------------------------------------
+
+    def _resolve_feature_dim(
+        self,
+        feature_dim: Optional[int],
+        data_pipeline
+    ) -> int:
+        """
+        Resolve the number of additional features for observation space.
+
+        Priority:
+        1. Explicit feature_dim parameter
+        2. Infer from data_pipeline.feature_count
+        3. Fall back to DEFAULT_ADDITIONAL_FEATURES
+
+        Args:
+            feature_dim: Explicit feature dimension (if provided)
+            data_pipeline: Data pipeline that may have feature_count attribute
+
+        Returns:
+            Number of additional features to use
+        """
+        if feature_dim is not None:
+            logger.debug(f"Using explicit feature_dim: {feature_dim}")
+            return feature_dim
+
+        if data_pipeline is not None and hasattr(data_pipeline, 'feature_count'):
+            inferred = data_pipeline.feature_count
+            logger.debug(f"Inferred feature_dim from data_pipeline: {inferred}")
+            return inferred
+
+        logger.debug(f"Using default feature_dim: {self.DEFAULT_ADDITIONAL_FEATURES}")
+        return self.DEFAULT_ADDITIONAL_FEATURES
 
     # -------------------------------------------------------------------------
     # Live trading specific properties and methods
@@ -298,16 +345,15 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             padding_size = self.window_size - len(self._price_buffer)
             if self._price_buffer:
                 prices = np.array(self._price_buffer).flatten()
-                price_window = np.pad(prices, (padding_size * 5, 0), mode='edge')
+                price_window = np.pad(prices, (padding_size * self.N_PRICE_FEATURES, 0), mode='edge')
             else:
-                price_window = np.zeros(self.window_size * 5)
+                price_window = np.zeros(self.window_size * self.N_PRICE_FEATURES)
 
-        # Feature window
+        # Feature window (MAJOR-1 fix: use dynamic n_additional_features)
         if self._feature_buffer and len(self._feature_buffer) >= self.window_size:
             feature_window = np.array(self._feature_buffer[-self.window_size:]).flatten()
         else:
-            n_features = 100  # Estimated
-            feature_window = np.zeros(self.window_size * n_features)
+            feature_window = np.zeros(self.window_size * self.n_additional_features)
 
         # Normalize market observations
         market_obs = np.concatenate([price_window, feature_window])
@@ -657,28 +703,40 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
     # Observation and info
     # -------------------------------------------------------------------------
 
-    def _get_observation(self) -> np.ndarray:
-        """Get current observation."""
-        market_obs = self._get_market_observation()
+    def _get_account_observation(self) -> np.ndarray:
+        """
+        Get extended account observation for live trading.
 
-        # Extended account state for live trading
-        positions = self._get_open_positions()
-        unrealized_pnl = self._get_unrealized_pnl(0.0)
+        MAJOR-2 fix: Extends base class account observation (8 features)
+        with 4 live-specific features for a total of 12 features.
 
-        account_obs = np.array([
-            self.state.balance / self.initial_balance,
-            self.state.equity / self.initial_balance,
-            len(positions),
-            1.0 if self._has_position('long') else 0.0,
-            1.0 if self._has_position('short') else 0.0,
-            unrealized_pnl / self.initial_balance,
-            self.state.max_drawdown,
-            self.state.total_pnl / self.initial_balance,
+        Base class features (8):
+            balance_norm, equity_norm, n_positions, has_long, has_short,
+            unrealized_pnl_norm, max_drawdown, total_pnl_norm
+
+        Live-specific features (4):
+            open_status, close_only, session_pnl_norm, session_trades_norm
+        """
+        # Get base class account observation (8 features)
+        base_account_obs = super()._get_account_observation()
+
+        # Add live trading specific features (4 features)
+        live_extras = np.array([
             1.0 if self.state.open_status else 0.0,
             1.0 if self.state.close_only else 0.0,
             self.state.session_pnl / self.initial_balance,
             self.state.session_trades / 100.0
-        ])
+        ], dtype=np.float32)
+
+        # Concatenate base + live features (8 + 4 = 12)
+        return np.concatenate([base_account_obs, live_extras])
+
+    def _get_observation(self) -> np.ndarray:
+        """Get current observation."""
+        market_obs = self._get_market_observation()
+
+        # Get extended account observation (8 base + 4 live = 12 features)
+        account_obs = self._get_account_observation()
 
         obs = np.concatenate([market_obs, account_obs]).astype(np.float32)
 

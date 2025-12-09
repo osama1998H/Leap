@@ -1882,7 +1882,7 @@ Create unified interface per the interface definitions above.
 
 ### Implementation Checklist
 
-#### Phase 1 (This PR)
+#### Phase 1 (Completed)
 - [x] CRITICAL-1: Fix `_execute_action_live` → use `_execute_action` ✅ **COMPLETED**
 - [x] CRITICAL-2: Rename `self.model` → `self.network` in TransformerPredictor ✅ **COMPLETED**
 - [x] CRITICAL-3: Fix main.py logging pattern ✅ **COMPLETED**
@@ -1891,18 +1891,17 @@ Create unified interface per the interface definitions above.
 - [x] Update tests for changed interfaces ✅ **COMPLETED**
 - [x] Run full test suite ✅ **COMPLETED** (syntax verified)
 
-#### Phase 2 (Follow-up PR)
-- [ ] Update related documentation (cross-references, etc.)
+#### Phase 2 (Completed)
+- [x] MAJOR-1: Dynamic observation dimensions ✅ **COMPLETED**
+- [x] MAJOR-2: Account observation consistency ✅ **COMPLETED**
+- [x] MAJOR-5: Add learning rate scheduler to PPO ✅ **COMPLETED**
+- [x] MAJOR-7: Unified online learning interface ✅ **COMPLETED**
+- [x] Document design decisions for optimizer/gradient choices ✅ **COMPLETED**
 
-#### Phase 3 (Follow-up PR)
-- [ ] MAJOR-1: Dynamic observation dimensions
-- [ ] MAJOR-2: Account observation consistency
+#### Phase 3 (Future Work)
 - [ ] Add integration tests for dimension matching
-
-#### Phase 4 (Follow-up PR)
-- [ ] Create interface modules
-- [ ] MAJOR-7: Unified online learning interface
-- [ ] Documentation reorganization
+- [ ] MAJOR-3: Configuration passing consistency (optional - documented as design decision)
+- [ ] Documentation reorganization (cross-references, etc.)
 
 ---
 
@@ -1944,5 +1943,73 @@ Each phase must pass:
 
 ---
 
+## Design Decisions
+
+This section documents intentional differences that are maintained as design decisions rather than bugs.
+
+### DD-1: Optimizer Algorithm Difference (MAJOR-4)
+
+| Model | Optimizer | Rationale |
+|-------|-----------|-----------|
+| TransformerPredictor | AdamW | Weight decay regularization for large transformer models |
+| PPOAgent | Adam | Standard choice for PPO; weight decay can harm RL exploration |
+
+**Decision:** Keep different optimizers. AdamW's decoupled weight decay is beneficial for supervised learning with transformers, while standard Adam is preferred for RL where weight decay can reduce policy entropy and exploration.
+
+### DD-2: Learning Rate Difference (MINOR-2)
+
+| Model | Default LR | Rationale |
+|-------|------------|-----------|
+| TransformerPredictor | 1e-4 | Lower LR for stable transformer training with attention |
+| PPOAgent | 3e-4 | Standard PPO learning rate from literature (Schulman et al.) |
+
+**Decision:** Different defaults are appropriate. Transformers with attention mechanisms benefit from lower learning rates, while PPO typically uses 3e-4 as the standard starting point.
+
+### DD-3: Gradient Clipping Values (MAJOR-6)
+
+| Context | Clip Value | Rationale |
+|---------|------------|-----------|
+| Transformer (training) | 1.0 | Standard value for transformer training |
+| Transformer (online) | 0.5 | Conservative for online adaptation to prevent catastrophic forgetting |
+| PPOAgent | 0.5 | Standard for PPO to prevent policy collapse |
+
+**Decision:** Different gradient clipping values are intentional. Online learning uses more conservative clipping (0.5) to prevent large updates that could destabilize the model. Standard training can use higher values (1.0) for faster convergence.
+
+### DD-4: Configuration Passing Styles (MAJOR-3)
+
+The codebase uses three configuration passing styles:
+
+1. **Dataclass objects** - Used for new components (DataPipeline, RiskManager)
+2. **Dictionary with .get()** - Used for models (TransformerPredictor, PPOAgent)
+3. **Manual dict extraction** - Used in LeapTradingSystem for bridging
+
+**Decision:** This is acceptable technical debt. The dictionary style for models allows flexibility in configuration without requiring dataclass schema changes. Future work may unify this, but it doesn't impact functionality.
+
+---
+
+## Summary of Completed Fixes
+
+### Phase 1 (CRITICAL)
+1. **CRITICAL-1**: LiveTradingEnvironment now uses `_execute_action(action, price)` instead of custom `_execute_action_live`
+2. **CRITICAL-2**: TransformerPredictor uses `self.network` with backward-compatible `model` property
+3. **CRITICAL-3**: main.py uses standard `logging.getLogger(__name__)`
+4. **CRITICAL-4**: Position storage unified via `_sync_positions_to_state()` with `state.positions` as single source of truth
+5. **CRITICAL-5**: Both models use `TrainingHistory` dataclass from `utils/checkpoint.py`
+
+### Phase 2 (MAJOR)
+1. **MAJOR-1**: Observation space dimension now dynamic via `feature_dim` parameter and `_resolve_feature_dim()` method
+2. **MAJOR-2**: Account observation properly extends base class (8 + 4 = 12 features) with `super()._get_account_observation()`
+3. **MAJOR-5**: PPOAgent now has CosineAnnealingLR scheduler for learning rate decay
+4. **MAJOR-7**: Created unified `OnlineLearningAdapter` in `training/online_interface.py`
+
+### Files Modified
+- `core/live_trading_env.py` - MAJOR-1, MAJOR-2 fixes
+- `models/ppo_agent.py` - MAJOR-5 fix (LR scheduler)
+- `training/online_interface.py` - MAJOR-7 fix (new file)
+- `training/__init__.py` - Export new interface
+
+---
+
 *Report updated: 2025-12-09*
 *Analysis scope: Full codebase architectural review with refactoring plan*
+*Implementation status: Phase 1 and Phase 2 COMPLETED*

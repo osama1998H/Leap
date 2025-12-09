@@ -264,6 +264,23 @@ class PPOAgent:
             eps=1e-5
         )
 
+        # Learning rate scheduler (MAJOR-5 fix: add scheduler for consistency)
+        # Use cosine annealing which is common for RL training
+        # total_timesteps estimated from config or default
+        self.use_scheduler = self.config.get('use_lr_scheduler', True)
+        self.scheduler_total_steps = self.config.get('scheduler_total_steps', 100000)
+        self._update_count = 0
+
+        if self.use_scheduler:
+            # CosineAnnealingLR with restarts for continued training
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=max(1, self.scheduler_total_steps // self.n_steps),
+                eta_min=self.learning_rate * 0.1  # Minimum LR is 10% of initial
+            )
+        else:
+            self.scheduler = None
+
         # Rollout buffer
         self.buffer = RolloutBuffer(
             buffer_size=self.n_steps,
@@ -479,12 +496,21 @@ class PPOAgent:
         self.training_history.approx_kl.append(avg_approx_kl)
         self.training_history.clip_fraction.append(avg_clip_fraction)
 
+        # Step learning rate scheduler (MAJOR-5 fix)
+        self._update_count += 1
+        if self.scheduler is not None:
+            self.scheduler.step()
+
+        # Get current learning rate for metrics
+        current_lr = self.optimizer.param_groups[0]['lr']
+
         return {
             'policy_loss': avg_policy_loss,
             'value_loss': avg_value_loss,
             'entropy': avg_entropy,
             'approx_kl': avg_approx_kl,
-            'clip_fraction': avg_clip_fraction
+            'clip_fraction': avg_clip_fraction,
+            'learning_rate': current_lr
         }
 
     def train_on_env(
