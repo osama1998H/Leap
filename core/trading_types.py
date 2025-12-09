@@ -127,6 +127,7 @@ class TradeStatistics:
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
+    breakeven_trades: int = 0  # Trades with pnl == 0
     gross_profit: float = 0.0
     gross_loss: float = 0.0
     total_pnl: float = 0.0
@@ -141,7 +142,13 @@ class TradeStatistics:
 
     @property
     def profit_factor(self) -> float:
-        """Calculate profit factor (gross profit / gross loss)."""
+        """
+        Calculate profit factor (gross profit / gross loss).
+
+        Returns:
+            float('inf') when there are only winning trades (gross_loss == 0).
+            0.0 when there are no trades or only losing/breakeven trades.
+        """
         if self.gross_loss == 0:
             return float('inf') if self.gross_profit > 0 else 0.0
         return self.gross_profit / self.gross_loss
@@ -174,3 +181,5 @@ class TradeStatistics:
         elif trade.pnl < 0:
             self.losing_trades += 1
             self.gross_loss += abs(trade.pnl)
+        else:
+            self.breakeven_trades += 1
