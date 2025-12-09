@@ -303,36 +303,53 @@ An advanced AI-powered forex trading system with online learning and adaptation 
 Leap/
 ├── config/
 │   ├── __init__.py
-│   └── settings.py          # Configuration management
+│   └── settings.py              # Configuration management (all dataclasses)
 │
 ├── core/
 │   ├── __init__.py
-│   ├── data_pipeline.py     # Data fetching & feature engineering
-│   ├── trading_env.py       # Gymnasium trading environment
-│   └── risk_manager.py      # Position sizing & risk limits
+│   ├── data_pipeline.py         # Data fetching & feature engineering
+│   ├── trading_env.py           # Gymnasium trading environment (backtest)
+│   ├── trading_env_base.py      # Abstract base trading environment
+│   ├── live_trading_env.py      # Live trading environment (MT5)
+│   ├── trading_types.py         # Shared trading types and dataclasses
+│   ├── risk_manager.py          # Position sizing & risk limits
+│   ├── mt5_broker.py            # MetaTrader 5 broker gateway
+│   ├── order_manager.py         # Order execution and validation
+│   ├── position_sync.py         # Position synchronization with broker
+│   └── auto_trader.py           # Autonomous trading orchestrator
 │
 ├── models/
 │   ├── __init__.py
-│   ├── transformer.py       # Temporal Fusion Transformer
-│   └── ppo_agent.py         # PPO reinforcement learning
+│   ├── transformer.py           # Temporal Fusion Transformer
+│   └── ppo_agent.py             # PPO reinforcement learning
 │
 ├── training/
 │   ├── __init__.py
-│   ├── trainer.py           # Model training orchestration
-│   └── online_learning.py   # Online adaptation system
+│   ├── trainer.py               # Model training orchestration
+│   └── online_learning.py       # Online adaptation system
 │
 ├── evaluation/
 │   ├── __init__.py
-│   ├── backtester.py        # Backtesting engine
-│   └── metrics.py           # Performance metrics
+│   ├── backtester.py            # Backtesting engine
+│   └── metrics.py               # Performance metrics
+│
+├── utils/
+│   ├── __init__.py
+│   └── logging_config.py        # Unified logging configuration
 │
 ├── tests/
 │   ├── __init__.py
-│   └── test_integration.py  # Integration tests
+│   ├── test_integration.py      # Integration tests
+│   ├── test_auto_trader.py      # Auto-trader tests
+│   └── test_feature_engineering.py  # Feature engineering tests
 │
-├── main.py                   # CLI entry point
-├── requirements.txt          # Dependencies
-└── README.md                 # This file
+├── docs/
+│   ├── ARCHITECTURE.md          # System architecture documentation
+│   └── AUTO_TRADER.md           # Auto-trader documentation
+│
+├── main.py                      # CLI entry point
+├── requirements.txt             # Dependencies
+└── README.md                    # This file
 ```
 
 ## Installation
@@ -371,6 +388,12 @@ python main.py train --config config/custom_config.json
 # Run backtest on historical data
 python main.py backtest --symbol EURUSD --bars 50000
 
+# Backtest with realistic constraints (limited trades, capped position size)
+python main.py backtest --symbol EURUSD --realistic
+
+# Backtest with Monte Carlo risk analysis
+python main.py backtest --symbol EURUSD --monte-carlo
+
 # Walk-forward optimization
 python main.py walkforward --symbol EURUSD
 ```
@@ -392,31 +415,95 @@ python main.py live --paper
 python main.py live
 ```
 
+### Auto-Trading (Autonomous)
+
+The auto-trader runs autonomously, combining Transformer predictions with PPO agent decisions.
+See [docs/AUTO_TRADER.md](docs/AUTO_TRADER.md) for detailed documentation.
+
+```bash
+# Paper trading mode (recommended for testing)
+python main.py autotrade --paper --symbol EURUSD
+
+# Live auto-trading (requires confirmation, Windows + MT5 only)
+python main.py autotrade --symbol EURUSD
+
+# With specific model directory
+python main.py autotrade --paper --model-dir ./saved_models --symbol GBPUSD
+```
+
 ### Running Tests
 
 ```bash
+# Run all tests
+python -m pytest tests/ -v
+
 # Run integration tests
 python -m pytest tests/test_integration.py -v
 
-# Or directly
-python tests/test_integration.py
+# Run auto-trader tests
+python -m pytest tests/test_auto_trader.py -v
+
+# Run feature engineering tests
+python -m pytest tests/test_feature_engineering.py -v
 ```
+
+### CLI Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--symbol` | `-s` | EURUSD | Trading symbol |
+| `--timeframe` | `-t` | 1h | Timeframe |
+| `--bars` | `-b` | 50000 | Number of bars to load |
+| `--epochs` | `-e` | 100 | Training epochs for predictor |
+| `--timesteps` | | 100000 | Training timesteps for agent |
+| `--model-dir` | `-m` | ./saved_models | Model directory |
+| `--config` | `-c` | | Path to config file |
+| `--paper` | | False | Use paper trading mode |
+| `--realistic` | | False | Enable realistic backtest constraints |
+| `--monte-carlo` | | False | Run Monte Carlo simulation |
+| `--log-level` | `-l` | INFO | Logging level (DEBUG/INFO/WARNING/ERROR) |
+| `--log-file` | | | Log file path |
 
 ## Configuration
 
-Key configuration parameters in `config/settings.py`:
+All configuration is managed via dataclasses in `config/settings.py`. The main `SystemConfig` contains nested configuration objects.
+
+### Core Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `d_model` | 128 | Transformer model dimension |
-| `n_heads` | 8 | Attention heads |
-| `n_encoder_layers` | 4 | Transformer encoder layers |
-| `lookback_window` | 120 | Input sequence length |
-| `prediction_horizon` | 12 | Prediction steps ahead |
-| `learning_rate` | 1e-4 | Predictor learning rate |
+| `transformer.d_model` | 128 | Transformer model dimension |
+| `transformer.n_heads` | 8 | Attention heads |
+| `transformer.n_encoder_layers` | 4 | Transformer encoder layers |
+| `data.lookback_window` | 120 | Input sequence length |
+| `data.prediction_horizon` | 12 | Prediction steps ahead |
+| `transformer.learning_rate` | 1e-4 | Predictor learning rate |
 | `ppo.gamma` | 0.99 | RL discount factor |
 | `ppo.clip_epsilon` | 0.2 | PPO clip range |
 | `risk.max_drawdown` | 0.15 | Maximum allowed drawdown |
+
+### Auto-Trader Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `auto_trader.risk_per_trade` | 0.01 | Risk per trade (1%) |
+| `auto_trader.max_positions` | 3 | Maximum concurrent positions |
+| `auto_trader.max_daily_loss` | 0.05 | Daily loss limit (5%) |
+| `auto_trader.default_sl_pips` | 50.0 | Default stop loss in pips |
+| `auto_trader.default_tp_pips` | 100.0 | Default take profit in pips |
+| `auto_trader.paper_mode` | True | Enable paper trading |
+| `auto_trader.enable_online_learning` | True | Enable online adaptation |
+
+### Logging Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `logging.level` | INFO | Log level (DEBUG/INFO/WARNING/ERROR) |
+| `logging.log_to_file` | True | Enable file logging |
+| `logging.log_to_console` | True | Enable console logging |
+| `logging.max_file_size_mb` | 10 | Max log file size before rotation |
+| `logging.backup_count` | 5 | Number of backup log files |
+| `logging.rotation_type` | size | Rotation type (size/time) |
 
 ## Performance Metrics
 
