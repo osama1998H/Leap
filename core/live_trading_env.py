@@ -366,18 +366,24 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             self.order_manager.execute_signal(signal)
 
     def _get_open_positions(self) -> List[Position]:
-        """Get list of open positions."""
-        if self.paper_mode:
-            return self._paper_positions
-        else:
-            return self.position_sync.get_positions(self.symbol)
+        """Get list of open positions from single source of truth.
+
+        Returns self.state.positions, which is kept in sync by _sync_positions_to_state().
+        """
+        # Ensure positions are synced (state.positions is the single source of truth)
+        # Note: _sync_with_broker() already calls _sync_positions_to_state(),
+        # but we sync here too for direct calls to _get_open_positions()
+        self._sync_positions_to_state()
+        return self.state.positions
 
     def _has_position(self, direction: str) -> bool:
-        """Check if we have a position in given direction."""
-        if self.paper_mode:
-            return any(p.type == direction for p in self._paper_positions)
-        else:
-            return self.position_sync.has_position(self.symbol, direction)
+        """Check if we have a position in given direction.
+
+        Uses self.state.positions as the single source of truth.
+        """
+        # Use unified position storage (state.positions)
+        positions = self._get_open_positions()
+        return any(p.type == direction for p in positions)
 
     def _get_unrealized_pnl(self, price: float) -> float:
         """Calculate unrealized PnL."""
@@ -532,6 +538,21 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
     # Broker sync methods
     # -------------------------------------------------------------------------
 
+    def _sync_positions_to_state(self):
+        """
+        Sync positions to self.state.positions (single source of truth).
+
+        This ensures self.state.positions always reflects the current positions,
+        whether from paper trading or live broker.
+        """
+        if self.paper_mode:
+            # Copy paper positions to state
+            self.state.positions = list(self._paper_positions)
+        else:
+            # Get positions from broker via position_sync and convert to Position objects
+            broker_positions = self.position_sync.get_positions(self.symbol)
+            self.state.positions = list(broker_positions)
+
     def _sync_with_broker(self):
         """Sync state with broker account."""
         if not self.broker.is_connected:
@@ -553,6 +574,9 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             self.state.real_margin = account.margin
             self.state.real_free_margin = account.free_margin
             self.state.real_margin_level = account.margin_level
+
+        # Sync positions to state.positions (single source of truth)
+        self._sync_positions_to_state()
 
         # Update session PnL
         self.state.session_pnl = self.state.balance - self.state.session_start_balance

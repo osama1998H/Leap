@@ -271,15 +271,8 @@ class PPOAgent:
             device=self.device
         )
 
-        # Training statistics
-        self.training_stats = {
-            'policy_losses': [],
-            'value_losses': [],
-            'entropy_losses': [],
-            'total_losses': [],
-            'approx_kl': [],
-            'clip_fraction': []
-        }
+        # Training history (unified dataclass for consistent save/load)
+        self.training_history = TrainingHistory()
 
         # Experience replay for online learning
         self.experience_buffer = deque(maxlen=self.config.get('experience_buffer_size', 50000))
@@ -478,13 +471,13 @@ class PPOAgent:
         avg_approx_kl = total_approx_kl / n_updates
         avg_clip_fraction = total_clip_fraction / n_updates
 
-        # Store statistics
-        self.training_stats['policy_losses'].append(avg_policy_loss)
-        self.training_stats['value_losses'].append(avg_value_loss)
-        self.training_stats['entropy_losses'].append(avg_entropy)
-        self.training_stats['total_losses'].append(avg_total_loss)
-        self.training_stats['approx_kl'].append(avg_approx_kl)
-        self.training_stats['clip_fraction'].append(avg_clip_fraction)
+        # Store statistics in unified training history
+        self.training_history.policy_losses.append(avg_policy_loss)
+        self.training_history.value_losses.append(avg_value_loss)
+        self.training_history.entropy_losses.append(avg_entropy)
+        self.training_history.total_losses.append(avg_total_loss)
+        self.training_history.approx_kl.append(avg_approx_kl)
+        self.training_history.clip_fraction.append(avg_clip_fraction)
 
         return {
             'policy_loss': avg_policy_loss,
@@ -588,7 +581,7 @@ class PPOAgent:
         return {
             'episode_rewards': episode_rewards,
             'episode_lengths': episode_lengths,
-            'training_stats': self.training_stats
+            'training_history': self.training_history
         }
 
     def evaluate(self, env, n_episodes: int = 10) -> float:
@@ -665,14 +658,6 @@ class PPOAgent:
 
     def save(self, path: str):
         """Save agent checkpoint using standardized format."""
-        training_history = TrainingHistory(
-            policy_losses=self.training_stats.get('policy_losses', []),
-            value_losses=self.training_stats.get('value_losses', []),
-            entropy_losses=self.training_stats.get('entropy_losses', []),
-            total_losses=self.training_stats.get('total_losses', []),
-            approx_kl=self.training_stats.get('approx_kl', []),
-            clip_fraction=self.training_stats.get('clip_fraction', [])
-        )
         metadata = CheckpointMetadata(
             model_type='ppo',
             state_dim=self.state_dim,
@@ -683,7 +668,7 @@ class PPOAgent:
             model_state_dict=self.network.state_dict(),
             optimizer_state_dict=self.optimizer.state_dict(),
             config=self.config,
-            training_history=training_history,
+            training_history=self.training_history,
             metadata=metadata
         )
 
@@ -705,16 +690,8 @@ class PPOAgent:
         if CHECKPOINT_KEYS['CONFIG'] in checkpoint:
             self.config = checkpoint[CHECKPOINT_KEYS['CONFIG']]
 
-        # Extract training history into training_stats dict
-        training_history = checkpoint.get(CHECKPOINT_KEYS['TRAINING_HISTORY'], TrainingHistory())
-        self.training_stats = {
-            'policy_losses': training_history.policy_losses,
-            'value_losses': training_history.value_losses,
-            'entropy_losses': training_history.entropy_losses,
-            'total_losses': training_history.total_losses,
-            'approx_kl': training_history.approx_kl,
-            'clip_fraction': training_history.clip_fraction
-        }
+        # Extract training history (unified dataclass)
+        self.training_history = checkpoint.get(CHECKPOINT_KEYS['TRAINING_HISTORY'], TrainingHistory())
 
         logger.info(f"Agent loaded from {path}")
 
