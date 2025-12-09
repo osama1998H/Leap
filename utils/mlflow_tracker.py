@@ -378,9 +378,10 @@ class MLflowTracker:
                 register_name = registered_model_name
 
             # Log the model
+            # Note: artifact_path is deprecated, use name instead
             model_info = mlflow.pytorch.log_model(
                 pytorch_model=model,
-                artifact_path=artifact_path,
+                name=artifact_path,
                 signature=signature,
                 input_example=input_example,
                 registered_model_name=register_name,
@@ -413,14 +414,49 @@ class MLflowTracker:
         Returns:
             Model URI if successful, None otherwise
         """
-        # Create example input for signature
+        # Create example input for signature inference
         input_example = np.zeros((1, seq_length, input_dim), dtype=np.float32)
+
+        # Infer signature manually since model returns dict (which MLflow
+        # serving validation can't handle). We pass signature but not
+        # input_example to avoid the validation error.
+        signature = None
+        try:
+            model.eval()
+            with torch.no_grad():
+                input_tensor = torch.from_numpy(input_example).float()
+                try:
+                    device = next(model.parameters()).device
+                    input_tensor = input_tensor.to(device)
+                except StopIteration:
+                    pass
+
+                output = model(input_tensor)
+
+                # Handle dict output from Transformer
+                if isinstance(output, dict):
+                    if 'prediction' in output:
+                        output = output['prediction']
+                    elif 'output' in output:
+                        output = output['output']
+                    else:
+                        if not output:
+                            raise ValueError(
+                                "Model output dict is empty; cannot infer signature."
+                            )
+                        output = next(iter(output.values()))
+
+                output_np = output.cpu().numpy()
+                signature = infer_signature(input_example, output_np)
+        except Exception as e:
+            logger.warning(f"Could not infer predictor signature: {e}")
 
         return self.log_pytorch_model(
             model=model,
             artifact_path="predictor",
             registered_model_name=self.config.registered_model_name_predictor,
-            input_example=input_example
+            input_example=None,  # Skip input_example to avoid dict output validation error
+            signature=signature
         )
 
     def log_agent_model(
@@ -437,14 +473,40 @@ class MLflowTracker:
         Returns:
             Model URI if successful, None otherwise
         """
-        # Skip input_example for agent models that return tuples
-        # (action_logits, state_value) - MLflow serving validation
-        # expects single tensor output
+        # Create example input for signature inference
+        input_example = np.zeros((1, state_dim), dtype=np.float32)
+
+        # Infer signature manually since model returns tuple (action_logits, value)
+        # which MLflow serving validation can't handle. We pass signature but not
+        # input_example to avoid the validation error.
+        signature = None
+        try:
+            model.eval()
+            with torch.no_grad():
+                input_tensor = torch.from_numpy(input_example).float()
+                try:
+                    device = next(model.parameters()).device
+                    input_tensor = input_tensor.to(device)
+                except StopIteration:
+                    pass
+
+                output = model(input_tensor)
+
+                # Handle tuple output from PPO agent (action_logits, value)
+                if isinstance(output, tuple):
+                    output = output[0]  # Use action logits for signature
+
+                output_np = output.cpu().numpy()
+                signature = infer_signature(input_example, output_np)
+        except Exception as e:
+            logger.warning(f"Could not infer agent signature: {e}")
+
         return self.log_pytorch_model(
             model=model,
             artifact_path="agent",
             registered_model_name=self.config.registered_model_name_agent,
-            input_example=None
+            input_example=None,  # Skip input_example to avoid tuple output validation error
+            signature=signature
         )
 
     def log_backtest_results(
