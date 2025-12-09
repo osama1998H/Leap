@@ -203,7 +203,7 @@ def test_adx_calculation():
 
     # Validate DI crossover is binary
     di_cross = features['di_crossover'].dropna()
-    assert set(di_cross.unique()).issubset({0, 1, 0.0, 1.0}), \
+    assert set(di_cross.unique()).issubset({0, 1}), \
         f"DI crossover should be binary, got {di_cross.unique()}"
     print("✓ DI crossover is binary")
 
@@ -215,7 +215,7 @@ def test_adx_calculation():
 
     # Validate ADX strength categories
     adx_strength = features['adx_strength'].dropna()
-    valid_strengths = {0, 1, 2, 0.0, 1.0, 2.0}
+    valid_strengths = {0, 1, 2}
     actual_strengths = set(adx_strength.unique())
     assert actual_strengths.issubset(valid_strengths), \
         f"ADX strength should be 0, 1, or 2, got {actual_strengths}"
@@ -478,7 +478,6 @@ def test_tr_dm_alignment():
     print("Testing TR/DM Window Alignment...")
     print("="*60)
 
-    fe = FeatureEngineer()
     df = create_sample_ohlcv(50)
 
     # Add TR
