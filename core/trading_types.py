@@ -118,6 +118,11 @@ class TradeStatistics:
     Reusable trade statistics.
 
     Used by TradingState, TradingSession, and BacktestResult to avoid duplication.
+
+    Note: max_drawdown requires equity curve tracking and cannot be computed from
+    individual trade PnL alone. When using update_from_trade(), max_drawdown will
+    not be updated. Set max_drawdown explicitly when you have access to equity data,
+    or use TradingSession which tracks drawdown via account balance.
     """
     total_trades: int = 0
     winning_trades: int = 0
@@ -125,7 +130,7 @@ class TradeStatistics:
     gross_profit: float = 0.0
     gross_loss: float = 0.0
     total_pnl: float = 0.0
-    max_drawdown: float = 0.0
+    max_drawdown: float = 0.0  # Must be set externally; not updated by update_from_trade()
 
     @property
     def win_rate(self) -> float:

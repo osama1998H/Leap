@@ -56,6 +56,8 @@ class TradingSession:
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
+    gross_profit: float = 0.0  # Sum of all winning trade profits
+    gross_loss: float = 0.0    # Sum of all losing trade losses (absolute value)
     total_pnl: float = 0.0
     max_drawdown: float = 0.0
     signals_generated: int = 0
@@ -86,6 +88,8 @@ class TradingSession:
             total_trades=self.total_trades,
             winning_trades=self.winning_trades,
             losing_trades=self.losing_trades,
+            gross_profit=self.gross_profit,
+            gross_loss=self.gross_loss,
             total_pnl=self.total_pnl,
             max_drawdown=self.max_drawdown
         )
@@ -786,8 +790,10 @@ class AutoTrader:
             self.session.total_pnl += profit
             if profit > 0:
                 self.session.winning_trades += 1
-            else:
+                self.session.gross_profit += profit
+            elif profit < 0:
                 self.session.losing_trades += 1
+                self.session.gross_loss += abs(profit)
 
             # Update drawdown
             account = self.broker.get_account_info()
