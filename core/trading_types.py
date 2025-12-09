@@ -19,7 +19,12 @@ class Action(IntEnum):
 
 @dataclass
 class EnvConfig:
-    """Shared configuration for trading environments."""
+    """
+    Shared configuration for trading environments.
+
+    Use EnvConfig directly or create via from_params() factory method.
+    This is the single source of truth for environment configuration defaults.
+    """
     initial_balance: float = 10000.0
     commission: float = 0.0001  # 0.01% per trade
     spread: float = 0.0002  # 2 pips for forex
@@ -30,6 +35,43 @@ class EnvConfig:
     take_profit_pct: float = 0.04  # 4% take profit
     window_size: int = 60
     max_drawdown_threshold: float = 0.5  # 50% max drawdown terminates episode
+
+    @classmethod
+    def from_params(
+        cls,
+        initial_balance: Optional[float] = None,
+        commission: Optional[float] = None,
+        spread: Optional[float] = None,
+        slippage: Optional[float] = None,
+        leverage: Optional[int] = None,
+        max_position_size: Optional[float] = None,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
+        window_size: Optional[int] = None,
+        max_drawdown_threshold: Optional[float] = None
+    ) -> 'EnvConfig':
+        """
+        Factory method to create EnvConfig from individual parameters.
+
+        Only non-None parameters override the defaults. This provides a clean
+        interface for creating configs from keyword arguments.
+
+        Example:
+            config = EnvConfig.from_params(initial_balance=50000.0, leverage=50)
+        """
+        defaults = cls()
+        return cls(
+            initial_balance=initial_balance if initial_balance is not None else defaults.initial_balance,
+            commission=commission if commission is not None else defaults.commission,
+            spread=spread if spread is not None else defaults.spread,
+            slippage=slippage if slippage is not None else defaults.slippage,
+            leverage=leverage if leverage is not None else defaults.leverage,
+            max_position_size=max_position_size if max_position_size is not None else defaults.max_position_size,
+            stop_loss_pct=stop_loss_pct if stop_loss_pct is not None else defaults.stop_loss_pct,
+            take_profit_pct=take_profit_pct if take_profit_pct is not None else defaults.take_profit_pct,
+            window_size=window_size if window_size is not None else defaults.window_size,
+            max_drawdown_threshold=max_drawdown_threshold if max_drawdown_threshold is not None else defaults.max_drawdown_threshold
+        )
 
 
 @dataclass

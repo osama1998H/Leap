@@ -8,7 +8,9 @@
 
 ## Executive Summary
 
-This report identifies code duplications and inconsistencies across the Leap codebase. All identified issues have been resolved.
+This report identifies code duplications and inconsistencies across the Leap codebase. **All identified issues (8 total) have been resolved**, including:
+- 6 HIGH/MEDIUM priority issues (device setup, trade types, logging, metrics, position sizing, risk validation)
+- 2 LOW priority issues (config parameter handling, model save/load patterns)
 
 | Category | Severity | Files Affected | Status |
 |----------|----------|----------------|--------|
@@ -18,8 +20,8 @@ This report identifies code duplications and inconsistencies across the Leap cod
 | Metrics Calculation | ~~Medium~~ | 3 files | **RESOLVED** - Using `MetricsCalculator` |
 | Position Sizing Logic | ~~Medium~~ | 3 files | **RESOLVED** - Centralized via `_calculate_position_size()` |
 | Risk Validation | ~~Medium~~ | 4 files | **RESOLVED** - Fixed validation signature |
-| Config Parameter Handling | Low | 3 files | Pending - Use config dataclasses consistently |
-| Model Save/Load Patterns | Low | 3 files | Pending - Standardize approach |
+| Config Parameter Handling | ~~Low~~ | 3 files | **RESOLVED** - `EnvConfig.from_params()` factory method |
+| Model Save/Load Patterns | ~~Low~~ | 3 files | **RESOLVED** - `utils/checkpoint.py` standardization |
 
 ---
 
@@ -145,43 +147,50 @@ if not self.risk_manager.should_take_trade():  # Wrong!
 
 ---
 
-## Remaining Issues (LOW Priority)
-
-### 1. Config Parameter Handling (LOW)
+### 7. Config Parameter Handling (RESOLVED)
 
 **Issue:**
-Some classes accept both config dataclass AND individual parameters:
-```python
-def __init__(
-    self,
-    config: Optional[EnvConfig] = None,
-    initial_balance: float = 10000.0,
-    # ... 8 more individual params
-):
-```
+Some classes accepted both config dataclass AND individual parameters, with duplicated resolution logic.
 
-**Recommendation:**
-Use factory pattern or require config only:
-```python
-class BaseTradingEnvironment:
-    def __init__(self, config: EnvConfig):
-        self.config = config
+**Solution Implemented:**
+- Added `EnvConfig.from_params()` factory method to `core/trading_types.py`:
+  - Creates config from individual parameters
+  - Only non-None parameters override defaults
+  - Centralizes default values in single location
+- Updated `BaseTradingEnvironment.__init__()` to use factory internally:
+  - If no config provided, creates one via `EnvConfig.from_params()`
+  - Stores config as `self._config` for reference
+  - Extracts values from config (single source of truth)
 
-    @classmethod
-    def from_params(cls, initial_balance=10000.0, ...):
-        config = EnvConfig(initial_balance=initial_balance, ...)
-        return cls(config)
-```
+**Impact:**
+- Config defaults centralized in `EnvConfig` dataclass
+- No more duplicated if/else resolution logic
+- Backward compatible (still accepts individual params)
+- Easier to maintain and extend
 
-### 2. Model Save/Load Patterns (LOW)
+### 8. Model Save/Load Patterns (RESOLVED)
 
 **Issue:**
 Different key names in model checkpoints:
-- TransformerPredictor: `model_state_dict`, `config.__dict__`
-- PPOAgent: `network_state_dict`, individual config fields
+- TransformerPredictor: `model_state_dict`, `config`, `input_dim`, `train_losses`, `val_losses`
+- PPOAgent: `network_state_dict`, `config`, `training_stats`
 
-**Recommendation:**
-Create a base checkpoint interface with consistent structure.
+**Solution Implemented:**
+- Created `utils/checkpoint.py` with standardized checkpoint structure:
+  - `CheckpointMetadata`: Architecture info (model_type, input_dim, state_dim, etc.)
+  - `TrainingHistory`: Unified training history (supports both transformer and PPO stats)
+  - `CHECKPOINT_KEYS`: Standard key names (`model_state_dict`, `training_history`, etc.)
+  - `save_checkpoint()`: Save with consistent format
+  - `load_checkpoint()`: Load with backward compatibility for legacy formats
+- Updated `TransformerPredictor.save()` and `load()` to use checkpoint utility
+- Updated `PPOAgent.save()` and `load()` to use checkpoint utility
+
+**Impact:**
+- Consistent checkpoint structure across all models
+- Backward compatible with legacy checkpoints
+- Legacy keys (`network_state_dict`, `training_stats`) automatically converted
+- Single source of truth for checkpoint format
+- Easier to add new models with consistent serialization
 
 ---
 
@@ -198,14 +207,15 @@ All changes validated with tests:
 
 | File | Duplications Found | Status |
 |------|-------------------|--------|
-| `models/transformer.py` | ~~Device setup~~, save pattern | Device setup resolved |
-| `models/ppo_agent.py` | ~~Device setup~~, save pattern | Device setup resolved |
+| `models/transformer.py` | ~~Device setup~~, ~~save pattern~~ | **Fully resolved** |
+| `models/ppo_agent.py` | ~~Device setup~~, ~~save pattern~~ | **Fully resolved** |
 | `training/trainer.py` | ~~Device setup~~ | **Fully resolved** |
-| `core/trading_types.py` | ~~Base for consolidation~~ | **Now authoritative** |
-| `core/trading_env_base.py` | ~~Metrics calc~~, config handling | Metrics resolved |
+| `core/trading_types.py` | ~~Base for consolidation~~, ~~config factory~~ | **Now authoritative** (incl. `EnvConfig.from_params()`) |
+| `core/trading_env_base.py` | ~~Metrics calc~~, ~~config handling~~ | **Fully resolved** |
 | `core/risk_manager.py` | Position sizing (authoritative) | **Authoritative** |
 | `core/order_manager.py` | ~~Position sizing fallback~~, ~~validation bug~~ | **Fully resolved** |
 | `core/auto_trader.py` | ~~Trade statistics~~ | **Uses TradeStatistics** |
 | `evaluation/backtester.py` | ~~Trade class~~, ~~metrics~~, ~~position sizing~~ | **Fully resolved** |
 | `evaluation/metrics.py` | Metrics (authoritative) | **Authoritative** |
 | `utils/logging_config.py` | ~~Logging pattern~~ | **Documented** |
+| `utils/checkpoint.py` | **NEW** - Checkpoint standardization | **Authoritative** |
