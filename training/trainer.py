@@ -53,6 +53,7 @@ class ModelTrainer:
         self.predictor_epochs = self.config.get('predictor_epochs', 100)
         self.agent_timesteps = self.config.get('agent_timesteps', 100000)
         self.batch_size = self.config.get('batch_size', 64)
+        self.patience = self.config.get('patience', 15)
 
         # Checkpointing
         self.checkpoint_dir = self.config.get('checkpoint_dir', './checkpoints')
@@ -98,6 +99,7 @@ class ModelTrainer:
             y_val=y_val,
             epochs=epochs,
             batch_size=self.batch_size,
+            patience=self.patience,
             mlflow_callback=mlflow_callback
         )
 
