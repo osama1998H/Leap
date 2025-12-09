@@ -1100,5 +1100,848 @@ def start_live_trading(self, paper: bool = True):
 
 ---
 
-*Report generated: 2025-12-09*
-*Analysis scope: Full codebase architectural review*
+## Ideal Component Architecture
+
+### System Component Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LEAP TRADING SYSTEM                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                         CLI LAYER (main.py)                          │    │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │    │
+│  │  │   train     │  │  backtest   │  │  autotrade  │  │  evaluate   │ │    │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘ │    │
+│  └──────────────────────────────┬──────────────────────────────────────┘    │
+│                                 │                                           │
+│  ┌──────────────────────────────▼──────────────────────────────────────┐    │
+│  │                    ORCHESTRATION LAYER                               │    │
+│  │  ┌────────────────────────────────────────────────────────────────┐ │    │
+│  │  │                    LeapTradingSystem                            │ │    │
+│  │  │  - Lazy component initialization                               │ │    │
+│  │  │  - Configuration management                                    │ │    │
+│  │  │  - Component lifecycle coordination                            │ │    │
+│  │  └────────────────────────────────────────────────────────────────┘ │    │
+│  └──────────────────────────────┬──────────────────────────────────────┘    │
+│                                 │                                           │
+│  ┌──────────────────────────────▼──────────────────────────────────────┐    │
+│  │                      MODEL LAYER                                     │    │
+│  │                                                                      │    │
+│  │   <<interface>> BaseModel                                           │    │
+│  │   ┌────────────────────────────────────────────────────────────┐    │    │
+│  │   │ + network: nn.Module      (standardized attribute)          │    │    │
+│  │   │ + training_history: TrainingHistory                         │    │    │
+│  │   │ + save(path: str) -> None                                   │    │    │
+│  │   │ + load(path: str) -> None                                   │    │    │
+│  │   │ + online_update(data: OnlineData) -> Dict                   │    │    │
+│  │   └────────────────────────────────────────────────────────────┘    │    │
+│  │              ▲                              ▲                       │    │
+│  │              │                              │                       │    │
+│  │   ┌─────────┴───────────┐      ┌──────────┴───────────┐           │    │
+│  │   │ TransformerPredictor │      │      PPOAgent        │           │    │
+│  │   │ (price prediction)   │      │   (action decision)  │           │    │
+│  │   │                      │      │                      │           │    │
+│  │   │ .network = TFT       │      │ .network = ActorCritic│          │    │
+│  │   │ .training_history    │      │ .training_history    │           │    │
+│  │   └──────────────────────┘      └──────────────────────┘           │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    ENVIRONMENT LAYER                                 │    │
+│  │                                                                      │    │
+│  │   <<abstract>> BaseTradingEnvironment (gym.Env)                     │    │
+│  │   ┌────────────────────────────────────────────────────────────┐    │    │
+│  │   │ # Abstract methods (must implement)                         │    │    │
+│  │   │ + _get_current_price() -> float                             │    │    │
+│  │   │ + _get_market_observation() -> np.ndarray                   │    │    │
+│  │   │ + _open_position(direction, price)                          │    │    │
+│  │   │ + _close_position(position, price)                          │    │    │
+│  │   │ + _close_all_positions(price)                               │    │    │
+│  │   │ + _get_open_positions() -> List[Position]                   │    │    │
+│  │   │                                                             │    │    │
+│  │   │ # Shared implementations (inherited)                        │    │    │
+│  │   │ + _execute_action(action: int, price: float)  ◄─ USE THIS   │    │    │
+│  │   │ + _calculate_reward(prev_equity) -> float                   │    │    │
+│  │   │ + _get_account_observation() -> np.ndarray (8 features)     │    │    │
+│  │   │ + state: TradingState  (single source of truth)             │    │    │
+│  │   └────────────────────────────────────────────────────────────┘    │    │
+│  │              ▲                              ▲                       │    │
+│  │              │                              │                       │    │
+│  │   ┌─────────┴───────────┐      ┌──────────┴───────────┐           │    │
+│  │   │ TradingEnvironment   │      │LiveTradingEnvironment│           │    │
+│  │   │    (backtesting)     │      │   (live/paper)       │           │    │
+│  │   │                      │      │                      │           │    │
+│  │   │ Uses base class      │      │ MUST use base class  │           │    │
+│  │   │ _execute_action()    │      │ _execute_action()    │           │    │
+│  │   │                      │      │ state.positions =    │           │    │
+│  │   │ state.positions      │      │   unified storage    │           │    │
+│  │   └──────────────────────┘      └──────────────────────┘           │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                     TRADING LAYER                                    │    │
+│  │                                                                      │    │
+│  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │    │
+│  │   │ AutoTrader   │  │ RiskManager  │  │   MT5BrokerGateway       │  │    │
+│  │   │              │──│              │──│                          │  │    │
+│  │   │ State machine│  │ Position     │  │   OrderManager           │  │    │
+│  │   │ Trading loop │  │ sizing       │  │   PositionSynchronizer   │  │    │
+│  │   └──────────────┘  └──────────────┘  └──────────────────────────┘  │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    DATA & TRAINING LAYER                             │    │
+│  │                                                                      │    │
+│  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │    │
+│  │   │ DataPipeline │  │ ModelTrainer │  │  OnlineLearningManager   │  │    │
+│  │   │              │  │              │  │                          │  │    │
+│  │   │ Feature eng. │  │ Training     │  │  Regime detection        │  │    │
+│  │   │ Sequences    │  │ orchestration│  │  Model adaptation        │  │    │
+│  │   └──────────────┘  └──────────────┘  └──────────────────────────┘  │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    CROSS-CUTTING CONCERNS                            │    │
+│  │                                                                      │    │
+│  │   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │    │
+│  │   │ SystemConfig    │  │ Logging         │  │ MLflowTracker       │ │    │
+│  │   │ (hierarchical   │  │ (standard       │  │ (experiment         │ │    │
+│  │   │  dataclasses)   │  │  logging only)  │  │  tracking)          │ │    │
+│  │   └─────────────────┘  └─────────────────┘  └─────────────────────┘ │    │
+│  │                                                                      │    │
+│  │   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │    │
+│  │   │ utils/device.py │  │utils/checkpoint │  │ core/trading_types  │ │    │
+│  │   │ resolve_device  │  │ save/load       │  │ Action, Position,   │ │    │
+│  │   │                 │  │ checkpoint      │  │ TradingState, etc.  │ │    │
+│  │   └─────────────────┘  └─────────────────┘  └─────────────────────┘ │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Diagram (Ideal State)
+
+```
+                                   Training Flow
+                                   ═════════════
+
+    ┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
+    │  DataSource  │────▶│ DataPipeline │────▶│    MarketData        │
+    │  (MT5/CSV)   │     │              │     │ (with features)      │
+    └──────────────┘     └──────────────┘     └──────────┬───────────┘
+                                                         │
+                         ┌───────────────────────────────┴───────────────────┐
+                         │                                                   │
+                         ▼                                                   ▼
+              ┌────────────────────┐                          ┌────────────────────┐
+              │ TransformerPredictor│                          │ TradingEnvironment │
+              │    .train(X, y)    │                          │     (Gymnasium)    │
+              └────────┬───────────┘                          └─────────┬──────────┘
+                       │                                                │
+                       │                                                ▼
+                       │                                      ┌────────────────────┐
+                       │                                      │     PPOAgent       │
+                       │                                      │  .train_on_env()   │
+                       │                                      └─────────┬──────────┘
+                       │                                                │
+                       └───────────────────┬────────────────────────────┘
+                                           │
+                                           ▼
+                              ┌──────────────────────┐
+                              │   ModelTrainer       │
+                              │   (orchestrates)     │
+                              │                      │
+                              │ save_checkpoint() ───┼───▶ Unified checkpoint format
+                              └──────────────────────┘
+
+
+                                   Inference Flow
+                                   ══════════════
+
+    ┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
+    │ Live Market  │────▶│ DataPipeline │────▶│  Observation (same   │
+    │    Data      │     │              │     │  dim as training!)   │
+    └──────────────┘     └──────────────┘     └──────────┬───────────┘
+                                                         │
+                         ┌───────────────────────────────┴───────────────────┐
+                         │                                                   │
+                         ▼                                                   ▼
+              ┌────────────────────┐                          ┌────────────────────┐
+              │ TransformerPredictor│                          │LiveTradingEnv      │
+              │    .predict(X)     │                          │ _execute_action()  │◄─┐
+              └────────┬───────────┘                          │ (base class method)│  │
+                       │                                      └─────────┬──────────┘  │
+                       │                                                │             │
+                       │ prediction + uncertainty                       │ observation │
+                       │                                                │             │
+                       └───────────────────┬────────────────────────────┘             │
+                                           │                                          │
+                                           ▼                                          │
+                              ┌──────────────────────┐                                │
+                              │     PPOAgent         │                                │
+                              │  .select_action()    │                                │
+                              └──────────┬───────────┘                                │
+                                         │ action                                     │
+                                         └────────────────────────────────────────────┘
+```
+
+---
+
+## Interface Definitions
+
+The following Python protocol/ABC definitions would enforce architectural consistency across the codebase.
+
+### 1. Base Model Interface (`models/base.py`)
+
+```python
+"""
+Proposed: models/base.py
+Defines the common interface for all prediction/decision models.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Optional, Any
+import numpy as np
+import torch.nn as nn
+
+from utils.checkpoint import TrainingHistory, CheckpointMetadata
+
+
+class BaseModel(ABC):
+    """
+    Abstract base class for all trainable models (Transformer, PPO, etc.).
+
+    Enforces:
+    - Consistent network attribute naming (.network)
+    - Standardized save/load with TrainingHistory
+    - Common online_update interface
+    """
+
+    # CRITICAL: All subclasses must use 'network' for the PyTorch module
+    network: nn.Module
+
+    # Training history using standardized dataclass
+    training_history: TrainingHistory
+
+    # Device and config
+    device: str
+    config: Dict[str, Any]
+
+    @abstractmethod
+    def save(self, path: str) -> None:
+        """
+        Save model checkpoint using standardized format.
+
+        Must use:
+        - save_checkpoint() from utils.checkpoint
+        - TrainingHistory dataclass
+        - CheckpointMetadata with model_type
+        """
+        pass
+
+    @abstractmethod
+    def load(self, path: str) -> None:
+        """
+        Load model checkpoint with backward compatibility.
+
+        Must use:
+        - load_checkpoint() from utils.checkpoint
+        - Handle legacy checkpoint formats
+        """
+        pass
+
+    @abstractmethod
+    def online_update(self, **kwargs) -> Dict[str, float]:
+        """
+        Online learning update with new data.
+
+        For TransformerPredictor:
+            online_update(X_new: np.ndarray, y_new: np.ndarray, learning_rate: float)
+
+        For PPOAgent:
+            online_update(n_samples: int, n_epochs: int)
+
+        Returns:
+            Dictionary with loss values for tracking
+        """
+        pass
+
+    def get_network_state(self) -> Dict:
+        """Get network state dict (standardized accessor)."""
+        return self.network.state_dict()
+
+    def set_network_state(self, state_dict: Dict) -> None:
+        """Set network state dict (standardized mutator)."""
+        self.network.load_state_dict(state_dict)
+```
+
+### 2. Trading Environment Interface (`core/env_interface.py`)
+
+```python
+"""
+Proposed: core/env_interface.py
+Defines the contract for trading environments.
+"""
+
+from abc import ABC, abstractmethod
+from typing import List, Tuple, Dict, Any, Optional
+import numpy as np
+import gymnasium as gym
+
+from core.trading_types import Position, TradingState, Action
+
+
+class TradingEnvironmentInterface(gym.Env, ABC):
+    """
+    Interface contract for all trading environments.
+
+    Enforces:
+    - Consistent state management via self.state: TradingState
+    - Use of _execute_action(action, price) for action execution
+    - Standard observation dimensions
+    """
+
+    # State must be the single source of truth
+    state: TradingState
+
+    # Configuration
+    window_size: int
+    initial_balance: float
+
+    # History tracking
+    history: Dict[str, List]
+
+    @abstractmethod
+    def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
+        """Reset environment, always update self.state."""
+        pass
+
+    @abstractmethod
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+        """
+        Execute action and return new state.
+
+        IMPORTANT: Must call self._execute_action(action, price)
+                   NOT a custom implementation.
+        """
+        pass
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Abstract methods - data source specific
+    # ─────────────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def _get_current_price(self) -> float:
+        """Get current market price from data source."""
+        pass
+
+    @abstractmethod
+    def _get_market_observation(self) -> np.ndarray:
+        """Get market observation (must match training dimensions)."""
+        pass
+
+    @abstractmethod
+    def _open_position(self, direction: str, price: float) -> None:
+        """
+        Open position and UPDATE self.state.positions.
+
+        Args:
+            direction: 'long' or 'short'
+            price: Entry price
+        """
+        pass
+
+    @abstractmethod
+    def _close_all_positions(self, price: float) -> None:
+        """Close all positions and UPDATE self.state.positions."""
+        pass
+
+    @abstractmethod
+    def _get_open_positions(self) -> List[Position]:
+        """
+        Get open positions from self.state.positions (single source).
+
+        DO NOT return from alternative sources like _paper_positions.
+        """
+        pass
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Shared implementations - DO NOT override without calling super()
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _execute_action(self, action: int, price: float) -> None:
+        """
+        Execute trading action at given price.
+
+        CRITICAL: Subclasses MUST call this method, not implement their own.
+
+        Args:
+            action: Action from Action enum (HOLD, BUY, SELL, CLOSE)
+            price: Current market price for execution
+        """
+        if action == Action.HOLD:
+            return
+        elif action == Action.BUY:
+            if not self._has_position('long'):
+                self._open_position('long', price)
+        elif action == Action.SELL:
+            if not self._has_position('short'):
+                self._open_position('short', price)
+        elif action == Action.CLOSE:
+            self._close_all_positions(price)
+
+    def _get_account_observation(self) -> np.ndarray:
+        """
+        Get account state observation.
+
+        Returns 8 features (MUST be consistent across all environments):
+        - balance_norm, equity_norm, n_positions, has_long, has_short,
+        - unrealized_pnl_norm, max_drawdown, total_pnl_norm
+
+        Subclasses may EXTEND (call super() and append) but NOT replace.
+        """
+        current_price = self._get_current_price()
+        unrealized_pnl = self._get_unrealized_pnl(current_price)
+
+        return np.array([
+            self.state.balance / self.initial_balance,
+            self.state.equity / self.initial_balance,
+            len(self._get_open_positions()),
+            1.0 if self._has_position('long') else 0.0,
+            1.0 if self._has_position('short') else 0.0,
+            unrealized_pnl / self.initial_balance,
+            self.state.max_drawdown,
+            self.state.total_pnl / self.initial_balance
+        ], dtype=np.float32)
+```
+
+### 3. Online Learning Interface (`training/online_interface.py`)
+
+```python
+"""
+Proposed: training/online_interface.py
+Unified interface for online learning across model types.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Optional, Any
+from dataclasses import dataclass
+import numpy as np
+
+
+@dataclass
+class OnlineLearningData:
+    """
+    Unified data container for online learning updates.
+
+    For supervised models (Transformer):
+        - features: X_new (batch of input sequences)
+        - targets: y_new (prediction targets)
+
+    For RL models (PPO):
+        - states: Recent states from experience buffer
+        - actions: Actions taken
+        - rewards: Rewards received
+        - dones: Episode termination flags
+    """
+    # Supervised learning data
+    features: Optional[np.ndarray] = None
+    targets: Optional[np.ndarray] = None
+
+    # RL data
+    states: Optional[np.ndarray] = None
+    actions: Optional[np.ndarray] = None
+    rewards: Optional[np.ndarray] = None
+    dones: Optional[np.ndarray] = None
+
+    # Common parameters
+    learning_rate: Optional[float] = None
+    n_epochs: int = 1
+
+
+class OnlineLearnable(ABC):
+    """
+    Interface for models that support online learning.
+
+    Unifies the online_update() interface across model types.
+    """
+
+    @abstractmethod
+    def online_update(self, data: OnlineLearningData) -> Dict[str, float]:
+        """
+        Update model with new data.
+
+        Args:
+            data: OnlineLearningData container with appropriate fields populated
+
+        Returns:
+            Dictionary with loss/metric values:
+            - 'loss': Primary loss value
+            - 'learning_rate': Effective learning rate used
+            - Additional model-specific metrics
+        """
+        pass
+
+    @abstractmethod
+    def supports_online_learning(self) -> bool:
+        """Check if model is configured for online learning."""
+        pass
+
+    def get_online_learning_config(self) -> Dict[str, Any]:
+        """Get current online learning configuration."""
+        return {
+            'enabled': self.supports_online_learning(),
+            'learning_rate': getattr(self, 'online_learning_rate', None)
+        }
+```
+
+### 4. Configuration Interface (`config/interface.py`)
+
+```python
+"""
+Proposed: config/interface.py
+Standardized configuration access patterns.
+"""
+
+from abc import ABC, abstractmethod
+from typing import TypeVar, Generic, Dict, Any
+from dataclasses import dataclass
+
+
+T = TypeVar('T')
+
+
+class ConfigAccessor(Generic[T]):
+    """
+    Wrapper for type-safe configuration access.
+
+    Eliminates inconsistent .get() vs direct access patterns.
+    """
+
+    def __init__(self, config: T):
+        self._config = config
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get config value with default fallback."""
+        return getattr(self._config, key, default)
+
+    def __getattr__(self, name: str) -> Any:
+        """Direct attribute access for dataclass configs."""
+        return getattr(self._config, name)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for legacy compatibility."""
+        if hasattr(self._config, '__dataclass_fields__'):
+            from dataclasses import asdict
+            return asdict(self._config)
+        return dict(self._config) if isinstance(self._config, dict) else {}
+
+
+# Usage example:
+# config = ConfigAccessor(transformer_config)
+# d_model = config.d_model  # Direct access
+# d_model = config.get('d_model', 128)  # With default
+```
+
+---
+
+## Refactoring Plan
+
+### Priority Matrix
+
+| Priority | Issue | Impact | Effort | Dependencies |
+|:--------:|-------|:------:|:------:|--------------|
+| P0 | CRITICAL-1: LiveTradingEnvironment action execution | HIGH | LOW | None |
+| P0 | CRITICAL-2: Model network attribute naming | HIGH | LOW | None |
+| P0 | CRITICAL-3: main.py logging pattern | MEDIUM | LOW | None |
+| P1 | CRITICAL-4: Position storage unification | HIGH | MEDIUM | P0 |
+| P1 | CRITICAL-5: Training history standardization | MEDIUM | MEDIUM | P0 |
+| P2 | MAJOR-1: Observation space hardcoding | HIGH | MEDIUM | P1 |
+| P2 | MAJOR-2: Account observation dimension mismatch | HIGH | MEDIUM | P1 |
+| P2 | MAJOR-7: Online learning interface | MEDIUM | HIGH | P0, P1 |
+| P3 | MAJOR-3: Configuration passing consistency | LOW | HIGH | None |
+| P3 | MAJOR-4/5/6: Optimizer standardization | LOW | MEDIUM | None |
+| P4 | Documentation reorganization | LOW | MEDIUM | P0-P2 |
+
+### Phase 1: Critical Fixes (P0) - Immediate
+
+#### 1.1 CRITICAL-1: Fix LiveTradingEnvironment._execute_action_live
+
+**Current State:**
+```python
+# core/live_trading_env.py:246, 273-289
+def step(self, action: int):
+    self._execute_action_live(action)  # WRONG
+
+def _execute_action_live(self, action: int):
+    # Custom implementation ignoring price
+    self._open_position('long', 0.0)  # Price passed as 0.0!
+```
+
+**Target State:**
+```python
+def step(self, action: int):
+    price = self._get_current_price()
+    # Add open_status check before calling base class method
+    if action in [Action.BUY, Action.SELL]:
+        if not self.state.open_status or self.state.close_only:
+            return  # Respect open_status without code duplication
+    self._execute_action(action, price)  # Use base class method
+
+# Remove _execute_action_live entirely
+```
+
+**Changes:**
+1. Modify `step()` to get current price and call `_execute_action(action, price)`
+2. Add open_status check before action execution (preserving live trading logic)
+3. Remove `_execute_action_live()` method entirely
+
+**Files Modified:** `core/live_trading_env.py`
+
+---
+
+#### 1.2 CRITICAL-2: Standardize Model Network Attribute
+
+**Current State:**
+```python
+# models/transformer.py:435
+self.model = TemporalFusionTransformer(...)
+
+# models/ppo_agent.py:254
+self.network = ActorCritic(...)
+```
+
+**Target State:**
+```python
+# Both use 'network' attribute
+# models/transformer.py
+self.network = TemporalFusionTransformer(...)
+
+# Add backwards compatibility alias if needed
+@property
+def model(self):
+    """Deprecated: Use .network instead."""
+    return self.network
+```
+
+**Changes:**
+1. Rename `self.model` to `self.network` in TransformerPredictor
+2. Update all internal references (`self.model.` → `self.network.`)
+3. Add deprecation `@property` alias for backward compatibility
+
+**Files Modified:** `models/transformer.py`
+
+---
+
+#### 1.3 CRITICAL-3: Fix main.py Logging
+
+**Current State:**
+```python
+# main.py:36, 92
+from utils.logging_config import setup_logging, get_logger
+logger = get_logger(__name__)
+```
+
+**Target State:**
+```python
+# main.py
+import logging
+from utils.logging_config import setup_logging
+logger = logging.getLogger(__name__)
+```
+
+**Changes:**
+1. Remove `get_logger` from import
+2. Use standard `logging.getLogger(__name__)`
+
+**Files Modified:** `main.py`
+
+---
+
+### Phase 2: State Management (P1)
+
+#### 2.1 CRITICAL-4: Unify Position Storage
+
+**Current State:**
+```python
+# core/live_trading_env.py - THREE different sources:
+self.state.positions        # Base class - never updated
+self._paper_positions       # Paper mode only
+position_sync.get_positions()  # Live mode
+```
+
+**Target State:**
+```python
+# Single source: self.state.positions (always updated)
+def _get_open_positions(self) -> List[Position]:
+    return self.state.positions  # Always use this
+
+def _sync_positions_to_state(self):
+    """Sync external positions to state.positions."""
+    if self.paper_mode:
+        self.state.positions = self._paper_positions.copy()
+    else:
+        self.state.positions = self.position_sync.get_positions(self.symbol)
+```
+
+**Changes:**
+1. Always update `self.state.positions` after position changes
+2. `_get_open_positions()` returns `self.state.positions`
+3. Add `_sync_positions_to_state()` helper method
+4. Call sync in `_sync_with_broker()` and after trades
+
+**Files Modified:** `core/live_trading_env.py`
+
+---
+
+#### 2.2 CRITICAL-5: Standardize Training History
+
+**Current State:**
+```python
+# TransformerPredictor
+self.train_losses = []
+self.val_losses = []
+
+# PPOAgent
+self.training_stats = {
+    'policy_losses': [], 'value_losses': [], ...
+}
+```
+
+**Target State:**
+```python
+# Both models use TrainingHistory internally
+from utils.checkpoint import TrainingHistory
+
+# TransformerPredictor
+self.training_history = TrainingHistory()
+# Access: self.training_history.train_losses
+
+# PPOAgent
+self.training_history = TrainingHistory()
+# Access: self.training_history.policy_losses
+```
+
+**Changes:**
+1. Replace separate lists with `TrainingHistory` dataclass
+2. Update save/load to use the dataclass directly
+3. Maintain backward compatibility in load()
+
+**Files Modified:** `models/transformer.py`, `models/ppo_agent.py`
+
+---
+
+### Phase 3: Observation Consistency (P2)
+
+#### 3.1 MAJOR-1 & MAJOR-2: Fix Observation Dimensions
+
+**Current State:**
+```python
+# live_trading_env.py:122
+n_additional_features = 100  # HARDCODED
+
+# Account obs: 12 features vs base class 8
+```
+
+**Target State:**
+```python
+def __init__(self, ..., feature_dim: Optional[int] = None):
+    # Get feature dimension from data pipeline or parameter
+    self.n_features = feature_dim or self._infer_feature_dim()
+
+    # Account features: call super() and extend
+def _get_account_observation(self) -> np.ndarray:
+    base_obs = super()._get_account_observation()  # 8 features
+    # Add live-specific features (4 more)
+    live_extras = np.array([...])
+    return np.concatenate([base_obs, live_extras])
+```
+
+**Changes:**
+1. Accept `feature_dim` parameter or infer from data pipeline
+2. Calculate observation space dynamically
+3. Extend (not replace) `_get_account_observation()`
+4. Document the 4 additional live trading features
+
+**Files Modified:** `core/live_trading_env.py`, `core/trading_env_base.py`
+
+---
+
+### Phase 4: Interface Unification (P2-P3)
+
+#### 4.1 MAJOR-7: Online Learning Interface
+
+Create unified interface per the interface definitions above.
+
+**Files Created:** `training/online_interface.py`
+**Files Modified:** `models/transformer.py`, `models/ppo_agent.py`, `training/online_learning.py`
+
+---
+
+### Implementation Checklist
+
+#### Phase 1 (This PR)
+- [x] CRITICAL-1: Fix `_execute_action_live` → use `_execute_action` ✅ **COMPLETED**
+- [x] CRITICAL-2: Rename `self.model` → `self.network` in TransformerPredictor ✅ **COMPLETED**
+- [ ] CRITICAL-3: Fix main.py logging pattern
+- [ ] Update tests for changed interfaces
+- [ ] Run full test suite
+
+#### Phase 2 (Follow-up PR)
+- [ ] CRITICAL-4: Unify position storage
+- [ ] CRITICAL-5: Standardize TrainingHistory usage
+- [ ] Update related documentation
+
+#### Phase 3 (Follow-up PR)
+- [ ] MAJOR-1: Dynamic observation dimensions
+- [ ] MAJOR-2: Account observation consistency
+- [ ] Add integration tests for dimension matching
+
+#### Phase 4 (Follow-up PR)
+- [ ] Create interface modules
+- [ ] MAJOR-7: Unified online learning interface
+- [ ] Documentation reorganization
+
+---
+
+### Testing Requirements
+
+Each phase must pass:
+
+1. **Unit Tests**
+   - All existing tests pass
+   - New tests for interface contracts
+
+2. **Integration Tests**
+   - Training pipeline works end-to-end
+   - Backtest produces valid results
+   - Model save/load round-trips correctly
+
+3. **Dimension Consistency Tests** (new)
+   ```python
+   def test_observation_dimension_consistency():
+       """Ensure backtest and live envs produce same observation dims."""
+       backtest_env = TradingEnvironment(...)
+       live_env = LiveTradingEnvironment(...)
+
+       assert backtest_env.observation_space.shape == live_env.observation_space.shape
+   ```
+
+4. **Model Interface Tests** (new)
+   ```python
+   def test_model_interface_compliance():
+       """Ensure all models follow BaseModel interface."""
+       for model_class in [TransformerPredictor, PPOAgent]:
+           model = model_class(...)
+           assert hasattr(model, 'network')
+           assert hasattr(model, 'save')
+           assert hasattr(model, 'load')
+           assert hasattr(model, 'online_update')
+   ```
+
+---
+
+*Report updated: 2025-12-09*
+*Analysis scope: Full codebase architectural review with refactoring plan*
