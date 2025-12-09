@@ -11,6 +11,7 @@ from gymnasium import spaces
 import logging
 
 from core.trading_types import Action, EnvConfig, Position, TradingState
+from evaluation.metrics import MetricsCalculator
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -88,6 +89,13 @@ class BaseTradingEnvironment(gym.Env, ABC):
 
         self.render_mode = render_mode
         self.risk_manager = risk_manager
+
+        # Metrics calculator for consistent metric calculations
+        # Uses 252 trading days for daily data (hourly would be 252*24)
+        self._metrics_calculator = MetricsCalculator(
+            risk_free_rate=0.02,
+            periods_per_year=252  # Can be overridden by subclasses if needed
+        )
 
         # Action space: [HOLD, BUY, SELL, CLOSE]
         self.action_space = spaces.Discrete(4)
@@ -277,27 +285,24 @@ class BaseTradingEnvironment(gym.Env, ABC):
     def _calculate_sharpe_ratio(
         self, returns: np.ndarray, risk_free_rate: float = 0.02
     ) -> float:
-        """Calculate Sharpe ratio."""
-        if len(returns) < 2 or np.std(returns) == 0:
-            return 0.0
+        """
+        Calculate Sharpe ratio using centralized MetricsCalculator.
 
-        excess_returns = returns - risk_free_rate / 252  # Daily risk-free rate
-        return np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(252)
+        Delegates to MetricsCalculator for consistent metric calculations
+        across the codebase.
+        """
+        return self._metrics_calculator.sharpe_ratio(returns)
 
     def _calculate_sortino_ratio(
         self, returns: np.ndarray, risk_free_rate: float = 0.02
     ) -> float:
-        """Calculate Sortino ratio."""
-        if len(returns) < 2:
-            return 0.0
+        """
+        Calculate Sortino ratio using centralized MetricsCalculator.
 
-        excess_returns = returns - risk_free_rate / 252
-        downside_returns = returns[returns < 0]
-
-        if len(downside_returns) == 0 or np.std(downside_returns) == 0:
-            return 0.0
-
-        return np.mean(excess_returns) / np.std(downside_returns) * np.sqrt(252)
+        Delegates to MetricsCalculator for consistent metric calculations
+        across the codebase.
+        """
+        return self._metrics_calculator.sortino_ratio(returns)
 
     def _calculate_profit_factor(self) -> float:
         """Calculate profit factor (gross profit / gross loss)."""

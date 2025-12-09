@@ -201,6 +201,29 @@ class OrderManager:
             self.executions.append(execution)
             return execution
 
+        # Full risk validation with calculated position parameters
+        if self.risk_manager:
+            entry_price = tick.ask if signal.signal_type == SignalType.BUY else tick.bid
+            direction = 'long' if signal.signal_type == SignalType.BUY else 'short'
+
+            should_trade, reason = self.risk_manager.should_take_trade(
+                entry_price=entry_price,
+                stop_loss_price=sl,
+                take_profit_price=tp,
+                direction=direction
+            )
+
+            if not should_trade:
+                self.stats['rejected'] += 1
+                execution = OrderExecution(
+                    signal=signal,
+                    executed=False,
+                    error_message=f"Risk manager rejected: {reason}"
+                )
+                self.executions.append(execution)
+                logger.info(f"Trade rejected by risk manager: {reason}")
+                return execution
+
         # Execute order
         from core.mt5_broker import OrderType
 
@@ -356,10 +379,14 @@ class OrderManager:
         if account and not account.trade_allowed:
             return False, "Trading not allowed on account"
 
-        # Check with risk manager
+        # Check basic risk manager constraints (trading allowed, max positions)
+        # Full trade validation with should_take_trade() is done in _execute_entry_signal()
+        # after position parameters are calculated
         if self.risk_manager:
-            if not self.risk_manager.should_take_trade():
-                return False, "Risk manager rejected trade"
+            if not self.risk_manager.state.is_trading_allowed:
+                return False, f"Risk manager: {self.risk_manager.state.halt_reason or 'trading halted'}"
+            if self.risk_manager.state.open_positions >= self.risk_manager.limits.max_open_positions:
+                return False, f"Risk manager: max positions ({self.risk_manager.limits.max_open_positions}) reached"
 
         return True, ""
 

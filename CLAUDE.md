@@ -175,6 +175,43 @@ config.save("config.json")
 - **Walk-Forward Optimization**: Rolling train/test splits to prevent overfitting
 - **Event-Driven Architecture**: Position synchronizer uses callbacks for state changes
 
+## Coding Conventions
+
+### Logging
+
+Use the standard Python logging pattern in all modules:
+
+```python
+import logging
+logger = logging.getLogger(__name__)
+```
+
+Do NOT use `from utils.logging_config import get_logger`. The standard pattern has no import dependency and is consistent across the codebase.
+
+### Centralized Utilities
+
+| Utility | Location | Usage |
+|---------|----------|-------|
+| Device management | `utils/device.py` | Use `resolve_device(device)` for PyTorch device handling |
+| Trade types | `core/trading_types.py` | Use `Trade`, `TradeStatistics` dataclasses |
+| Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
+| Position sizing | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` |
+
+### Position Sizing
+
+When calculating position sizes:
+1. Use `RiskManager.calculate_position_size()` when a RiskManager is available
+2. Fall back to inline calculation only when no RiskManager is configured
+3. See `evaluation/backtester.py:_calculate_position_size()` for the pattern
+
+### Risk Validation
+
+When validating trades:
+1. Pre-validate basic constraints (trading allowed, max positions)
+2. Calculate position parameters (entry, SL, TP)
+3. Call `RiskManager.should_take_trade()` with all 4 required parameters:
+   - `entry_price`, `stop_loss_price`, `take_profit_price`, `direction`
+
 ## Auto-Trader System
 
 The autonomous trading system (`core/auto_trader.py`) coordinates:

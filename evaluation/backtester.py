@@ -129,6 +129,48 @@ class Backtester:
         self._daily_trade_count: int = 0
         self._current_day: Optional[datetime] = None
 
+    def _calculate_position_size(
+        self,
+        entry_price: float,
+        stop_loss_price: float,
+        stop_loss_pips: float
+    ) -> float:
+        """
+        Calculate position size using RiskManager if available, otherwise inline calculation.
+
+        This method centralizes position sizing logic to avoid duplication.
+        When a RiskManager is provided, it delegates to RiskManager.calculate_position_size()
+        for consistent position sizing across the system.
+
+        Args:
+            entry_price: Trade entry price
+            stop_loss_price: Stop loss price level
+            stop_loss_pips: Stop loss distance in pips (used for inline fallback)
+
+        Returns:
+            Calculated position size
+        """
+        if self.risk_manager is not None:
+            # Delegate to RiskManager for consistent position sizing
+            size = self.risk_manager.calculate_position_size(
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price
+            )
+        else:
+            # Fallback: inline position sizing based on risk
+            risk_amount = self.balance * self.risk_per_trade
+            size = risk_amount / (stop_loss_pips * self.pip_value * entry_price)
+
+        # Apply leverage limit
+        max_size = (self.balance * self.leverage) / entry_price
+        size = min(size, max_size)
+
+        # Apply max position size cap (realistic constraint)
+        if self.max_position_size is not None:
+            size = min(size, self.max_position_size)
+
+        return size
+
     def reset(self):
         """Reset backtester state."""
         self.balance = self.initial_balance
@@ -298,17 +340,13 @@ class Backtester:
             stop_loss_price = entry_price * (1 + safe_stop_pips * self.pip_value)
             take_profit_price = entry_price * (1 - take_profit_pips * self.pip_value)
 
-        # Calculate position size based on risk (using same safe_stop_pips)
-        risk_amount = self.balance * self.risk_per_trade
-        size = risk_amount / (safe_stop_pips * self.pip_value * entry_price)
-
-        # Apply leverage limit
-        max_size = (self.balance * self.leverage) / entry_price
-        size = min(size, max_size)
-
-        # Apply max position size cap (realistic constraint)
-        if self.max_position_size is not None:
-            size = min(size, self.max_position_size)
+        # Calculate position size using centralized method
+        # This delegates to RiskManager when available, or uses inline fallback
+        size = self._calculate_position_size(
+            entry_price=entry_price,
+            stop_loss_price=stop_loss_price,
+            stop_loss_pips=safe_stop_pips
+        )
 
         # Commission - check balance sufficiency before deducting
         commission = size * entry_price * self.commission_rate
