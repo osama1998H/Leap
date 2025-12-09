@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 import logging
 import math
 from tqdm import tqdm
@@ -466,9 +466,23 @@ class TransformerPredictor:
         epochs: int = 100,
         batch_size: int = 64,
         patience: int = 15,
-        verbose: bool = True
+        verbose: bool = True,
+        mlflow_callback: Optional[Callable] = None
     ) -> Dict:
-        """Train the model."""
+        """Train the model.
+
+        Args:
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features
+            y_val: Validation targets
+            epochs: Number of training epochs
+            batch_size: Batch size for training
+            patience: Early stopping patience
+            verbose: Whether to show progress bars
+            mlflow_callback: Optional callback for MLflow logging.
+                Called with (metrics_dict, epoch) at end of each epoch.
+        """
         # Convert to tensors
         X_train = torch.FloatTensor(X_train).to(self.device)
         y_train = torch.FloatTensor(y_train).to(self.device)
@@ -550,6 +564,17 @@ class TransformerPredictor:
             else:
                 # No validation - just show training loss
                 epoch_pbar.set_postfix(train_loss=f"{avg_train_loss:.6f}")
+                val_loss = avg_train_loss  # Use train loss as fallback
+
+            # Call MLflow callback if provided
+            if mlflow_callback is not None:
+                current_lr = self.optimizer.param_groups[0]['lr']
+                callback_metrics = {
+                    "train_loss": avg_train_loss,
+                    "val_loss": val_loss if X_val is not None else avg_train_loss,
+                    "learning_rate": current_lr,
+                }
+                mlflow_callback(callback_metrics, epoch)
 
         # Restore best model
         if best_state is not None:

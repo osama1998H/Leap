@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 from collections import deque
 import logging
 
@@ -497,14 +497,26 @@ class PPOAgent:
         total_timesteps: int,
         eval_env=None,
         eval_frequency: int = 10000,
-        verbose: bool = True
+        verbose: bool = True,
+        mlflow_callback: Optional[Callable] = None
     ) -> Dict:
         """
         Train agent on environment.
+
+        Args:
+            env: Training environment
+            total_timesteps: Total timesteps to train
+            eval_env: Optional evaluation environment
+            eval_frequency: Evaluation frequency in timesteps
+            verbose: Whether to log progress
+            mlflow_callback: Optional callback for MLflow logging.
+                Called with (metrics_dict, step) after each policy update.
         """
         state, _ = env.reset()
         episode_rewards = []
+        episode_lengths = []
         current_episode_reward = 0.0
+        current_episode_length = 0
         timestep = 0
         n_episodes = 0
 
@@ -519,11 +531,14 @@ class PPOAgent:
                 self.store_transition(state, action, reward, done, log_prob, value)
 
                 current_episode_reward += reward
+                current_episode_length += 1
                 timestep += 1
 
                 if done:
                     episode_rewards.append(current_episode_reward)
+                    episode_lengths.append(current_episode_length)
                     current_episode_reward = 0.0
+                    current_episode_length = 0
                     n_episodes += 1
                     state, _ = env.reset()
                 else:
@@ -549,6 +564,19 @@ class PPOAgent:
                     f"Policy Loss: {update_stats['policy_loss']:.4f}"
                 )
 
+            # MLflow callback for tracking
+            if mlflow_callback is not None:
+                callback_metrics = {
+                    "policy_loss": update_stats['policy_loss'],
+                    "value_loss": update_stats['value_loss'],
+                    "entropy": update_stats['entropy'],
+                    "clip_fraction": update_stats.get('clip_fraction', 0),
+                }
+                if len(episode_rewards) > 0:
+                    callback_metrics["episode_reward"] = episode_rewards[-1]
+                    callback_metrics["avg_reward_10ep"] = np.mean(episode_rewards[-10:])
+                mlflow_callback(callback_metrics, timestep)
+
             # Evaluation
             if eval_env is not None and timestep % eval_frequency < self.n_steps:
                 eval_reward = self.evaluate(eval_env, n_episodes=5)
@@ -556,6 +584,7 @@ class PPOAgent:
 
         return {
             'episode_rewards': episode_rewards,
+            'episode_lengths': episode_lengths,
             'training_stats': self.training_stats
         }
 
