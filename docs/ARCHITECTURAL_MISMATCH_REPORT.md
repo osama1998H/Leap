@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-This report analyzes the Leap trading system architecture, comparing documented design patterns against actual implementation. The analysis identifies **23 architectural mismatches** across 6 categories, with **5 critical issues** requiring immediate attention.
+This report analyzes the Leap trading system architecture, comparing documented design patterns against actual implementation. The analysis identifies **23 code architectural mismatches** and **15 documentation distribution issues** across 7 categories, with **5 critical code issues** and **3 critical documentation issues** requiring immediate attention.
 
-**Overall Assessment**: The architecture design is sound with well-defined patterns documented in ARCHITECTURE.md and CLAUDE.md. However, implementation has drifted from intended design in several areas.
+**Overall Assessment**: The architecture design is sound with well-defined patterns documented in ARCHITECTURE.md and CLAUDE.md. However, implementation has drifted from intended design in several areas. Additionally, documentation is fragmented across 5 markdown files with significant content overlap and missing cross-references.
 
 ---
 
@@ -16,7 +16,8 @@ This report analyzes the Leap trading system architecture, comparing documented 
 4. [Major Mismatches](#major-mismatches)
 5. [Minor Mismatches](#minor-mismatches)
 6. [Pattern Consistency Matrix](#pattern-consistency-matrix)
-7. [Recommendations](#recommendations)
+7. [Documentation Distribution Mismatches](#documentation-distribution-mismatches)
+8. [Recommendations](#recommendations)
 
 ---
 
@@ -599,9 +600,391 @@ Deprecate or remove `get_logger()` function.
 
 ---
 
+## Documentation Distribution Mismatches
+
+This section analyzes how documentation content is distributed across the 5 markdown files and identifies organizational issues.
+
+### Expected Documentation Structure
+
+Each file should have a **single responsibility**:
+
+| File | Expected Purpose |
+|------|------------------|
+| **README.md** | Project overview, quick start, features list, basic usage |
+| **ARCHITECTURE.md** | Detailed technical architecture, data flows, component design |
+| **CLI.md** | Complete CLI reference with all commands and options |
+| **AUTO_TRADER.md** | Auto-trader specific documentation |
+| **CLAUDE.md** | Brief reference guide pointing to other docs, coding conventions |
+
+### DOC-CRITICAL-1: Multi-Symbol Training Documentation Missing from README
+
+| Attribute | Value |
+|-----------|-------|
+| **Issue** | Multi-symbol training only documented in CLI.md |
+| **README.md** | Line 13: Feature mentioned but no usage instructions |
+| **CLI.md** | Lines 42, 53-56, 86, 529-541: Full documentation |
+| **CLAUDE.md** | Lines 24-25: Brief command example only |
+
+**Impact:** Users reading README won't know HOW to do multi-symbol training.
+
+**Recommendation:** Add cross-reference to CLI.md in README usage section.
+
+---
+
+### DOC-CRITICAL-2: Multi-Timeframe Feature Documentation Missing from README
+
+| Attribute | Value |
+|-----------|-------|
+| **Issue** | Multi-timeframe features only documented in CLI.md |
+| **README.md** | Line 13: Feature mentioned but no usage instructions |
+| **CLI.md** | Lines 44, 58-62, 88-92, 340-341, 546-552: Full documentation |
+| **CLAUDE.md** | Lines 27-28: Brief mention only |
+
+**Impact:** Users don't know the relationship between `--multi-timeframe` flag and `config.data.additional_timeframes`.
+
+**Missing Detail:** What specific indicators are added from additional timeframes? Not documented anywhere.
+
+**Recommendation:** Add multi-timeframe section to README or cross-reference CLI.md.
+
+---
+
+### DOC-CRITICAL-3: CLAUDE.md Contains Mixed Content
+
+| Attribute | Value |
+|-----------|-------|
+| **Issue** | CLAUDE.md has full documentation instead of brief references |
+| **Current State** | 580+ lines covering architecture, CLI, config, patterns |
+| **Expected State** | Brief summaries with links to detailed docs |
+
+**Content that should be references instead:**
+
+| Section | Lines | Should Reference |
+|---------|-------|------------------|
+| Directory Structure | 52-93 | CLI.md or README.md |
+| Architecture table | 95-110 | ARCHITECTURE.md |
+| Data Flow diagram | 112-130 | ARCHITECTURE.md |
+| Common Commands | 17-50 | CLI.md |
+| Configuration System | 158-178 | ARCHITECTURE.md |
+
+**Recommendation:** Refactor CLAUDE.md to be a brief guide with cross-references.
+
+---
+
+### DOC-MAJOR-1: Architecture Diagrams Duplicated
+
+| Diagram | README.md | ARCHITECTURE.md | Decision |
+|---------|-----------|-----------------|----------|
+| Transformer architecture | Lines 82-123 | Lines 45-83 | **DUPLICATE** - nearly identical |
+| PPO architecture | Lines 125-159 | Lines 85-103 | **DUPLICATE** - identical info |
+| Online Learning | Lines 212-260 | Lines 136-153 | **DUPLICATE** - same content |
+| Walk-Forward | Lines 264-298 | Lines 194-200 | **DUPLICATE** - redundant |
+| Data Flow | Lines 163-208 | Lines 305-392 | Complementary - OK |
+
+**Recommendation:** README.md should have high-level diagrams; ARCHITECTURE.md for detailed technical diagrams. Remove duplicates.
+
+---
+
+### DOC-MAJOR-2: Configuration Documentation Spread Across 4 Files
+
+| File | Lines | Content |
+|------|-------|---------|
+| ARCHITECTURE.md | 464-535 | SystemConfig structure, config classes table |
+| CLI.md | 320-429 | **Best**: Example JSON (68 lines), sections table |
+| CLAUDE.md | 158-178 | SystemConfig structure (duplicate) |
+| README.md | 467-507 | Parameter tables (incomplete) |
+
+**Issues:**
+- No single source of truth
+- Example JSON in CLI.md is most complete but not referenced elsewhere
+- README parameter tables missing: `transformer.patience`, `data.additional_timeframes`, etc.
+- No documentation on CLI flag → config key mapping
+
+**Recommendation:** Consolidate in ARCHITECTURE.md; create `config/example_config.json` file; other files link to it.
+
+---
+
+### DOC-MAJOR-3: Directory Structure Duplicated 3 Times
+
+| File | Lines |
+|------|-------|
+| README.md | 300-353 |
+| CLAUDE.md | 52-93 |
+| CLI.md | 445-467 |
+
+All three are essentially identical, causing maintenance burden.
+
+**Recommendation:** Keep only in README.md (natural location); remove from CLAUDE.md and CLI.md.
+
+---
+
+### DOC-MAJOR-4: CLI Options Table Incomplete in README
+
+| File | Options Documented |
+|------|-------------------|
+| README.md (lines 450-465) | 9 options only |
+| CLI.md (lines 39-52 per command) | 14+ options |
+
+**Missing from README:**
+- `--symbols` (multi-symbol)
+- `--multi-timeframe`
+- `--patience`
+- `--realistic` details
+- `--monte-carlo` details
+
+**Recommendation:** README should reference CLI.md for complete options, not duplicate partial list.
+
+---
+
+### DOC-MINOR-1: No Cross-References Between Documents
+
+**Examples of missing links:**
+- README usage section → CLI.md for details
+- README features → ARCHITECTURE.md for how they work
+- CLAUDE.md sections → detailed docs
+- CLI.md config section → ARCHITECTURE.md config details
+
+---
+
+### DOC-MINOR-2: Walk-Forward Optimization Underdocumented
+
+| File | Coverage |
+|------|----------|
+| CLI.md | Lines 149-171: Brief mention, config params only |
+| ARCHITECTURE.md | Lines 194-200: Basic explanation |
+| README.md | Lines 264-298: Diagram only |
+
+**Missing:** Algorithm explanation, parameter tuning guidance, output interpretation.
+
+---
+
+### DOC-MINOR-3: Configuration Validation Not Documented
+
+No documentation of:
+- Which parameters are required vs. optional
+- Valid ranges or constraints (e.g., why `max_drawdown` has bounds)
+- Parameter dependencies
+- How CLI flags override config file values (only brief mention in CLI.md:316)
+
+---
+
+### Documentation Content Matrix
+
+| Topic | README | ARCHITECTURE | CLI | CLAUDE | AUTO_TRADER | Ideal Location |
+|-------|:------:|:------------:|:---:|:------:|:-----------:|----------------|
+| Project Overview | ✓ | - | - | ✓* | - | README only |
+| Features List | ✓ | - | - | ✓* | - | README only |
+| Quick Start | ✓ | - | - | ✓* | - | README only |
+| System Architecture | ✓* | ✓ | - | ✓* | - | ARCHITECTURE only |
+| Model Architecture | ✓* | ✓* | - | - | - | ARCHITECTURE only |
+| Data Flow | ✓* | ✓* | - | ✓* | - | ARCHITECTURE only |
+| CLI Commands | ✓* | - | ✓ | ✓* | - | CLI only |
+| CLI Options | ✓* | - | ✓ | ✓* | - | CLI only |
+| Configuration | ✓* | ✓* | ✓* | ✓* | - | ARCHITECTURE only |
+| Directory Structure | ✓* | - | ✓* | ✓* | - | README only |
+| Auto-Trader | - | ✓* | - | - | ✓ | AUTO_TRADER only |
+| Coding Conventions | - | - | - | ✓ | - | CLAUDE only |
+| Extension Points | - | ✓ | - | ✓* | - | ARCHITECTURE only |
+| Multi-Symbol | - | - | ✓ | ✓* | - | CLI + README ref |
+| Multi-Timeframe | - | - | ✓ | ✓* | - | CLI + README ref |
+
+**Legend:** ✓ = Documented, ✓* = Duplicated/should be reference, - = Not present
+
+---
+
+## Feature Implementation Mismatches: Live Trading vs Auto-Trading
+
+### Overview
+
+The codebase contains **two overlapping features** for live trading:
+1. **`live` command** - Stub/placeholder implementation
+2. **`autotrade` command** - Full production implementation
+
+These represent the **same feature at different evolution stages**, causing confusion and maintenance overhead.
+
+### FEATURE-CRITICAL-1: Live Trading is Incomplete Stub
+
+| Attribute | Value |
+|-----------|-------|
+| **Location** | `main.py:597-626` (implementation), `main.py:1101-1103` (CLI) |
+| **Issue** | Live trading creates components but never uses them |
+
+**Evidence:**
+```python
+# main.py:597-626 - start_live_trading()
+def start_live_trading(self, paper: bool = True):
+    # Creates OnlineLearningManager - NEVER USED
+    online_manager = OnlineLearningManager(...)
+
+    # Creates RiskManager - NEVER PASSED ANYWHERE
+    risk_manager = RiskManager(self.config.risk)
+
+    # Simple infinite loop with sleep - NO ACTUAL TRADING
+    while True:
+        # Placeholder comments only
+        time.sleep(1)
+```
+
+**Components Created But Unused:**
+- ✗ OnlineLearningManager (created line 604, never called)
+- ✗ RiskManager (created line 608, never passed)
+- ✗ MT5BrokerGateway (never created)
+- ✗ OrderManager (never created)
+- ✗ PositionSynchronizer (never created)
+
+---
+
+### FEATURE-CRITICAL-2: Auto-Trading is Production-Ready
+
+| Attribute | Value |
+|-----------|-------|
+| **Location** | `core/auto_trader.py:103-897`, `main.py:1135-1227` |
+| **Status** | Full-featured production system |
+
+**Components Actively Used:**
+
+| Component | Usage | Lines |
+|-----------|-------|-------|
+| MT5BrokerGateway | Connected, synced | auto_trader.py:234-238 |
+| OrderManager | Validates, executes | auto_trader.py:154-160, 500-507 |
+| PositionSynchronizer | Syncs positions | auto_trader.py:162-165, 442 |
+| RiskManager | Passed to OrderManager | auto_trader.py:148 |
+| OnlineLearningManager | Fully integrated | auto_trader.py:705-782 |
+| LiveTradingEnvironment | One per symbol | auto_trader.py:398-411 |
+| Transformer | Predictions | auto_trader.py:542-552 |
+| PPO Agent | Actions | auto_trader.py:559-565 |
+
+**Production Features:**
+- State machine (STOPPED → STARTING → RUNNING ⇄ PAUSED → ERROR)
+- Daemon thread for trading loop
+- Trading hours validation
+- Daily loss limits
+- Consecutive error tracking (max 10)
+- Callback event system
+- Session statistics tracking
+
+---
+
+### Feature Comparison Matrix
+
+| Capability | Live Command | AutoTrader | Winner |
+|------------|:------------:|:----------:|:------:|
+| Broker Connection | ✗ | ✓ | AutoTrader |
+| Position Management | ✗ | ✓ | AutoTrader |
+| Order Execution | ✗ | ✓ | AutoTrader |
+| Risk Management | ✗ | ✓ | AutoTrader |
+| Online Learning | ✗* | ✓ | AutoTrader |
+| Model Inference | ✓ | ✓ | Tie |
+| Trading Loop | Basic | Sophisticated | AutoTrader |
+| State Machine | ✗ | ✓ | AutoTrader |
+| Error Recovery | Basic | Advanced | AutoTrader |
+| Threading | Main only | Daemon | AutoTrader |
+| Session Stats | ✗ | ✓ | AutoTrader |
+| Paper Mode | ✓* | ✓ | AutoTrader |
+
+*✗ = Not implemented, ✓ = Implemented, ✓* = Partial/Stub*
+
+---
+
+### Code Duplication in Live Components
+
+**OrderManager initialization appears twice:**
+
+```python
+# LiveTradingEnvironment (line 96-102) - Created but env not used by live command
+self.order_manager = OrderManager(
+    broker=broker,
+    risk_manager=risk_manager,
+    default_sl_pips=default_sl_pips,
+    ...
+)
+
+# AutoTrader (line 154-160) - Actively used
+self.order_manager = OrderManager(
+    broker=broker,
+    risk_manager=risk_manager,
+    default_sl_pips=self.config.default_sl_pips,
+    ...
+)
+```
+
+**PositionSynchronizer callbacks registered twice:**
+
+```python
+# LiveTradingEnvironment (line 104-113)
+self.position_sync.register_callback(PositionEvent.CLOSED, self._on_position_closed)
+self.position_sync.register_callback(PositionEvent.SL_HIT, self._on_sl_hit)
+self.position_sync.register_callback(PositionEvent.TP_HIT, self._on_tp_hit)
+
+# AutoTrader (line 201-210)
+self.position_sync.register_callback(PositionEvent.CLOSED, self._on_position_closed)
+self.position_sync.register_callback(PositionEvent.SL_HIT, self._on_position_closed)
+self.position_sync.register_callback(PositionEvent.TP_HIT, self._on_position_closed)
+```
+
+---
+
+### FEATURE-MAJOR-1: Confusing CLI with Two Similar Commands
+
+| Command | Description | User Confusion |
+|---------|-------------|----------------|
+| `python main.py live --paper` | "Start live/paper trading session" | Expects working live trading |
+| `python main.py autotrade --paper` | "Start auto-trader with MT5" | Actual working implementation |
+
+**User Impact:**
+- Users trying `live` command get non-functional stub
+- No clear indication that `autotrade` is the working version
+- Documentation (AUTO_TRADER.md) only covers `autotrade`
+
+---
+
+### FEATURE-MAJOR-2: LiveTradingEnvironment Used Only by AutoTrader
+
+| Component | Used By Live | Used By AutoTrader |
+|-----------|:------------:|:------------------:|
+| LiveTradingEnvironment | ✗ | ✓ (one per symbol) |
+| MT5BrokerGateway | ✗ | ✓ |
+| OrderManager | ✗ | ✓ |
+| PositionSynchronizer | ✗ | ✓ |
+
+The `LiveTradingEnvironment` class has all the components the `live` command should use, but `live` doesn't leverage them.
+
+---
+
+### Recommendation: Deprecate Live Command
+
+**Option 1: Remove `live` command entirely**
+- Delete `start_live_trading()` method
+- Remove `live` subparser from CLI
+- Update documentation
+
+**Option 2: Redirect `live` to `autotrade`**
+```python
+elif args.command == 'live':
+    logger.warning("'live' command is deprecated. Use 'autotrade' instead.")
+    # Redirect to autotrade logic
+```
+
+**Option 3: Refactor `live` to use AutoTrader**
+```python
+def start_live_trading(self, paper: bool = True):
+    """Start live trading using AutoTrader."""
+    # Create AutoTrader with current config
+    auto_trader = AutoTrader(
+        broker=self._create_broker(),
+        predictor=self.predictor,
+        agent=self.agent,
+        ...
+    )
+    auto_trader.start()
+```
+
+**Recommended:** Option 1 (Remove) - cleanest solution, AutoTrader is the complete implementation.
+
+---
+
 ## Recommendations
 
-### Immediate (Critical Fixes)
+### Immediate (Critical Code Fixes)
 
 1. **Fix LiveTradingEnvironment action execution** (`live_trading_env.py:273`)
    - Use `_execute_action(action, self._get_current_price())`
@@ -614,47 +997,89 @@ Deprecate or remove `get_logger()` function.
    - Always update `self.state.positions`
    - Remove redundant `_paper_positions`
 
-### Short-term (Major Fixes)
+### Immediate (Critical Feature Fixes)
 
-4. **Standardize model attribute naming**
+4. **Remove or deprecate `live` command**
+   - Option A: Delete `start_live_trading()` and CLI subparser
+   - Option B: Add deprecation warning redirecting to `autotrade`
+   - AutoTrader is the complete, production-ready implementation
+
+### Short-term (Major Code Fixes)
+
+5. **Standardize model attribute naming**
    - Use `self.network` in both models, or
    - Add `@property` alias for compatibility
 
-5. **Unify training history structure**
+6. **Unify training history structure**
    - Both models use `TrainingHistory` dataclass internally
 
-6. **Fix observation space dimensions**
+7. **Fix observation space dimensions**
    - Get feature count dynamically from `DataPipeline`
    - Remove hardcoded 100
 
-7. **Align account observation features**
+8. **Align account observation features**
    - Base class and subclass must return same dimension
    - Or update observation space accordingly
 
+### Short-term (Documentation Reorganization)
+
+9. **Add cross-references to README.md**
+   - Usage section → "See CLI.md for complete command reference"
+   - Multi-symbol → Link to CLI.md multi-symbol section
+   - Multi-timeframe → Link to CLI.md multi-timeframe section
+
+10. **Refactor CLAUDE.md to be brief reference guide**
+    - Keep: Coding conventions, utility patterns, extension points
+    - Remove: Directory structure (link to README.md)
+    - Remove: Full architecture details (link to ARCHITECTURE.md)
+    - Remove: CLI commands (link to CLI.md)
+    - Add: Cross-reference table to other docs
+
+11. **Remove duplicate directory structure**
+    - Keep in README.md only
+    - Remove from CLAUDE.md (lines 52-93)
+    - Remove from CLI.md (lines 445-467)
+
+12. **Consolidate configuration documentation**
+    - Single source of truth in ARCHITECTURE.md
+    - Create `config/example_config.json` as reference
+    - Other files link to ARCHITECTURE.md
+
 ### Medium-term (Consistency Improvements)
 
-8. **Standardize configuration passing**
-   - Document preferred style (dataclass vs dict)
-   - Update components for consistency
+13. **Standardize configuration passing**
+    - Document preferred style (dataclass vs dict)
+    - Update components for consistency
 
-9. **Add PPO learning rate scheduler**
-   - Implement cosine annealing or similar
+14. **Add PPO learning rate scheduler**
+    - Implement cosine annealing or similar
 
-10. **Create custom exception hierarchy**
+15. **Create custom exception hierarchy**
     - `TradingError`, `InsufficientFundsError`, `OrderRejectedError`
 
-11. **Unify online learning interface**
+16. **Unify online learning interface**
     - Common signature with data source abstraction
 
-### Documentation Updates
+### Medium-term (Documentation Improvements)
 
-12. **Add architecture decision records (ADRs)**
+17. **Remove duplicate architecture diagrams**
+    - README.md: Keep high-level system diagram only
+    - ARCHITECTURE.md: Keep detailed technical diagrams
+    - Remove: Duplicate Transformer/PPO/Online Learning diagrams from README
+
+18. **Document multi-timeframe feature engineering**
+    - What indicators are computed for additional timeframes
+    - How they're scaled relative to primary timeframe
+
+19. **Add configuration validation documentation**
+    - Required vs optional parameters
+    - Valid ranges and constraints
+    - CLI flag → config key mapping
+
+20. **Add architecture decision records (ADRs)**
     - Document why different optimizers used
     - Document learning rate differences
-
-13. **Update CLAUDE.md**
-    - Add section on model interface contract
-    - Clarify configuration passing styles
+    - Document why Auto-Trader supersedes Live command
 
 ---
 
