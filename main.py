@@ -317,6 +317,7 @@ class LeapTradingSystem:
                 'predictor_epochs': predictor_epochs or self.config.transformer.epochs,
                 'agent_timesteps': agent_timesteps or self.config.ppo.total_timesteps,
                 'batch_size': self.config.transformer.batch_size,
+                'patience': self.config.transformer.patience,
                 'checkpoint_dir': os.path.join(self.config.base_dir, self.config.checkpoints_dir)
             },
             mlflow_tracker=self.mlflow_tracker
