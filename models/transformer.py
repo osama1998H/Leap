@@ -599,14 +599,38 @@ class TransformerPredictor:
 
         return point_loss + 0.5 * quantile_loss
 
-    def _validate(self, X_val: torch.Tensor, y_val: torch.Tensor) -> float:
-        """Validate the model."""
+    def _validate(
+        self,
+        X_val: torch.Tensor,
+        y_val: torch.Tensor,
+        batch_size: int = 256
+    ) -> float:
+        """Validate the model using batched inference to avoid OOM on MPS/GPU.
+
+        Args:
+            X_val: Validation features tensor
+            y_val: Validation targets tensor
+            batch_size: Batch size for validation (default 256)
+
+        Returns:
+            Average validation loss
+        """
         self.model.eval()
+        total_loss = 0.0
+        n_batches = 0
+
+        val_dataset = TensorDataset(X_val, y_val)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
         with torch.no_grad():
-            output = self.model(X_val)
-            loss = self._compute_loss(output, y_val)
+            for batch_X, batch_y in val_loader:
+                output = self.model(batch_X)
+                loss = self._compute_loss(output, batch_y)
+                total_loss += loss.item()
+                n_batches += 1
+
         self.model.train()
-        return loss.item()
+        return total_loss / n_batches if n_batches > 0 else 0.0
 
     def predict(
         self,
