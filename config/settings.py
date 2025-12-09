@@ -49,6 +49,12 @@ class DataConfig:
     use_volume_features: bool = True
     normalize_method: str = "robust"  # robust, minmax, standard
 
+    # Data source configuration
+    data_source: str = "auto"  # Options: "auto", "mt5", "csv", "synthetic"
+    csv_path: Optional[str] = None  # Path to CSV file or directory containing CSV files
+    csv_datetime_column: str = "timestamp"  # Name of datetime column in CSV
+    csv_datetime_format: Optional[str] = None  # Custom datetime format (e.g., "%Y-%m-%d %H:%M:%S")
+
 
 @dataclass
 class TransformerConfig:

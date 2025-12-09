@@ -578,28 +578,78 @@ class DataPipeline:
         symbol: str,
         timeframe: str = "1h",
         n_bars: int = 10000,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
+        csv_path: Optional[str] = None
     ) -> Optional[MarketData]:
-        """Fetch historical OHLCV data."""
+        """
+        Fetch historical OHLCV data from various sources.
+
+        Args:
+            symbol: Trading symbol (e.g., "EURUSD")
+            timeframe: Timeframe string (e.g., "1h", "4h", "1d")
+            n_bars: Number of bars to fetch
+            end_date: End date for historical data (default: now)
+            csv_path: Optional CSV file path (overrides config)
+
+        Returns:
+            MarketData object with OHLCV data and computed features
+
+        Data source priority (when data_source="auto"):
+            1. CSV (if csv_path specified)
+            2. MT5 (if available and connected)
+            3. Synthetic data (fallback)
+
+        Explicit data_source options:
+            - "csv": Load from CSV file
+            - "mt5": Load from MetaTrader 5
+            - "synthetic": Generate synthetic data
+            - "auto": Automatic selection (default)
+        """
         if end_date is None:
             end_date = datetime.now()
 
-        if MT5_AVAILABLE and self.is_connected:
-            tf = self.TIMEFRAME_MAP.get(timeframe, mt5.TIMEFRAME_H1)
-            rates = mt5.copy_rates_from(symbol, tf, end_date, n_bars)
+        # Determine data source
+        data_source = getattr(self.config, 'data_source', 'auto')
 
-            if rates is None or len(rates) == 0:
-                logger.error(f"Failed to fetch data for {symbol}")
-                return None
+        # CSV path from argument takes precedence
+        config_csv_path = csv_path or getattr(self.config, 'csv_path', None)
 
-            df = pd.DataFrame(rates)
-            df['timestamp'] = pd.to_datetime(df['time'], unit='s')
+        # Handle explicit data source selection
+        if data_source == "csv" or (data_source == "auto" and config_csv_path):
+            try:
+                logger.info(f"Loading {symbol} data from CSV")
+                df = self._load_from_csv(symbol, timeframe, n_bars, end_date, config_csv_path)
+                return self._process_raw_data(df, symbol, timeframe)
+            except (FileNotFoundError, ValueError) as e:
+                if data_source == "csv":
+                    # Explicit CSV mode - raise the error
+                    raise
+                # Auto mode - fall through to other sources
+                logger.warning(f"CSV loading failed: {e}. Trying other sources.")
 
-        else:
-            # Generate synthetic data for testing
+        if data_source == "synthetic":
             logger.info(f"Generating synthetic data for {symbol}")
             df = self._generate_synthetic_data(n_bars, end_date)
+            return self._process_raw_data(df, symbol, timeframe)
 
+        if data_source in ("mt5", "auto"):
+            if MT5_AVAILABLE and self.is_connected:
+                tf = self.TIMEFRAME_MAP.get(timeframe, mt5.TIMEFRAME_H1)
+                rates = mt5.copy_rates_from(symbol, tf, end_date, n_bars)
+
+                if rates is None or len(rates) == 0:
+                    logger.error(f"Failed to fetch data for {symbol}")
+                    if data_source == "mt5":
+                        return None
+                    # Fall through to synthetic in auto mode
+                else:
+                    df = pd.DataFrame(rates)
+                    df['timestamp'] = pd.to_datetime(df['time'], unit='s')
+                    return self._process_raw_data(df, symbol, timeframe)
+
+        # Fallback: Generate synthetic data for testing
+        logger.info(f"Generating synthetic data for {symbol}")
+        df = self._generate_synthetic_data(n_bars, end_date)
         return self._process_raw_data(df, symbol, timeframe)
 
     def _generate_synthetic_data(self, n_bars: int, end_date: datetime) -> pd.DataFrame:
@@ -627,6 +677,147 @@ class DataPipeline:
         df['low'] = df[['open', 'low', 'close']].min(axis=1)
 
         return df
+
+    def _load_from_csv(
+        self,
+        symbol: str,
+        timeframe: str,
+        n_bars: int,
+        end_date: datetime,
+        csv_path: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Load OHLCV data from a CSV file.
+
+        Args:
+            symbol: Trading symbol (e.g., "EURUSD")
+            timeframe: Timeframe string (e.g., "1h")
+            n_bars: Number of bars to return
+            end_date: End date for the data
+            csv_path: Path to CSV file. Can be:
+                - Direct path to a CSV file
+                - Directory containing files named {symbol}_{timeframe}.csv
+                - None to use config csv_path
+
+        Returns:
+            DataFrame with columns: timestamp, open, high, low, close, volume
+
+        Raises:
+            FileNotFoundError: If CSV file cannot be found
+            ValueError: If required columns are missing
+        """
+        import os
+
+        # Determine CSV path
+        if csv_path is None:
+            csv_path = getattr(self.config, 'csv_path', None)
+
+        if csv_path is None:
+            raise ValueError("CSV path not specified. Set csv_path in config or pass directly.")
+
+        # If path is a directory, look for symbol-specific file
+        if os.path.isdir(csv_path):
+            # Try different naming patterns
+            patterns = [
+                f"{symbol}_{timeframe}.csv",
+                f"{symbol.lower()}_{timeframe}.csv",
+                f"{symbol}.csv",
+                f"{symbol.lower()}.csv",
+            ]
+            csv_file = None
+            for pattern in patterns:
+                candidate = os.path.join(csv_path, pattern)
+                if os.path.exists(candidate):
+                    csv_file = candidate
+                    break
+
+            if csv_file is None:
+                raise FileNotFoundError(
+                    f"No CSV file found for {symbol} in {csv_path}. "
+                    f"Expected file patterns: {patterns}"
+                )
+        else:
+            csv_file = csv_path
+
+        if not os.path.exists(csv_file):
+            raise FileNotFoundError(f"CSV file not found: {csv_file}")
+
+        logger.info(f"Loading data from CSV: {csv_file}")
+
+        # Load CSV
+        df = pd.read_csv(csv_file)
+
+        # Normalize column names to lowercase for matching
+        df.columns = df.columns.str.lower().str.strip()
+
+        # Map common column name variations
+        column_mapping = {
+            'date': 'timestamp',
+            'datetime': 'timestamp',
+            'time': 'timestamp',
+            'o': 'open',
+            'h': 'high',
+            'l': 'low',
+            'c': 'close',
+            'v': 'volume',
+            'vol': 'volume',
+            'tick_volume': 'volume',
+        }
+
+        # Apply column mapping
+        df = df.rename(columns=column_mapping)
+
+        # Check for timestamp column from config
+        datetime_col = getattr(self.config, 'csv_datetime_column', 'timestamp').lower()
+        if datetime_col in df.columns and datetime_col != 'timestamp':
+            df = df.rename(columns={datetime_col: 'timestamp'})
+
+        # Validate required columns
+        required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            raise ValueError(
+                f"CSV file missing required columns: {missing_columns}. "
+                f"Required: {required_columns}. Found: {list(df.columns)}"
+            )
+
+        # Parse timestamp
+        datetime_format = getattr(self.config, 'csv_datetime_format', None)
+        if datetime_format:
+            df['timestamp'] = pd.to_datetime(df['timestamp'], format=datetime_format)
+        else:
+            # Auto-detect format
+            df['timestamp'] = pd.to_datetime(df['timestamp'], infer_datetime_format=True)
+
+        # Sort by timestamp (oldest first)
+        df = df.sort_values('timestamp').reset_index(drop=True)
+
+        # Filter by end_date
+        if end_date is not None:
+            df = df[df['timestamp'] <= end_date]
+
+        # Take last n_bars
+        if len(df) > n_bars:
+            df = df.tail(n_bars).reset_index(drop=True)
+
+        if len(df) == 0:
+            raise ValueError(f"No data found in CSV for the specified date range")
+
+        # Ensure numeric types for OHLCV
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Validate OHLCV constraints
+        df['high'] = df[['open', 'high', 'close']].max(axis=1)
+        df['low'] = df[['open', 'low', 'close']].min(axis=1)
+
+        # Handle any NaN values
+        df = df.ffill().bfill()
+
+        logger.info(f"Loaded {len(df)} bars from CSV for {symbol}")
+
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
 
     def _process_raw_data(
         self,
