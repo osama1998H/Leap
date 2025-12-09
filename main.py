@@ -33,7 +33,8 @@ from training.trainer import ModelTrainer
 from training.online_learning import OnlineLearningManager, AdaptiveTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
 from evaluation.metrics import PerformanceAnalyzer
-from utils.logging_config import setup_logging, get_logger
+import logging
+from utils.logging_config import setup_logging
 from utils.mlflow_tracker import MLflowTracker, create_tracker, MLFLOW_AVAILABLE
 
 # Auto-trader imports (optional - may not be available on all platforms)
@@ -89,7 +90,7 @@ def initialize_logging(
     )
 
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class LeapTradingSystem:

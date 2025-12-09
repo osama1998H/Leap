@@ -456,9 +456,8 @@ class TransformerPredictor:
             self.optimizer, mode='min', factor=0.5, patience=5
         )
 
-        # Training history
-        self.train_losses = []
-        self.val_losses = []
+        # Training history (unified dataclass for consistent save/load)
+        self.training_history = TrainingHistory()
 
     @property
     def model(self):
@@ -545,12 +544,12 @@ class TransformerPredictor:
                 batch_pbar.set_postfix(loss=f"{loss.item():.6f}")
 
             avg_train_loss = epoch_loss / len(train_loader)
-            self.train_losses.append(avg_train_loss)
+            self.training_history.train_losses.append(avg_train_loss)
 
             # Validation
             if X_val is not None:
                 val_loss = self._validate(X_val, y_val)
-                self.val_losses.append(val_loss)
+                self.training_history.val_losses.append(val_loss)
                 self.scheduler.step(val_loss)
 
                 if val_loss < best_val_loss:
@@ -592,8 +591,8 @@ class TransformerPredictor:
             self.network.load_state_dict(best_state)
 
         return {
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
+            'train_losses': self.training_history.train_losses,
+            'val_losses': self.training_history.val_losses,
             'best_val_loss': best_val_loss
         }
 
@@ -710,10 +709,6 @@ class TransformerPredictor:
 
     def save(self, path: str):
         """Save model checkpoint using standardized format."""
-        training_history = TrainingHistory(
-            train_losses=self.train_losses,
-            val_losses=self.val_losses
-        )
         metadata = CheckpointMetadata(
             model_type='transformer',
             input_dim=self.input_dim
@@ -723,7 +718,7 @@ class TransformerPredictor:
             model_state_dict=self.network.state_dict(),
             optimizer_state_dict=self.optimizer.state_dict(),
             config=self.config,
-            training_history=training_history,
+            training_history=self.training_history,
             metadata=metadata
         )
 
@@ -745,10 +740,8 @@ class TransformerPredictor:
         if CHECKPOINT_KEYS['CONFIG'] in checkpoint:
             self.config = checkpoint[CHECKPOINT_KEYS['CONFIG']]
 
-        # Extract training history
-        training_history = checkpoint.get(CHECKPOINT_KEYS['TRAINING_HISTORY'], TrainingHistory())
-        self.train_losses = training_history.train_losses
-        self.val_losses = training_history.val_losses
+        # Extract training history (unified dataclass)
+        self.training_history = checkpoint.get(CHECKPOINT_KEYS['TRAINING_HISTORY'], TrainingHistory())
 
         logger.info(f"Model loaded from {path}")
 
