@@ -538,6 +538,28 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
     # Broker sync methods
     # -------------------------------------------------------------------------
 
+    def _mt5_position_to_position(self, mt5_pos: MT5Position) -> Position:
+        """
+        Convert MT5Position to Position dataclass.
+
+        Args:
+            mt5_pos: MT5 position object from broker
+
+        Returns:
+            Position dataclass instance compatible with TradingState
+        """
+        # Convert type from int (0=BUY, 1=SELL) to string ('long', 'short')
+        direction = 'long' if mt5_pos.type == 0 else 'short'
+
+        return Position(
+            type=direction,
+            entry_price=mt5_pos.price_open,
+            size=mt5_pos.volume,
+            entry_time=int(mt5_pos.time.timestamp()) if mt5_pos.time else self.current_step,
+            stop_loss=mt5_pos.sl if mt5_pos.sl > 0 else None,
+            take_profit=mt5_pos.tp if mt5_pos.tp > 0 else None
+        )
+
     def _sync_positions_to_state(self):
         """
         Sync positions to self.state.positions (single source of truth).
@@ -551,7 +573,8 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         else:
             # Get positions from broker via position_sync and convert to Position objects
             broker_positions = self.position_sync.get_positions(self.symbol)
-            self.state.positions = list(broker_positions)
+            # Convert MT5Position objects to Position dataclass instances
+            self.state.positions = [self._mt5_position_to_position(p) for p in broker_positions]
 
     def _sync_with_broker(self):
         """Sync state with broker account."""
