@@ -437,14 +437,14 @@ class MLflowTracker:
         Returns:
             Model URI if successful, None otherwise
         """
-        # Create example input for signature
-        input_example = np.zeros((1, state_dim), dtype=np.float32)
-
+        # Skip input_example for agent models that return tuples
+        # (action_logits, state_value) - MLflow serving validation
+        # expects single tensor output
         return self.log_pytorch_model(
             model=model,
             artifact_path="agent",
             registered_model_name=self.config.registered_model_name_agent,
-            input_example=input_example
+            input_example=None
         )
 
     def log_backtest_results(
