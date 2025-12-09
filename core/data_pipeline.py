@@ -209,23 +209,105 @@ class FeatureEngineer:
 
     def _add_trend_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add trend-based indicators."""
-        # ADX (Average Directional Index)
-        # +DM = current high - previous high (when positive and dominates)
-        # -DM = previous low - current low (when positive and dominates)
+        period = 14  # Standard ADX period
+
+        # ============================================
+        # ADX (Average Directional Index) - Wilder's Method
+        # ============================================
+        # Step 1: Calculate Directional Movement (+DM and -DM)
+        # +DM = current high - previous high (when positive and > -DM)
+        # -DM = previous low - current low (when positive and > +DM)
         high_diff = df['high'].diff()
         low_diff = -df['low'].diff()  # previous low - current low
 
         plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
         minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
 
-        tr_14 = df['tr'].rolling(14).sum()
-        plus_di = 100 * (plus_dm.rolling(14).sum() / (tr_14 + 1e-10))
-        minus_di = 100 * (minus_dm.rolling(14).sum() / (tr_14 + 1e-10))
+        # Step 2: Apply Wilder's smoothing to TR, +DM, -DM
+        tr_smoothed = self._wilder_smoothing(df['tr'], period)
+        plus_dm_smoothed = self._wilder_smoothing(plus_dm, period)
+        minus_dm_smoothed = self._wilder_smoothing(minus_dm, period)
+
+        # Step 3: Calculate +DI and -DI
+        # +DI = 100 * Smoothed +DM / Smoothed TR
+        # -DI = 100 * Smoothed -DM / Smoothed TR
+        plus_di = 100 * (plus_dm_smoothed / (tr_smoothed + 1e-10))
+        minus_di = 100 * (minus_dm_smoothed / (tr_smoothed + 1e-10))
 
         df['plus_di'] = plus_di
         df['minus_di'] = minus_di
+
+        # Step 4: Calculate DX (Directional Movement Index)
+        # DX = 100 * |+DI - -DI| / (+DI + -DI)
         dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-        df['adx'] = dx.rolling(14).mean()
+
+        # Step 5: Calculate ADX using Wilder's smoothing on DX
+        # First ADX = mean of first 14 DX values
+        # Subsequent ADX = ((Prior ADX * 13) + Current DX) / 14
+        adx = pd.Series(index=df.index, dtype=float)
+
+        # Find first valid DX index
+        first_valid_dx = dx.first_valid_index()
+        if first_valid_dx is not None:
+            start_pos = df.index.get_loc(first_valid_dx)
+
+            # Need 14 valid DX values to start ADX
+            if len(dx) >= start_pos + period:
+                # First ADX = mean of first 14 DX values
+                first_adx_idx = start_pos + period - 1
+                adx.iloc[first_adx_idx] = dx.iloc[start_pos:start_pos + period].mean()
+
+                # Subsequent ADX values
+                for i in range(first_adx_idx + 1, len(df)):
+                    prior_adx = adx.iloc[i - 1]
+                    current_dx = dx.iloc[i]
+                    if pd.notna(prior_adx) and pd.notna(current_dx):
+                        adx.iloc[i] = ((prior_adx * (period - 1)) + current_dx) / period
+
+        df['adx'] = adx
+        df['dx'] = dx
+
+        # ============================================
+        # Additional ADX-derived features
+        # ============================================
+
+        # ADXR (ADX Rating) - Average of current ADX and ADX from 'period' bars ago
+        # Provides a smoother trend strength indicator
+        df['adxr'] = (adx + adx.shift(period)) / 2
+
+        # DI Crossover Signal
+        # 1 = +DI above -DI (bullish), 0 = -DI above +DI (bearish)
+        df['di_crossover'] = (plus_di > minus_di).astype(int)
+
+        # DI Spread - Normalized difference between +DI and -DI
+        # Positive = bullish trend, Negative = bearish trend
+        # Normalized by sum to get values roughly between -1 and 1
+        df['di_spread'] = (plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+
+        # ADX Slope - Rate of change of ADX
+        # Positive = trend strengthening, Negative = trend weakening
+        df['adx_slope'] = adx.diff(5)  # 5-period change
+
+        # ADX Strength Classification (useful for regime detection)
+        # 0 = weak (<20), 1 = moderate (20-40), 2 = strong (>40)
+        df['adx_strength'] = pd.cut(
+            adx,
+            bins=[-np.inf, 20, 40, np.inf],
+            labels=[0, 1, 2]
+        ).astype(float)
+
+        # ============================================
+        # Keep simple ADX for backward compatibility
+        # ============================================
+        tr_14_simple = df['tr'].rolling(period).sum()
+        plus_di_simple = 100 * (plus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
+        minus_di_simple = 100 * (minus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
+        dx_simple = 100 * np.abs(plus_di_simple - minus_di_simple) / (plus_di_simple + minus_di_simple + 1e-10)
+        df['adx_simple'] = dx_simple.rolling(period).mean()
+
+        # ============================================
+        # Other trend indicators
+        # ============================================
 
         # Parabolic SAR (simplified)
         df['trend'] = np.where(df['close'] > df['close'].shift(1), 1, -1)
@@ -300,6 +382,51 @@ class FeatureEngineer:
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         rs = gain / (loss + 1e-10)
         return 100 - (100 / (1 + rs))
+
+    def _wilder_smoothing(self, series: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Apply Wilder's smoothing technique.
+
+        Wilder's smoothing is used in ADX, ATR, and RSI calculations.
+        Formula:
+            First value = Sum of first 'period' values
+            Subsequent = Prior value - (Prior value / period) + Current value
+
+        This is equivalent to an EMA with alpha = 1/period.
+
+        Args:
+            series: Input series to smooth
+            period: Smoothing period (default 14)
+
+        Returns:
+            Smoothed series using Wilder's method
+        """
+        smoothed = pd.Series(index=series.index, dtype=float)
+
+        # First smoothed value is the sum of first 'period' values
+        first_valid_idx = series.first_valid_index()
+        if first_valid_idx is None:
+            return smoothed
+
+        # Find position of first valid index
+        start_pos = series.index.get_loc(first_valid_idx)
+
+        # Need at least 'period' values to start
+        if len(series) < start_pos + period:
+            return smoothed
+
+        # First smoothed value = sum of first 'period' values
+        first_sum_idx = start_pos + period - 1
+        smoothed.iloc[first_sum_idx] = series.iloc[start_pos:start_pos + period].sum()
+
+        # Subsequent values use Wilder's smoothing
+        for i in range(first_sum_idx + 1, len(series)):
+            prior = smoothed.iloc[i - 1]
+            current = series.iloc[i]
+            if pd.notna(prior) and pd.notna(current):
+                smoothed.iloc[i] = prior - (prior / period) + current
+
+        return smoothed
 
 
 class DataPipeline:
