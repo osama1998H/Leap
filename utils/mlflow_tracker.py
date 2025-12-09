@@ -14,12 +14,14 @@ from contextlib import contextmanager
 import numpy as np
 
 try:
+    import torch
     import mlflow
     import mlflow.pytorch
     from mlflow.models import infer_signature
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
+    torch = None  # type: ignore
 
 from config.settings import (
     MLflowConfig,
@@ -100,7 +102,7 @@ class MLflowTracker:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to setup MLflow: {e}")
+            logger.exception(f"Failed to setup MLflow: {e}")
             return False
 
     @contextmanager
@@ -141,7 +143,7 @@ class MLflowTracker:
                 yield run
 
         except Exception as e:
-            logger.error(f"Error in MLflow run: {e}")
+            logger.exception(f"Error in MLflow run: {e}")
             raise
         finally:
             self.active_run = None
@@ -317,15 +319,18 @@ class MLflowTracker:
             # Infer signature if input_example provided but no signature
             if signature is None and input_example is not None:
                 model.eval()
-                import torch
                 with torch.no_grad():
                     if isinstance(input_example, np.ndarray):
                         input_tensor = torch.from_numpy(input_example).float()
                     else:
                         input_tensor = input_example
 
-                    if hasattr(model, 'device'):
-                        input_tensor = input_tensor.to(model.device)
+                    # Get device from model parameters (nn.Module doesn't have .device)
+                    try:
+                        device = next(model.parameters()).device
+                        input_tensor = input_tensor.to(device)
+                    except StopIteration:
+                        pass  # Model has no parameters, keep on CPU
 
                     output = model(input_tensor)
 
@@ -357,7 +362,7 @@ class MLflowTracker:
             return model_info.model_uri
 
         except Exception as e:
-            logger.error(f"Failed to log PyTorch model: {e}")
+            logger.exception(f"Failed to log PyTorch model: {e}")
             return None
 
     def log_predictor_model(
@@ -485,7 +490,7 @@ class MLflowTracker:
             logger.info(f"Set alias '{alias}' for {model_name} version {version}")
             return True
         except Exception as e:
-            logger.error(f"Failed to set model alias: {e}")
+            logger.exception(f"Failed to set model alias: {e}")
             return False
 
     def load_model(
@@ -511,7 +516,7 @@ class MLflowTracker:
                 return mlflow.pytorch.load_model(model_uri, map_location=map_location)
             return mlflow.pytorch.load_model(model_uri)
         except Exception as e:
-            logger.error(f"Failed to load model from {model_uri}: {e}")
+            logger.exception(f"Failed to load model from {model_uri}: {e}")
             raise
 
     def get_run_id(self) -> Optional[str]:

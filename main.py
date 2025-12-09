@@ -375,6 +375,13 @@ class LeapTradingSystem:
                 'agent': agent_results
             }
 
+        except Exception:
+            # Pass exception info to MLflow for proper run status tracking
+            if run_context is not None:
+                run_context.__exit__(*sys.exc_info())
+                run_context = None  # Prevent double __exit__
+            raise
+
         finally:
             if run_context is not None:
                 run_context.__exit__(None, None, None)

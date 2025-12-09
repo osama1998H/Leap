@@ -514,7 +514,9 @@ class PPOAgent:
         """
         state, _ = env.reset()
         episode_rewards = []
+        episode_lengths = []
         current_episode_reward = 0.0
+        current_episode_length = 0
         timestep = 0
         n_episodes = 0
 
@@ -529,11 +531,14 @@ class PPOAgent:
                 self.store_transition(state, action, reward, done, log_prob, value)
 
                 current_episode_reward += reward
+                current_episode_length += 1
                 timestep += 1
 
                 if done:
                     episode_rewards.append(current_episode_reward)
+                    episode_lengths.append(current_episode_length)
                     current_episode_reward = 0.0
+                    current_episode_length = 0
                     n_episodes += 1
                     state, _ = env.reset()
                 else:
@@ -564,7 +569,7 @@ class PPOAgent:
                 callback_metrics = {
                     "policy_loss": update_stats['policy_loss'],
                     "value_loss": update_stats['value_loss'],
-                    "entropy": update_stats['entropy_loss'],
+                    "entropy": update_stats['entropy'],
                     "clip_fraction": update_stats.get('clip_fraction', 0),
                 }
                 if len(episode_rewards) > 0:
@@ -579,6 +584,7 @@ class PPOAgent:
 
         return {
             'episode_rewards': episode_rewards,
+            'episode_lengths': episode_lengths,
             'training_stats': self.training_stats
         }
 
