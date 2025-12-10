@@ -595,37 +595,6 @@ class LeapTradingSystem:
 
         return results
 
-    def start_live_trading(self, paper: bool = True):
-        """Start live trading (paper or real)."""
-        mode = 'paper' if paper else 'live'
-        logger.info(f"Starting {mode} trading...")
-
-        # Ensure models are loaded
-        if self._predictor is None or self._agent is None:
-            logger.error("Models not loaded. Please train or load models first.")
-            return
-
-        # Create online learning manager
-        self._online_manager = OnlineLearningManager(
-            predictor=self._predictor,
-            agent=self._agent
-        )
-
-        # Main trading loop would go here
-        logger.info(f"{mode.capitalize()} trading started. Press Ctrl+C to stop.")
-
-        try:
-            while True:
-                # Get latest market data
-                # Make prediction
-                # Execute trades
-                # Online learning updates
-                import time
-                time.sleep(1)
-
-        except KeyboardInterrupt:
-            logger.info("Trading stopped by user")
-
     def save_models(self, directory: Optional[str] = None):
         """Save all models."""
         if directory is None:
@@ -769,14 +738,14 @@ def main():
 Examples:
   python main.py train --symbol EURUSD --epochs 100
   python main.py backtest --symbol EURUSD
-  python main.py live --paper
+  python main.py autotrade --paper
   python main.py evaluate --model-dir ./models
         """
     )
 
     parser.add_argument(
         'command',
-        choices=['train', 'backtest', 'live', 'evaluate', 'walkforward', 'autotrade'],
+        choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'],
         help='Command to execute'
     )
 
@@ -1098,10 +1067,6 @@ Examples:
 
         results = system.walk_forward_test(market_data)
         print(json.dumps(results, indent=2, default=str))
-
-    elif args.command == 'live':
-        system.load_models(args.model_dir)
-        system.start_live_trading(paper=args.paper)
 
     elif args.command == 'evaluate':
         logger.info("Evaluating models...")

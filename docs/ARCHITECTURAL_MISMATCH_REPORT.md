@@ -1905,7 +1905,16 @@ Create unified interface per the interface definitions above.
 - [x] MINOR-4: Remove unused get_logger() function ✅ **COMPLETED**
 - [x] Create TradingError exception hierarchy ✅ **COMPLETED**
 
-#### Phase 4 (Future Work)
+#### Phase 4 (Completed) - Feature Implementation Mismatches
+- [x] FEATURE-CRITICAL-1: Remove incomplete `live` command stub ✅ **COMPLETED**
+- [x] FEATURE-MAJOR-1: Eliminate CLI confusion (removed `live`, kept `autotrade`) ✅ **COMPLETED**
+- [x] FEATURE-MAJOR-2: Documented that LiveTradingEnvironment is used by AutoTrader only ✅ **COMPLETED**
+- [x] Update CLI.md to remove `live` command documentation ✅ **COMPLETED**
+- [x] Update CLAUDE.md to remove `live` command references ✅ **COMPLETED**
+- [x] Update README.md to consolidate live trading docs ✅ **COMPLETED**
+- [x] Update tests to remove `live` command tests ✅ **COMPLETED**
+
+#### Phase 5 (Future Work)
 - [ ] Add integration tests for dimension matching
 - [ ] MAJOR-3: Configuration passing consistency (optional - documented as design decision)
 - [ ] Documentation reorganization (cross-references, etc.)
@@ -2023,7 +2032,17 @@ The codebase uses three configuration passing styles:
    - `DataPipelineError` - Data fetching/processing errors
    - `RiskLimitExceededError` - Risk limit exceeded
 
+### Phase 4 (FEATURE Implementation Mismatches)
+1. **FEATURE-CRITICAL-1**: Removed incomplete `live` command stub (`start_live_trading()` method)
+2. **FEATURE-MAJOR-1**: Eliminated CLI confusion by removing `live` command - `autotrade` is now the single production implementation
+3. **FEATURE-MAJOR-2**: Documented that `LiveTradingEnvironment` is intentionally used only by `AutoTrader`
+
 ### Files Modified
+- `main.py` - Removed `start_live_trading()` method, removed `'live'` from CLI choices, updated examples
+- `tests/test_cli.py` - Removed `'live'` from test parsers, removed `test_live_command_args` and `test_live_trading_without_models`
+- `CLI.md` - Removed `live` command section and references
+- `CLAUDE.md` - Updated CLI reference table and examples
+- `README.md` - Consolidated live trading documentation into autotrade section
 - `core/live_trading_env.py` - MAJOR-1, MAJOR-2, MINOR-1 fixes
 - `models/ppo_agent.py` - MAJOR-5 fix (LR scheduler)
 - `training/online_interface.py` - MAJOR-7 fix (new file)
@@ -2038,4 +2057,4 @@ The codebase uses three configuration passing styles:
 
 *Report updated: 2025-12-10*
 *Analysis scope: Full codebase architectural review with refactoring plan*
-*Implementation status: Phase 1, Phase 2, and Phase 3 (MINOR) COMPLETED*
+*Implementation status: Phase 1, Phase 2, Phase 3 (MINOR), and Phase 4 (FEATURE) COMPLETED*
