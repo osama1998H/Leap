@@ -455,10 +455,14 @@ class LeapTradingSystem:
             'volume': market_data.volume
         })
 
-        # Add features
+        # Add features - use pd.concat to avoid DataFrame fragmentation
         if market_data.features is not None:
-            for i, name in enumerate(market_data.feature_names):
-                df[name] = market_data.features[:, i]
+            feature_dict = {
+                name: market_data.features[:, i]
+                for i, name in enumerate(market_data.feature_names)
+            }
+            feature_df = pd.DataFrame(feature_dict)
+            df = pd.concat([df, feature_df], axis=1)
 
         # Create backtester
         backtester = Backtester(
