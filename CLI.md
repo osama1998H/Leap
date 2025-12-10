@@ -17,7 +17,6 @@ python main.py [COMMAND] [OPTIONS]
 | `train` | Train Transformer predictor and PPO reinforcement learning agent |
 | `backtest` | Run backtest on historical market data |
 | `walkforward` | Run walk-forward optimization with rolling train/test splits |
-| `live` | Start live or paper trading session |
 | `evaluate` | Evaluate trained models on test data |
 | `autotrade` | Start auto-trader with MetaTrader5 integration (Windows only) |
 
@@ -177,40 +176,6 @@ python main.py walkforward --symbol EURUSD
 
 # Walk-forward with extended data
 python main.py walkforward --symbol GBPUSD --bars 100000
-```
-
----
-
-### live
-
-Start a live or paper trading session.
-
-**Syntax:**
-```bash
-python main.py live [OPTIONS]
-```
-
-**Options:**
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--symbol` | `-s` | string | `EURUSD` | Trading symbol |
-| `--timeframe` | `-t` | string | `1h` | Timeframe for data |
-| `--model-dir` | `-m` | string | `./saved_models` | Directory to load trained models from |
-| `--paper` | | flag | `False` | Enable paper trading mode (simulated trades) |
-| `--config` | `-c` | string | | Path to configuration JSON file |
-| `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
-| `--log-file` | | string | | Custom log file path |
-
-> **Warning:** Always use `--paper` flag when testing to avoid real money trades.
-
-**Examples:**
-```bash
-# Paper trading (recommended for testing)
-python main.py live --paper
-
-# Paper trading with specific symbol
-python main.py live --paper --symbol GBPUSD --timeframe 4h
 ```
 
 ---
@@ -471,8 +436,8 @@ Leap/
 ## Important Notes
 
 ### Safety
-- **Always use `--paper` flag** when testing live or autotrade commands
-- Live trading with real money requires explicit confirmation
+- **Always use `--paper` flag** when testing autotrade commands
+- Real money trading requires explicit confirmation
 - Never share or commit MT5 credentials
 
 ### Platform Requirements
@@ -513,8 +478,8 @@ python main.py backtest --symbol EURUSD --realistic --monte-carlo
 # 4. Run walk-forward optimization
 python main.py walkforward --symbol EURUSD --bars 100000
 
-# 5. Paper trade to validate
-python main.py live --paper --symbol EURUSD
+# 5. Paper trade to validate (Windows only - requires MT5)
+python main.py autotrade --paper --symbol EURUSD
 ```
 
 ### Using Custom Configuration

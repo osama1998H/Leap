@@ -35,9 +35,9 @@ python main.py backtest --symbol EURUSD --bars 50000
 python main.py backtest --symbol EURUSD --realistic --monte-carlo
 python main.py walkforward --symbol EURUSD
 
-# Live Trading
-python main.py live --paper                              # Paper trading
-python main.py autotrade --paper --symbol EURUSD         # Auto-trader with MT5 (Windows only)
+# Live Trading (Windows only - requires MT5)
+python main.py autotrade --paper                         # Paper trading mode
+python main.py autotrade --paper --symbol EURUSD         # Paper trading with specific symbol
 
 # Evaluation
 python main.py evaluate --model-dir ./saved_models
@@ -349,7 +349,7 @@ The `OnlineLearningManager` monitors and adapts models:
 
 - **NumPy Version**: Must be <2.0 for PyTorch ABI compatibility
 - **MT5 Integration**: Only works on Windows; use paper mode on other platforms
-- **Safety**: Always use `--paper` flag when testing live trading
+- **Safety**: Always use `--paper` flag when testing `autotrade` command
 - **Model Files**: Saved to `saved_models/` with `model_metadata.json` for reloading
 - **Logging**: Logs rotate by size (10MB default) with 5 backups
 - **MLflow**: Experiments tracked in `mlruns/` directory
@@ -363,9 +363,8 @@ See `CLI.md` for detailed command documentation.
 | `train` | Train Transformer + PPO models |
 | `backtest` | Run backtest with optional Monte Carlo |
 | `walkforward` | Walk-forward optimization |
-| `live` | Start live/paper trading session |
 | `evaluate` | Evaluate trained models |
-| `autotrade` | Start autonomous MT5 trading |
+| `autotrade` | Start autonomous MT5 trading (live/paper) |
 
 **Global options:** `--symbol`, `--timeframe`, `--bars`, `--model-dir`, `--config`, `--log-level`, `--paper`
 

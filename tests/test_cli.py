@@ -488,7 +488,7 @@ class TestCLIArgumentParsing:
 
         with patch.object(sys, 'argv', ['main.py'] + test_args):
             parser = argparse.ArgumentParser()
-            parser.add_argument('command', choices=['train', 'backtest', 'live', 'evaluate', 'walkforward', 'autotrade'])
+            parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
             parser.add_argument('--symbol', '-s', default='EURUSD')
             parser.add_argument('--epochs', '-e', type=int, default=100)
 
@@ -503,7 +503,7 @@ class TestCLIArgumentParsing:
         test_args = ['backtest', '--symbol', 'EURUSD', '--bars', '10000', '--realistic']
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'live', 'evaluate', 'walkforward', 'autotrade'])
+        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
         parser.add_argument('--symbol', '-s', default='EURUSD')
         parser.add_argument('--bars', '-b', type=int, default=50000)
         parser.add_argument('--realistic', action='store_true')
@@ -514,17 +514,17 @@ class TestCLIArgumentParsing:
         assert args.bars == 10000
         assert args.realistic is True
 
-    def test_live_command_args(self):
-        """Test live command argument parsing."""
-        test_args = ['live', '--paper']
+    def test_autotrade_command_args(self):
+        """Test autotrade command argument parsing."""
+        test_args = ['autotrade', '--paper']
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'live', 'evaluate', 'walkforward', 'autotrade'])
+        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
         parser.add_argument('--paper', action='store_true')
 
         args = parser.parse_args(test_args)
 
-        assert args.command == 'live'
+        assert args.command == 'autotrade'
         assert args.paper is True
 
     def test_mlflow_args(self):
@@ -532,7 +532,7 @@ class TestCLIArgumentParsing:
         test_args = ['train', '--no-mlflow', '--mlflow-experiment', 'test_exp']
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'live', 'evaluate', 'walkforward', 'autotrade'])
+        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
         parser.add_argument('--no-mlflow', action='store_true')
         parser.add_argument('--mlflow-experiment', default=None)
 
@@ -680,16 +680,6 @@ class TestEdgeCases:
             result = trading_system.load_data('INVALID', '1h', 1000)
 
             assert result is None
-
-    def test_live_trading_without_models(self, trading_system):
-        """Test that live trading fails gracefully without models."""
-        # Models are None by default
-        assert trading_system._predictor is None
-        assert trading_system._agent is None
-
-        # start_live_trading should handle this gracefully (logs error and returns)
-        trading_system.start_live_trading(paper=True)
-        # Should not crash - method logs error via logger and returns early
 
     def test_save_models_without_predictor(self, trading_system, temp_dir):
         """Test save_models with only agent."""

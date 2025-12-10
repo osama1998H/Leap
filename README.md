@@ -405,20 +405,12 @@ python main.py walkforward --symbol EURUSD
 python main.py evaluate --model-dir ./saved_models
 ```
 
-### Live Trading
-
-```bash
-# Paper trading (simulated)
-python main.py live --paper
-
-# Live trading (requires MT5 connection)
-python main.py live
-```
-
-### Auto-Trading (Autonomous)
+### Live/Auto-Trading
 
 The auto-trader runs autonomously, combining Transformer predictions with PPO agent decisions.
 See [docs/AUTO_TRADER.md](docs/AUTO_TRADER.md) for detailed documentation.
+
+> **Note:** Live trading requires Windows with MetaTrader 5 integration.
 
 ```bash
 # Paper trading mode (recommended for testing)
