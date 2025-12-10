@@ -9,6 +9,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from core.trading_types import (
+    BrokerConnectionError,
+    OrderRejectedError,
+    PositionError,
+    TradingError,
+)
+
 if TYPE_CHECKING:
     from core.mt5_broker import MT5BrokerGateway, OrderResult, SymbolInfo, TickInfo
     from core.risk_manager import RiskManager
@@ -426,15 +433,15 @@ class OrderManager:
             tp_price = entry_price - (tp_pips * pip_size)
 
         # Calculate position size based on risk
+        # Use RiskManager when available (delegates to calculate_position_size(entry_price, stop_loss_price))
+        # Otherwise fall back to inline calculation
         if self.risk_manager:
             volume = self.risk_manager.calculate_position_size(
-                account_balance=account.balance,
-                risk_percent=risk_percent,
-                stop_loss_pips=sl_pips,
-                pip_value=self._get_pip_value(signal.symbol, symbol_info)
+                entry_price=entry_price,
+                stop_loss_price=sl_price
             )
         else:
-            # Simple position sizing: risk_amount / (sl_pips * pip_value)
+            # Fallback: inline position sizing (risk_amount / (sl_pips * pip_value))
             risk_amount = account.balance * risk_percent
             pip_value = self._get_pip_value(signal.symbol, symbol_info)
             if pip_value > 0 and sl_pips > 0:
@@ -532,9 +539,17 @@ class OrderManager:
                     if pos.ticket == execution.ticket:
                         open_executions.append(execution)
                         break
-            except Exception:
+            except (BrokerConnectionError, PositionError) as e:
+                logger.warning(
+                    "Failed to check open position for ticket %s on symbol %s: %s",
+                    execution.ticket,
+                    symbol,
+                    e,
+                )
+                continue
+            except TradingError:
                 logger.exception(
-                    "Failed to check open position for ticket %s on symbol %s",
+                    "Trading error checking position for ticket %s on symbol %s",
                     execution.ticket,
                     symbol,
                 )

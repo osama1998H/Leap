@@ -14,10 +14,11 @@ import json
 import os
 from tqdm import tqdm
 
-from core.trading_types import Trade  # Consolidated Trade dataclass
+from core.trading_types import Trade, TradingError  # Consolidated Trade dataclass
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
+    from evaluation.metrics import MetricsCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -487,46 +488,42 @@ class Backtester:
         self.equity = self.balance + unrealized_pnl
 
     def _calculate_results(self) -> BacktestResult:
-        """Calculate comprehensive backtest results."""
+        """Calculate comprehensive backtest results using MetricsCalculator for consistency."""
+        # Lazy import to avoid circular dependency (metrics.py imports MonteCarloSimulator)
+        from evaluation.metrics import MetricsCalculator
+
         equity = np.array(self.equity_curve)
-        returns = np.diff(equity) / equity[:-1]
+        returns = np.diff(equity) / equity[:-1] if len(equity) > 1 else np.array([])
 
-        # Basic metrics
-        total_return = (equity[-1] - equity[0]) / equity[0] if len(equity) > 1 else 0
-        n_periods = len(equity)
-        periods_per_year = 252 * 24  # Assuming hourly data
-        annualized_return = (1 + total_return) ** (periods_per_year / max(1, n_periods)) - 1
+        # Use MetricsCalculator for consistent metrics calculation across the system
+        metrics_calc = MetricsCalculator()
 
-        # Risk metrics
-        volatility = np.std(returns) * np.sqrt(periods_per_year) if len(returns) > 1 else 0
-        downside_returns = returns[returns < 0]
-        downside_vol = np.std(downside_returns) * np.sqrt(periods_per_year) if len(downside_returns) > 1 else 0.001
+        # Return metrics (using MetricsCalculator)
+        total_return = metrics_calc.total_return(equity)
+        annualized_return = metrics_calc.annualized_return(equity)
 
-        # Sharpe and Sortino
-        risk_free_rate = 0.02  # 2% annual
-        excess_return = annualized_return - risk_free_rate
-        sharpe = excess_return / volatility if volatility > 0 else 0
-        sortino = excess_return / downside_vol if downside_vol > 0 else 0
+        # Risk metrics (using MetricsCalculator)
+        volatility = metrics_calc.volatility(returns)
+        downside_vol = metrics_calc.downside_volatility(returns)
+        max_drawdown = metrics_calc.max_drawdown(equity)
+        max_dd_duration = metrics_calc.max_drawdown_duration(equity)
 
-        # Drawdown
-        peak = np.maximum.accumulate(equity)
-        drawdown = (peak - equity) / peak
-        max_drawdown = np.max(drawdown) if len(drawdown) > 0 else 0
+        # Risk-adjusted metrics (using MetricsCalculator)
+        sharpe = metrics_calc.sharpe_ratio(returns)
+        sortino = metrics_calc.sortino_ratio(returns)
+        calmar = metrics_calc.calmar_ratio(equity)
 
-        # Max drawdown duration
-        dd_duration = 0
-        max_dd_duration = 0
-        for i in range(len(drawdown)):
-            if drawdown[i] > 0:
-                dd_duration += 1
-                max_dd_duration = max(max_dd_duration, dd_duration)
-            else:
-                dd_duration = 0
+        # Distribution metrics (using MetricsCalculator)
+        var_95 = metrics_calc.value_at_risk(returns, 0.95)
+        cvar_95 = metrics_calc.conditional_var(returns, 0.95)
+        skewness = metrics_calc.skewness(returns)
+        kurtosis = metrics_calc.kurtosis(returns)
 
-        # Calmar ratio
-        calmar = annualized_return / max_drawdown if max_drawdown > 0 else 0
+        # Drawdown curve for result
+        peak = np.maximum.accumulate(equity) if len(equity) > 0 else np.array([])
+        drawdown = (peak - equity) / peak if len(peak) > 0 else np.array([])
 
-        # Trade statistics
+        # Trade statistics (calculated directly for trade-specific data)
         trade_pnls = [t.pnl for t in self.closed_trades]
         winning_trades = [t for t in self.closed_trades if t.pnl > 0]
         losing_trades = [t for t in self.closed_trades if t.pnl <= 0]
@@ -554,14 +551,6 @@ class Backtester:
                 duration = (t.exit_time - t.entry_time).total_seconds() / 3600  # Hours
                 durations.append(duration)
         avg_duration = np.mean(durations) if durations else 0
-
-        # VaR and CVaR
-        var_95 = np.percentile(returns, 5) if len(returns) > 0 else 0
-        cvar_95 = np.mean(returns[returns <= var_95]) if len(returns[returns <= var_95]) > 0 else 0
-
-        # Higher moments
-        skewness = float(pd.Series(returns).skew()) if len(returns) > 2 else 0
-        kurtosis = float(pd.Series(returns).kurtosis()) if len(returns) > 3 else 0
 
         return BacktestResult(
             total_return=float(total_return),
@@ -731,8 +720,11 @@ class WalkForwardOptimizer:
                 'result': result
             }
 
+        except TradingError as e:
+            logger.warning(f"Trading error in fold {fold_idx}: {e}")
+            return None
         except Exception:
-            logger.exception(f"Error in fold {fold_idx}")
+            logger.exception(f"Unexpected error in fold {fold_idx}")
             return None
 
     def _aggregate_results(self, results: List[Dict]) -> Dict:
