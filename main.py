@@ -674,8 +674,8 @@ class LeapTradingSystem:
             backtester = Backtester(
                 initial_balance=self.config.backtest.initial_balance,
                 commission_rate=self.config.backtest.commission_per_lot / 100000,
-                slippage=self.config.backtest.slippage_pips * 0.0001,
-                spread=self.config.backtest.spread_pips * 0.0001,
+                slippage_pips=self.config.backtest.slippage_pips,
+                spread_pips=self.config.backtest.spread_pips,
                 leverage=self.config.backtest.leverage
             )
 
