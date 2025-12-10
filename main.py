@@ -1003,7 +1003,7 @@ Examples:
     parser.add_argument(
         '--mlflow-tracking-uri',
         default=None,
-        help='MLflow tracking URI (default: mlruns)'
+        help='MLflow tracking URI (default: sqlite:///mlflow.db)'
     )
 
     parser.add_argument(

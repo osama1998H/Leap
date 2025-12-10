@@ -175,7 +175,9 @@ class LoggingConfig:
 class MLflowConfig:
     """MLflow experiment tracking configuration."""
     enabled: bool = True
-    tracking_uri: str = "mlruns"  # Local directory by default, can be remote URI
+    # Database backend (SQLite) - filesystem backend deprecated Feb 2026
+    # See: https://github.com/mlflow/mlflow/issues/18534
+    tracking_uri: str = "sqlite:///mlflow.db"
     experiment_name: str = "leap-trading"
     run_name_prefix: str = "training"
 

@@ -207,6 +207,9 @@ cython_debug/
 checkpoints/
 saved_models/
 mlruns/
+mlflow.db
+mlflow.db-shm
+mlflow.db-wal
 # Ruff stuff:
 .ruff_cache/
 
