@@ -61,6 +61,8 @@ class TransformerConfig:
     max_seq_length: int = 120
 
     # Training
+    # Note: Lower learning rate (1e-4) for stable transformer training with attention
+    # mechanisms. See docs/ARCHITECTURAL_MISMATCH_REPORT.md DD-2 for design decision.
     learning_rate: float = 1e-4
     weight_decay: float = 1e-5
     batch_size: int = 64
@@ -81,6 +83,9 @@ class PPOConfig:
     critic_hidden_sizes: List[int] = field(default_factory=lambda: [256, 256, 128])
 
     # PPO hyperparameters
+    # Note: Standard PPO learning rate (3e-4) from Schulman et al.
+    # Higher than Transformer due to different optimization dynamics.
+    # See docs/ARCHITECTURAL_MISMATCH_REPORT.md DD-2 for design decision.
     learning_rate: float = 3e-4
     gamma: float = 0.99  # Discount factor
     gae_lambda: float = 0.95  # GAE parameter

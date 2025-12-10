@@ -207,6 +207,7 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | Device management | `utils/device.py` | Use `resolve_device(device)` for PyTorch device handling |
 | Model checkpoints | `utils/checkpoint.py` | Use `save_checkpoint()` / `load_checkpoint()` for consistent model persistence |
 | Trade types | `core/trading_types.py` | Use `Trade`, `TradeStatistics` dataclasses |
+| Trading exceptions | `core/trading_types.py` | Use `TradingError` hierarchy for trading-related errors |
 | Environment config | `core/trading_types.py` | Use `EnvConfig` or `EnvConfig.from_params()` factory |
 | Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
 | Position sizing | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` |

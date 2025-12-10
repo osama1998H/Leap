@@ -3,6 +3,15 @@
 from .data_pipeline import DataPipeline, FeatureEngineer, MarketData
 from .trading_env import TradingEnvironment, MultiSymbolTradingEnv
 from .risk_manager import RiskManager, DynamicRiskManager, RiskLimits, PositionSizing
+from .trading_types import (
+    TradingError,
+    InsufficientFundsError,
+    OrderRejectedError,
+    PositionError,
+    BrokerConnectionError,
+    DataPipelineError,
+    RiskLimitExceededError,
+)
 
 __all__ = [
     'DataPipeline',
@@ -13,5 +22,13 @@ __all__ = [
     'RiskManager',
     'DynamicRiskManager',
     'RiskLimits',
-    'PositionSizing'
+    'PositionSizing',
+    # Exception hierarchy
+    'TradingError',
+    'InsufficientFundsError',
+    'OrderRejectedError',
+    'PositionError',
+    'BrokerConnectionError',
+    'DataPipelineError',
+    'RiskLimitExceededError',
 ]
