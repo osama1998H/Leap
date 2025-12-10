@@ -171,7 +171,11 @@ class ModelTrainer:
         effective_patience = patience if patience > 0 else None
 
         if effective_patience is not None and eval_env is None:
-            logger.warning("Patience set but no eval_env provided. Creating eval environment from training env.")
+            logger.warning(
+                "Patience set but no eval_env provided; early stopping will be disabled. "
+                "Provide eval_env to enable PPO early stopping."
+            )
+            effective_patience = None
 
         logger.info(f"Training PPO agent for {timesteps} timesteps...")
         if effective_patience:
@@ -412,10 +416,16 @@ class ModelTrainer:
 
         # Save training info
         info_path = os.path.join(self.checkpoint_dir, f'agent_{timestamp}_info.json')
+        episode_rewards = results.get('episode_rewards', [])
+        if episode_rewards:
+            final_reward = float(np.mean(episode_rewards[-10:]))
+        else:
+            final_reward = None
+
         checkpoint_info = {
             'timestamp': timestamp,
-            'total_episodes': len(results.get('episode_rewards', [])),
-            'final_reward': float(np.mean(results.get('episode_rewards', [0])[-10:])),
+            'total_episodes': len(episode_rewards),
+            'final_reward': final_reward,
             'early_stopped': results.get('early_stopped', False),
         }
         if results.get('best_eval_reward') is not None:
