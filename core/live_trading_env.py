@@ -470,8 +470,17 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         risk_amount = self._paper_balance * self.risk_per_trade
         try:
             pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
-        except Exception:
+        except (AttributeError, ZeroDivisionError, TypeError) as e:
+            logger.warning(
+                f"Failed to calculate pip value for {self.symbol} from symbol info: {e}. "
+                f"Using fallback value of 10.0 (appropriate for major pairs only)"
+            )
             pip_value = 10.0  # Fallback for major pairs
+
+        if pip_value <= 0:
+            logger.error(f"Invalid pip_value {pip_value} for {self.symbol}, using fallback 10.0")
+            pip_value = 10.0
+
         volume = risk_amount / (self.default_sl_pips * pip_value)
         volume = max(0.01, min(volume, 10.0))
 

@@ -1898,7 +1898,14 @@ Create unified interface per the interface definitions above.
 - [x] MAJOR-7: Unified online learning interface ✅ **COMPLETED**
 - [x] Document design decisions for optimizer/gradient choices ✅ **COMPLETED**
 
-#### Phase 3 (Future Work)
+#### Phase 3 (Completed) - MINOR Fixes
+- [x] MINOR-1: Add logging to silent exception fallback ✅ **COMPLETED**
+- [x] MINOR-2: Document learning rate design decisions inline ✅ **COMPLETED**
+- [x] MINOR-3: Verify type hints consistency ✅ **VERIFIED** (no action needed)
+- [x] MINOR-4: Remove unused get_logger() function ✅ **COMPLETED**
+- [x] Create TradingError exception hierarchy ✅ **COMPLETED**
+
+#### Phase 4 (Future Work)
 - [ ] Add integration tests for dimension matching
 - [ ] MAJOR-3: Configuration passing consistency (optional - documented as design decision)
 - [ ] Documentation reorganization (cross-references, etc.)
@@ -2002,14 +2009,33 @@ The codebase uses three configuration passing styles:
 3. **MAJOR-5**: PPOAgent now has CosineAnnealingLR scheduler for learning rate decay
 4. **MAJOR-7**: Created unified `OnlineLearningAdapter` in `training/online_interface.py`
 
+### Phase 3 (MINOR)
+1. **MINOR-1**: Added logging to silent exception fallback in `live_trading_env.py:473` - now uses `logger.warning()` before applying fallback pip_value
+2. **MINOR-2**: Added inline documentation for learning rate design decisions in `config/settings.py` with references to DD-2
+3. **MINOR-3**: Verified type hints are consistent - no action needed (TradingState/LiveTradingState correctly implemented)
+4. **MINOR-4**: Removed unused `get_logger()` function from `utils/logging_config.py` and `utils/__init__.py`
+5. **Exception Hierarchy**: Created `TradingError` exception hierarchy in `core/trading_types.py`:
+   - `TradingError` - Base exception for all trading errors
+   - `InsufficientFundsError` - Account balance insufficient
+   - `OrderRejectedError` - Trade order rejected by broker/risk manager
+   - `PositionError` - Position-related errors
+   - `BrokerConnectionError` - Broker connection failures
+   - `DataPipelineError` - Data fetching/processing errors
+   - `RiskLimitExceededError` - Risk limit exceeded
+
 ### Files Modified
-- `core/live_trading_env.py` - MAJOR-1, MAJOR-2 fixes
+- `core/live_trading_env.py` - MAJOR-1, MAJOR-2, MINOR-1 fixes
 - `models/ppo_agent.py` - MAJOR-5 fix (LR scheduler)
 - `training/online_interface.py` - MAJOR-7 fix (new file)
 - `training/__init__.py` - Export new interface
+- `core/trading_types.py` - Added TradingError exception hierarchy
+- `core/__init__.py` - Export exception classes
+- `config/settings.py` - MINOR-2 inline documentation
+- `utils/logging_config.py` - MINOR-4 removed get_logger()
+- `utils/__init__.py` - MINOR-4 removed get_logger export
 
 ---
 
-*Report updated: 2025-12-09*
+*Report updated: 2025-12-10*
 *Analysis scope: Full codebase architectural review with refactoring plan*
-*Implementation status: Phase 1 and Phase 2 COMPLETED*
+*Implementation status: Phase 1, Phase 2, and Phase 3 (MINOR) COMPLETED*

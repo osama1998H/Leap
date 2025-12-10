@@ -17,6 +17,100 @@ class Action(IntEnum):
     CLOSE = 3
 
 
+# =============================================================================
+# Exception Hierarchy for Trading Operations
+# =============================================================================
+# Use these custom exceptions for better error handling across the codebase.
+# All trading-related exceptions inherit from TradingError for unified catching.
+# Always log exceptions using logger.exception() when catching.
+
+
+class TradingError(Exception):
+    """
+    Base exception for all trading-related errors.
+
+    All custom trading exceptions inherit from this class, allowing
+    unified exception handling:
+
+        try:
+            execute_trade(...)
+        except TradingError as e:
+            logger.exception("Trading operation failed")
+            handle_error(e)
+    """
+    pass
+
+
+class InsufficientFundsError(TradingError):
+    """
+    Raised when account balance is insufficient for a trade.
+
+    Example:
+        if balance < required_margin:
+            raise InsufficientFundsError(
+                f"Balance {balance} insufficient for margin {required_margin}"
+            )
+    """
+    pass
+
+
+class OrderRejectedError(TradingError):
+    """
+    Raised when a trade order is rejected by broker or risk manager.
+
+    Example:
+        if not risk_manager.approve_order(order):
+            raise OrderRejectedError(f"Order rejected: {order}")
+    """
+    pass
+
+
+class PositionError(TradingError):
+    """
+    Raised for position-related errors (not found, already closed, etc.).
+
+    Example:
+        if position.is_closed:
+            raise PositionError(f"Position {position.id} is already closed")
+    """
+    pass
+
+
+class BrokerConnectionError(TradingError):
+    """
+    Raised when broker connection fails or is lost.
+
+    Example:
+        if not mt5.initialize():
+            raise BrokerConnectionError("Failed to connect to MT5")
+    """
+    pass
+
+
+class DataPipelineError(TradingError):
+    """
+    Raised for data fetching or processing errors.
+
+    Example:
+        if data is None or len(data) == 0:
+            raise DataPipelineError(f"No data available for {symbol}")
+    """
+    pass
+
+
+class RiskLimitExceededError(TradingError):
+    """
+    Raised when a trade would exceed risk limits.
+
+    Example:
+        if drawdown > max_drawdown:
+            raise RiskLimitExceededError(
+                f"Max drawdown {max_drawdown} exceeded: {drawdown}"
+            )
+    """
+    pass
+
+
 @dataclass
 class EnvConfig:
     """
