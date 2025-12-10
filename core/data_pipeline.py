@@ -607,6 +607,8 @@ class DataPipeline:
 
             df = pd.DataFrame(rates)
             df['timestamp'] = pd.to_datetime(df['time'], unit='s')
+            # Normalize MT5 column names: tick_volume -> volume
+            df = self._normalize_mt5_columns(df)
 
             # Fetch additional timeframe data if requested
             additional_data = {}
@@ -624,6 +626,8 @@ class DataPipeline:
                         if add_rates is not None and len(add_rates) > 0:
                             add_df = pd.DataFrame(add_rates)
                             add_df['timestamp'] = pd.to_datetime(add_df['time'], unit='s')
+                            # Normalize MT5 column names for additional timeframe
+                            add_df = self._normalize_mt5_columns(add_df)
                             additional_data[add_tf] = add_df
                             logger.info(f"Fetched {len(add_df)} bars for {add_tf} timeframe")
                         else:
@@ -746,6 +750,35 @@ class DataPipeline:
         # Ensure high > open, close and low < open, close
         df['high'] = df[['open', 'high', 'close']].max(axis=1)
         df['low'] = df[['open', 'low', 'close']].min(axis=1)
+
+        return df
+
+    def _normalize_mt5_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize MetaTrader 5 column names to standard OHLCV format.
+
+        MT5 returns columns: time, open, high, low, close, tick_volume, spread, real_volume
+        This method standardizes them to: timestamp, open, high, low, close, volume
+
+        For Forex/CFD markets, tick_volume is used as volume since real_volume is typically 0.
+        For centralized exchanges (Futures/Stocks), real_volume is preferred when available.
+
+        Args:
+            df: DataFrame with MT5 column names
+
+        Returns:
+            DataFrame with standardized column names
+        """
+        # Use real_volume if it exists and has non-zero values, otherwise use tick_volume
+        if 'real_volume' in df.columns and df['real_volume'].sum() > 0:
+            df['volume'] = df['real_volume']
+            logger.debug("Using real_volume as volume")
+        elif 'tick_volume' in df.columns:
+            df['volume'] = df['tick_volume']
+            logger.debug("Using tick_volume as volume")
+        elif 'volume' not in df.columns:
+            # Fallback: create synthetic volume if neither exists
+            logger.warning("No volume data available, using synthetic volume")
+            df['volume'] = 1000.0  # Default constant volume
 
         return df
 
