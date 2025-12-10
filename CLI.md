@@ -287,111 +287,14 @@ These options are available for all commands:
 You can use a JSON configuration file to customize system behavior. Pass it with `--config`:
 
 ```bash
-python main.py train --config config/my_config.json
+python main.py train --config config/example_config.json
 ```
 
 ### Example Configuration
 
-```json
-{
-  "base_dir": "/home/user/Leap",
-  "models_dir": "saved_models",
-  "logs_dir": "logs",
-  "device": "auto",
-  "seed": 42,
+See [`config/example_config.json`](config/example_config.json) for a complete example configuration file with all available options.
 
-  "data": {
-    "symbols": ["EURUSD", "GBPUSD"],
-    "primary_timeframe": "1h",
-    "additional_timeframes": ["15m", "4h", "1d"],
-    "lookback_window": 120,
-    "prediction_horizon": 12,
-    "train_test_split": 0.8,
-    "validation_split": 0.1,
-    "use_technical_indicators": true,
-    "use_price_patterns": true,
-    "use_volume_features": true,
-    "normalize_method": "robust"
-  },
-
-  "transformer": {
-    "d_model": 128,
-    "n_heads": 8,
-    "n_encoder_layers": 4,
-    "d_ff": 512,
-    "dropout": 0.1,
-    "learning_rate": 1e-4,
-    "weight_decay": 1e-5,
-    "batch_size": 64,
-    "epochs": 100,
-    "patience": 15
-  },
-
-  "ppo": {
-    "actor_hidden_sizes": [256, 256, 128],
-    "critic_hidden_sizes": [256, 256, 128],
-    "learning_rate": 3e-4,
-    "gamma": 0.99,
-    "gae_lambda": 0.95,
-    "clip_epsilon": 0.2,
-    "entropy_coef": 0.01,
-    "value_coef": 0.5,
-    "max_grad_norm": 0.5,
-    "n_steps": 2048,
-    "n_epochs": 10,
-    "batch_size": 64,
-    "total_timesteps": 1000000
-  },
-
-  "risk": {
-    "max_position_size": 0.02,
-    "max_daily_loss": 0.05,
-    "max_drawdown": 0.15,
-    "default_stop_loss_pips": 50,
-    "default_take_profit_pips": 100,
-    "risk_reward_ratio": 2.0,
-    "max_open_positions": 5,
-    "use_trailing_stop": true,
-    "trailing_stop_pips": 30
-  },
-
-  "backtest": {
-    "initial_balance": 10000.0,
-    "commission_per_lot": 7.0,
-    "slippage_pips": 1.0,
-    "spread_pips": 1.5,
-    "leverage": 100,
-    "train_window_days": 180,
-    "test_window_days": 30,
-    "walk_forward_steps": 12,
-    "n_simulations": 1000,
-    "confidence_level": 0.95
-  },
-
-  "logging": {
-    "level": "INFO",
-    "log_to_file": true,
-    "log_to_console": true,
-    "max_file_size_mb": 10,
-    "backup_count": 5
-  },
-
-  "auto_trader": {
-    "symbols": ["EURUSD"],
-    "timeframe": "1h",
-    "risk_per_trade": 0.01,
-    "max_positions": 3,
-    "default_sl_pips": 50.0,
-    "default_tp_pips": 100.0,
-    "trading_start_hour": 0,
-    "trading_end_hour": 24,
-    "paper_mode": true,
-    "min_confidence": 0.6,
-    "enable_online_learning": true,
-    "magic_number": 234567
-  }
-}
-```
+For detailed documentation of the configuration system (dataclasses, type safety, etc.), see [ARCHITECTURE.md](ARCHITECTURE.md#configuration-system).
 
 ### Configuration Sections
 
@@ -409,27 +312,13 @@ python main.py train --config config/my_config.json
 
 ## Directory Structure
 
-The CLI creates and uses the following directory structure:
+See [README.md](README.md#project-structure) for complete project directory structure.
 
-```
-Leap/
-├── saved_models/              # Trained model files (default)
-│   ├── predictor.pt          # Transformer model weights
-│   ├── agent.pt              # PPO agent weights
-│   ├── model_metadata.json   # Model dimensions for loading
-│   └── config.json           # Configuration snapshot
-│
-├── logs/                      # Log files
-│   └── leap_YYYYMMDD_HHMMSS.log
-│
-├── checkpoints/               # Training checkpoints
-│   └── checkpoint_epoch_XX.pt
-│
-├── results/                   # Backtest and evaluation results
-│   └── backtest_YYYYMMDD_HHMMSS.json
-│
-└── data/                      # Market data cache
-```
+**CLI-specific directories:**
+- `saved_models/` - Model weights, config snapshots, `model_metadata.json`
+- `logs/` - Log files (`leap_YYYYMMDD_HHMMSS.log`)
+- `checkpoints/` - Training checkpoints
+- `results/` - Backtest and evaluation results
 
 ---
 
