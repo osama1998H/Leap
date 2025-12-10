@@ -551,7 +551,16 @@ class LeapTradingSystem:
         return result, analysis
 
     def walk_forward_test(self, market_data):
-        """Run walk-forward optimization."""
+        """Run walk-forward optimization.
+
+        This method performs proper walk-forward validation:
+        1. Split data into train/test folds
+        2. Train a FRESH model on each fold's training data
+        3. Backtest the trained model on unseen test data
+        4. Aggregate results across all folds
+
+        This validates if the strategy works across different time periods.
+        """
         import pandas as pd
 
         # Prepare data
@@ -563,8 +572,11 @@ class LeapTradingSystem:
             'volume': market_data.volume
         })
 
+        # Store feature names for use in strategy
+        feature_names = list(market_data.feature_names) if market_data.feature_names else []
+
         if market_data.features is not None:
-            for i, name in enumerate(market_data.feature_names):
+            for i, name in enumerate(feature_names):
                 df[name] = market_data.features[:, i]
 
         # Create walk-forward optimizer
@@ -574,24 +586,156 @@ class LeapTradingSystem:
             step_size=self.config.backtest.test_window_days
         )
 
-        def train_func(_train_data):
-            """Train model on training data."""
-            # Simplified training for walk-forward
-            return None  # Would train model here
+        # Configuration for walk-forward training
+        lookback_window = self.config.data.lookback_window
+        prediction_horizon = self.config.data.prediction_horizon
+        wf_epochs = self.config.backtest.walk_forward_epochs
+        device = self.config.device
 
-        def backtest_func(test_data, _model):
-            """Backtest on test data."""
+        def train_func(train_data):
+            """Train a fresh predictor model on the fold's training data."""
+            try:
+                # Prepare training sequences from the fold's data
+                ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+                all_cols = ohlcv_cols + feature_names
+
+                # Ensure we have all columns
+                available_cols = [c for c in all_cols if c in train_data.columns]
+                train_features = train_data[available_cols].values
+
+                # Create sequences (X) and targets (y)
+                sequences = []
+                targets = []
+
+                for i in range(len(train_features) - lookback_window - prediction_horizon):
+                    seq = train_features[i:i + lookback_window]
+                    # Target is the return after prediction_horizon bars
+                    future_close = train_data['close'].iloc[i + lookback_window + prediction_horizon - 1]
+                    current_close = train_data['close'].iloc[i + lookback_window - 1]
+                    target_return = (future_close - current_close) / current_close
+
+                    sequences.append(seq)
+                    targets.append(target_return)
+
+                if len(sequences) < 100:
+                    logger.warning(f"Insufficient training data in fold: {len(sequences)} sequences")
+                    return None
+
+                X_train = np.array(sequences)
+                y_train = np.array(targets).reshape(-1, 1)
+
+                # Split into train/val (80/20)
+                split_idx = int(len(X_train) * 0.8)
+                X_tr, X_val = X_train[:split_idx], X_train[split_idx:]
+                y_tr, y_val = y_train[:split_idx], y_train[split_idx:]
+
+                input_dim = X_train.shape[2]
+
+                # Create fresh predictor for this fold
+                predictor = TransformerPredictor(
+                    input_dim=input_dim,
+                    config={
+                        'd_model': self.config.transformer.d_model,
+                        'n_heads': self.config.transformer.n_heads,
+                        'n_encoder_layers': self.config.transformer.n_encoder_layers,
+                        'd_ff': self.config.transformer.d_ff,
+                        'dropout': self.config.transformer.dropout,
+                        'max_seq_length': lookback_window,
+                        'learning_rate': self.config.transformer.learning_rate,
+                        'weight_decay': self.config.transformer.weight_decay
+                    },
+                    device=device
+                )
+
+                # Train with reduced epochs for walk-forward
+                predictor.train(
+                    X_train=X_tr,
+                    y_train=y_tr,
+                    X_val=X_val,
+                    y_val=y_val,
+                    epochs=wf_epochs,
+                    batch_size=self.config.transformer.batch_size,
+                    patience=max(5, wf_epochs // 4),  # Reduced patience
+                    verbose=False
+                )
+
+                return {
+                    'predictor': predictor,
+                    'feature_names': feature_names,
+                    'input_dim': input_dim
+                }
+
+            except Exception as e:
+                logger.warning(f"Training failed in fold: {e}")
+                return None
+
+        def backtest_func(test_data, model):
+            """Backtest using the trained predictor on test data."""
             backtester = Backtester(
-                initial_balance=self.config.backtest.initial_balance
+                initial_balance=self.config.backtest.initial_balance,
+                commission=self.config.backtest.commission_per_lot / 100000,
+                slippage=self.config.backtest.slippage_pips * 0.0001,
+                spread=self.config.backtest.spread_pips * 0.0001,
+                leverage=self.config.backtest.leverage
             )
 
-            def simple_strategy(_data, **_kwargs):
+            # If no model was trained, use a simple hold strategy
+            if model is None:
+                def hold_strategy(_data, **_kwargs):
+                    return {'action': 'hold'}
+                return backtester.run(test_data, hold_strategy, show_progress=False)
+
+            predictor = model['predictor']
+            model_feature_names = model['feature_names']
+
+            def wf_strategy(data, **kwargs):
+                """Strategy using the fold's trained predictor."""
+                if len(data) < lookback_window + 1:
+                    return {'action': 'hold'}
+
+                try:
+                    # Prepare input features
+                    recent_data = data.tail(lookback_window)
+                    ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+                    feature_cols = ohlcv_cols + model_feature_names
+
+                    # Only use columns that exist
+                    available_cols = [c for c in feature_cols if c in recent_data.columns]
+                    features = recent_data[available_cols].values
+
+                    if features is None or len(features) < lookback_window:
+                        return {'action': 'hold'}
+
+                    # Make prediction
+                    X = features.reshape(1, lookback_window, -1)
+                    prediction = predictor.predict(X)
+                    pred_return = prediction['prediction'][0, 0]
+
+                    # Trading decision based on predicted return
+                    if pred_return > 0.001:  # Predict +0.1% return
+                        return {'action': 'buy', 'stop_loss_pips': 50, 'take_profit_pips': 100}
+                    elif pred_return < -0.001:  # Predict -0.1% return
+                        return {'action': 'sell', 'stop_loss_pips': 50, 'take_profit_pips': 100}
+
+                except Exception:
+                    pass  # Silently handle errors and return hold
+
                 return {'action': 'hold'}
 
-            return backtester.run(test_data, simple_strategy, show_progress=False)
+            return backtester.run(test_data, wf_strategy, show_progress=False)
 
-        # Run walk-forward
-        results = optimizer.run(df, train_func, backtest_func)
+        # Run walk-forward with parallel disabled by default (GPU contention)
+        logger.info("Starting walk-forward optimization with model training per fold...")
+        logger.info(f"  Training epochs per fold: {wf_epochs}")
+        logger.info(f"  Train window: {self.config.backtest.train_window_days} days")
+        logger.info(f"  Test window: {self.config.backtest.test_window_days} days")
+
+        results = optimizer.run(
+            df,
+            train_func,
+            backtest_func,
+            parallel=self.config.backtest.walk_forward_parallel
+        )
 
         return results
 

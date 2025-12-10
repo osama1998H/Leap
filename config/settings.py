@@ -132,6 +132,8 @@ class BacktestConfig:
     train_window_days: int = 180
     test_window_days: int = 30
     walk_forward_steps: int = 12
+    walk_forward_epochs: int = 20  # Reduced epochs for faster fold training
+    walk_forward_parallel: bool = False  # Disable parallel for training (GPU contention)
 
     # Monte Carlo simulation
     n_simulations: int = 1000

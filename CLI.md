@@ -146,7 +146,15 @@ python main.py backtest --bars 100000 --model-dir ./my_models
 
 ### walkforward
 
-Run walk-forward optimization using rolling window train/test splits to prevent overfitting.
+Run walk-forward optimization using rolling window train/test splits to validate strategy robustness.
+
+**What Walk-Forward Does:**
+1. Splits data into rolling train/test windows
+2. **Trains a FRESH Transformer model** on each fold's training data
+3. **Tests the trained model** on unseen future data
+4. Aggregates metrics across all folds
+
+This prevents overfitting and answers: *"Would this strategy work if deployed in real-time?"*
 
 **Syntax:**
 ```bash
@@ -165,17 +173,40 @@ python main.py walkforward [OPTIONS]
 | `--log-file` | | string | | Custom log file path |
 
 **Walk-Forward Parameters** (configured via config file):
-- `train_window_days`: 180 days (training window)
-- `test_window_days`: 30 days (testing window)
-- `walk_forward_steps`: 12 (number of rolling steps)
+- `train_window_days`: 180 days (training window per fold)
+- `test_window_days`: 30 days (testing window per fold)
+- `walk_forward_epochs`: 20 (reduced training epochs per fold for speed)
+- `walk_forward_parallel`: False (disabled to avoid GPU contention during training)
+
+**Walk-Forward Process:**
+```
+Fold 1: Train on Jan-Jun → Test on Jul (train model A, discard after)
+Fold 2: Train on Feb-Jul → Test on Aug (train model B, discard after)
+Fold 3: Train on Mar-Aug → Test on Sep (train model C, discard after)
+... continues rolling forward ...
+```
+
+**Output Metrics:**
+- Per-fold results (return, Sharpe, drawdown, win rate, trades)
+- Aggregated statistics (mean, std, min, max across all folds)
+- Consistency metrics (profitable folds ratio)
+
+**Important Notes:**
+- Walk-forward trains **temporary models** for validation only
+- Models are discarded after each fold - they're not saved
+- After validation, use `train` command to create your production model
+- Execution time depends on: number of folds × training epochs
 
 **Examples:**
 ```bash
-# Run walk-forward optimization
+# Run walk-forward optimization (will train models, takes several minutes)
 python main.py walkforward --symbol EURUSD
 
-# Walk-forward with extended data
+# Walk-forward with extended data (more folds, more robust validation)
 python main.py walkforward --symbol GBPUSD --bars 100000
+
+# Walk-forward with debug logging to see training progress
+python main.py walkforward --symbol EURUSD --log-level DEBUG
 ```
 
 ---
