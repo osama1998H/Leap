@@ -1914,10 +1914,18 @@ Create unified interface per the interface definitions above.
 - [x] Update README.md to consolidate live trading docs ✅ **COMPLETED**
 - [x] Update tests to remove `live` command tests ✅ **COMPLETED**
 
-#### Phase 5 (Future Work)
+#### Phase 5 (Documentation Reorganization) - COMPLETED
+- [x] DOC-CRITICAL-1: Multi-symbol training cross-references added to README ✅ **COMPLETED**
+- [x] DOC-CRITICAL-2: Multi-timeframe feature cross-references added to README ✅ **COMPLETED**
+- [x] DOC-CRITICAL-3: CLAUDE.md refactored to brief reference guide (385→148 lines, 62% reduction) ✅ **COMPLETED**
+- [x] DOC-MAJOR-1: Duplicate architecture diagrams removed from README ✅ **COMPLETED**
+- [x] DOC-MAJOR-2: Configuration consolidated (example_config.json created, cross-references added) ✅ **COMPLETED**
+- [x] DOC-MAJOR-3: Duplicate directory structure removed from CLAUDE.md and CLI.md ✅ **COMPLETED**
+- [x] DOC-MAJOR-4: README CLI options simplified with CLI.md reference ✅ **COMPLETED**
+
+#### Phase 6 (Future Work)
 - [ ] Add integration tests for dimension matching
 - [ ] MAJOR-3: Configuration passing consistency (optional - documented as design decision)
-- [ ] Documentation reorganization (cross-references, etc.)
 
 ---
 
@@ -2037,12 +2045,24 @@ The codebase uses three configuration passing styles:
 2. **FEATURE-MAJOR-1**: Eliminated CLI confusion by removing `live` command - `autotrade` is now the single production implementation
 3. **FEATURE-MAJOR-2**: Documented that `LiveTradingEnvironment` is intentionally used only by `AutoTrader`
 
-### Files Modified
+### Phase 5 (Documentation Reorganization)
+1. **DOC-CRITICAL-1**: Multi-symbol training examples added to README with CLI.md cross-reference
+2. **DOC-CRITICAL-2**: Multi-timeframe feature examples added to README with CLI.md cross-reference
+3. **DOC-CRITICAL-3**: CLAUDE.md refactored from 385 lines to 148 lines (62% reduction)
+   - Added Quick Reference table linking to canonical documentation
+   - Kept: Coding conventions, utilities, testing patterns
+   - Removed: Duplicate directory structure, architecture details, CLI commands
+4. **DOC-MAJOR-1**: Removed 5 duplicate diagrams from README (Transformer, PPO, Data Flow, Online Learning, Walk-Forward)
+   - Added cross-reference to ARCHITECTURE.md for detailed diagrams
+5. **DOC-MAJOR-2**: Configuration consolidated
+   - Created `config/example_config.json` as single source of truth
+   - README and CLI.md now reference ARCHITECTURE.md for config details
+6. **DOC-MAJOR-3**: Duplicate directory structure removed from CLAUDE.md and CLI.md
+7. **DOC-MAJOR-4**: README CLI options table simplified with CLI.md reference
+
+### Files Modified (Code Fixes)
 - `main.py` - Removed `start_live_trading()` method, removed `'live'` from CLI choices, updated examples
 - `tests/test_cli.py` - Removed `'live'` from test parsers, removed `test_live_command_args` and `test_live_trading_without_models`
-- `CLI.md` - Removed `live` command section and references
-- `CLAUDE.md` - Updated CLI reference table and examples
-- `README.md` - Consolidated live trading documentation into autotrade section
 - `core/live_trading_env.py` - MAJOR-1, MAJOR-2, MINOR-1 fixes
 - `models/ppo_agent.py` - MAJOR-5 fix (LR scheduler)
 - `training/online_interface.py` - MAJOR-7 fix (new file)
@@ -2053,8 +2073,14 @@ The codebase uses three configuration passing styles:
 - `utils/logging_config.py` - MINOR-4 removed get_logger()
 - `utils/__init__.py` - MINOR-4 removed get_logger export
 
+### Files Modified (Documentation Reorganization)
+- `README.md` - Added multi-symbol/timeframe examples, removed duplicate diagrams, simplified CLI options, simplified config section
+- `CLAUDE.md` - Complete refactor to brief reference guide (385→148 lines), added cross-reference table
+- `CLI.md` - Removed duplicate directory structure, simplified config example section
+- `config/example_config.json` - New file with complete configuration example
+
 ---
 
 *Report updated: 2025-12-10*
 *Analysis scope: Full codebase architectural review with refactoring plan*
-*Implementation status: Phase 1, Phase 2, Phase 3 (MINOR), and Phase 4 (FEATURE) COMPLETED*
+*Implementation status: Phase 1, Phase 2, Phase 3 (MINOR), Phase 4 (FEATURE), and Phase 5 (DOCUMENTATION) COMPLETED*
