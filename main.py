@@ -673,7 +673,7 @@ class LeapTradingSystem:
             """Backtest using the trained predictor on test data."""
             backtester = Backtester(
                 initial_balance=self.config.backtest.initial_balance,
-                commission=self.config.backtest.commission_per_lot / 100000,
+                commission_rate=self.config.backtest.commission_per_lot / 100000,
                 slippage=self.config.backtest.slippage_pips * 0.0001,
                 spread=self.config.backtest.spread_pips * 0.0001,
                 leverage=self.config.backtest.leverage
@@ -687,6 +687,7 @@ class LeapTradingSystem:
 
             predictor = model['predictor']
             model_feature_names = model['feature_names']
+            expected_input_dim = model['input_dim']
 
             def wf_strategy(data, **kwargs):
                 """Strategy using the fold's trained predictor."""
@@ -701,6 +702,14 @@ class LeapTradingSystem:
 
                     # Only use columns that exist
                     available_cols = [c for c in feature_cols if c in recent_data.columns]
+
+                    # Validate feature dimensions match training
+                    if len(available_cols) != expected_input_dim:
+                        logger.debug(
+                            f"Feature mismatch: expected {expected_input_dim}, got {len(available_cols)}"
+                        )
+                        return {'action': 'hold'}
+
                     features = recent_data[available_cols].values
 
                     if features is None or len(features) < lookback_window:
@@ -717,8 +726,8 @@ class LeapTradingSystem:
                     elif pred_return < -0.001:  # Predict -0.1% return
                         return {'action': 'sell', 'stop_loss_pips': 50, 'take_profit_pips': 100}
 
-                except Exception:
-                    pass  # Silently handle errors and return hold
+                except Exception as e:
+                    logger.debug(f"Prediction failed in wf_strategy: {e}")
 
                 return {'action': 'hold'}
 
