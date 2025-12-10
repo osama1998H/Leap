@@ -520,7 +520,9 @@ class PPOAgent:
         eval_env=None,
         eval_frequency: int = 10000,
         verbose: bool = True,
-        mlflow_callback: Optional[Callable] = None
+        mlflow_callback: Optional[Callable] = None,
+        patience: Optional[int] = None,
+        min_improvement: float = 0.01
     ) -> Dict:
         """
         Train agent on environment.
@@ -533,6 +535,9 @@ class PPOAgent:
             verbose: Whether to log progress
             mlflow_callback: Optional callback for MLflow logging.
                 Called with (metrics_dict, step) after each policy update.
+            patience: Number of evaluations without improvement before early stopping.
+                If None, early stopping is disabled. Requires eval_env to be set.
+            min_improvement: Minimum improvement in evaluation reward to reset patience counter.
         """
         state, _ = env.reset()
         episode_rewards = []
@@ -541,6 +546,15 @@ class PPOAgent:
         current_episode_length = 0
         timestep = 0
         n_episodes = 0
+
+        # Early stopping tracking
+        best_eval_reward = float('-inf')
+        patience_counter = 0
+        best_state = None
+        early_stopped = False
+
+        if patience is not None and eval_env is None:
+            logger.warning("Patience set but no eval_env provided. Early stopping disabled.")
 
         while timestep < total_timesteps:
             # Collect rollouts
@@ -599,15 +613,48 @@ class PPOAgent:
                     callback_metrics["avg_reward_10ep"] = np.mean(episode_rewards[-10:])
                 mlflow_callback(callback_metrics, timestep)
 
-            # Evaluation
+            # Evaluation and early stopping
             if eval_env is not None and timestep % eval_frequency < self.n_steps:
                 eval_reward = self.evaluate(eval_env, n_episodes=5)
-                logger.info(f"Evaluation reward: {eval_reward:.2f}")
+
+                # Early stopping logic
+                if patience is not None:
+                    if eval_reward > best_eval_reward + min_improvement:
+                        best_eval_reward = eval_reward
+                        patience_counter = 0
+                        # Deep copy state_dict to avoid tensor sharing during continued training
+                        best_state = {k: v.clone().detach().cpu() for k, v in self.network.state_dict().items()}
+                        logger.info(
+                            f"Evaluation reward: {eval_reward:.2f} (new best) | "
+                            f"Patience: {patience_counter}/{patience}"
+                        )
+                    else:
+                        patience_counter += 1
+                        logger.info(
+                            f"Evaluation reward: {eval_reward:.2f} | "
+                            f"Best: {best_eval_reward:.2f} | "
+                            f"Patience: {patience_counter}/{patience}"
+                        )
+
+                    # Check for early stopping
+                    if patience_counter >= patience:
+                        logger.info(f"Early stopping at timestep {timestep} - no improvement for {patience} evaluations")
+                        early_stopped = True
+                        break
+                else:
+                    logger.info(f"Evaluation reward: {eval_reward:.2f}")
+
+        # Restore best model if early stopping was used and we have a best state
+        if best_state is not None:
+            self.network.load_state_dict(best_state)
+            logger.info(f"Restored best model with evaluation reward: {best_eval_reward:.2f}")
 
         return {
             'episode_rewards': episode_rewards,
             'episode_lengths': episode_lengths,
-            'training_history': self.training_history
+            'training_history': self.training_history,
+            'early_stopped': early_stopped,
+            'best_eval_reward': best_eval_reward if best_state is not None else None
         }
 
     def evaluate(self, env, n_episodes: int = 10) -> float:

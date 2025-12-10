@@ -147,13 +147,35 @@ class ModelTrainer:
         env,
         total_timesteps: Optional[int] = None,
         eval_env=None,
-        callbacks: Optional[List[Callable]] = None
+        callbacks: Optional[List[Callable]] = None,
+        patience: Optional[int] = None
     ) -> Dict:
-        """Train the RL agent."""
+        """Train the RL agent.
+
+        Args:
+            env: Training environment
+            total_timesteps: Total timesteps to train (default from config)
+            eval_env: Optional evaluation environment for early stopping
+            callbacks: Optional callbacks
+            patience: Number of evaluations without improvement before early stopping.
+                If None, uses config value (default 15). Set to 0 to disable.
+        """
         timesteps = total_timesteps or self.agent_timesteps
         start_time = time.time()
 
+        # Determine patience: explicit arg > config > default (15)
+        if patience is None:
+            patience = self.patience
+
+        # Allow patience=0 to disable early stopping
+        effective_patience = patience if patience > 0 else None
+
+        if effective_patience is not None and eval_env is None:
+            logger.warning("Patience set but no eval_env provided. Creating eval environment from training env.")
+
         logger.info(f"Training PPO agent for {timesteps} timesteps...")
+        if effective_patience:
+            logger.info(f"Early stopping enabled with patience={effective_patience}")
 
         # Create MLflow callback for step-level logging
         mlflow_callback = None
@@ -181,7 +203,8 @@ class ModelTrainer:
             total_timesteps=timesteps,
             eval_env=eval_env,
             eval_frequency=10000,
-            mlflow_callback=mlflow_callback
+            mlflow_callback=mlflow_callback,
+            patience=effective_patience
         )
 
         training_duration = time.time() - start_time
@@ -193,7 +216,9 @@ class ModelTrainer:
             'timesteps': timesteps,
             'final_reward': final_reward,
             'total_episodes': len(results['episode_rewards']),
-            'training_duration_seconds': training_duration
+            'training_duration_seconds': training_duration,
+            'early_stopped': results.get('early_stopped', False),
+            'best_eval_reward': results.get('best_eval_reward')
         })
 
         # Log training summary to MLflow
@@ -202,7 +227,10 @@ class ModelTrainer:
                 "final_reward": final_reward if final_reward is not None else 0,
                 "total_episodes": len(results['episode_rewards']),
                 "avg_episode_length": np.mean(results.get('episode_lengths', [0])) if results.get('episode_lengths') else 0,
+                "early_stopped": int(results.get('early_stopped', False)),
             }
+            if results.get('best_eval_reward') is not None:
+                final_metrics["best_eval_reward"] = results['best_eval_reward']
             self.mlflow_tracker.log_training_summary(
                 "agent", final_metrics, training_duration
             )
@@ -384,12 +412,16 @@ class ModelTrainer:
 
         # Save training info
         info_path = os.path.join(self.checkpoint_dir, f'agent_{timestamp}_info.json')
+        checkpoint_info = {
+            'timestamp': timestamp,
+            'total_episodes': len(results.get('episode_rewards', [])),
+            'final_reward': float(np.mean(results.get('episode_rewards', [0])[-10:])),
+            'early_stopped': results.get('early_stopped', False),
+        }
+        if results.get('best_eval_reward') is not None:
+            checkpoint_info['best_eval_reward'] = float(results['best_eval_reward'])
         with open(info_path, 'w') as f:
-            json.dump({
-                'timestamp': timestamp,
-                'total_episodes': len(results.get('episode_rewards', [])),
-                'final_reward': float(np.mean(results.get('episode_rewards', [0])[-10:]))
-            }, f)
+            json.dump(checkpoint_info, f)
 
     def save_all(self, directory: str):
         """Save all models and training history."""
