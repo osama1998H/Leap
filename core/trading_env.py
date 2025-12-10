@@ -204,21 +204,46 @@ class TradingEnvironment(BaseTradingEnvironment):
 
     def _open_position(self, position_type: str, price: float):
         """Open a new position."""
-        # Calculate position size based on risk
-        position_value = self.state.balance * self.max_position_size
-        size = position_value / price
-
-        # Apply spread and slippage
+        # Apply spread and slippage to get entry price first
         if position_type == 'long':
             entry_price = price * (1 + self.spread / 2 + self.slippage)
             stop_loss = entry_price * (1 - self.stop_loss_pct)
             take_profit = entry_price * (1 + self.take_profit_pct)
+            direction = 'long'
         else:
             entry_price = price * (1 - self.spread / 2 - self.slippage)
             stop_loss = entry_price * (1 + self.stop_loss_pct)
             take_profit = entry_price * (1 - self.take_profit_pct)
+            direction = 'short'
+
+        # Validate trade with RiskManager before opening (should_take_trade pattern)
+        if self.risk_manager is not None:
+            should_trade, reason = self.risk_manager.should_take_trade(
+                entry_price=entry_price,
+                stop_loss_price=stop_loss,
+                take_profit_price=take_profit,
+                direction=direction
+            )
+            if not should_trade:
+                logger.debug(f"Trade rejected by risk manager: {reason}")
+                return
+
+        # Calculate position size - use RiskManager when available
+        if self.risk_manager is not None:
+            size = self.risk_manager.calculate_position_size(
+                entry_price=entry_price,
+                stop_loss_price=stop_loss
+            )
+            if size <= 0:
+                logger.debug("Position size is zero or negative, skipping trade")
+                return
+        else:
+            # Fallback: inline position sizing based on max_position_size
+            position_value = self.state.balance * self.max_position_size
+            size = position_value / price
 
         # Commission
+        position_value = size * entry_price
         commission_cost = position_value * self.commission
         self.state.balance -= commission_cost
 

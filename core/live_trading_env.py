@@ -373,6 +373,31 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             logger.info(f"Max positions ({self.max_positions}) reached")
             return
 
+        # Calculate SL/TP prices for risk validation
+        symbol_info = self.broker.get_symbol_info(self.symbol)
+        pip_size = symbol_info.point * 10 if symbol_info else 0.0001
+
+        if direction == 'long':
+            entry_price = price
+            stop_loss_price = entry_price - (self.default_sl_pips * pip_size)
+            take_profit_price = entry_price + (self.default_tp_pips * pip_size)
+        else:
+            entry_price = price
+            stop_loss_price = entry_price + (self.default_sl_pips * pip_size)
+            take_profit_price = entry_price - (self.default_tp_pips * pip_size)
+
+        # Validate trade with RiskManager before opening (should_take_trade pattern)
+        if self.risk_manager is not None:
+            should_trade, reason = self.risk_manager.should_take_trade(
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                direction=direction
+            )
+            if not should_trade:
+                logger.info(f"Trade rejected by risk manager: {reason}")
+                return
+
         signal = TradingSignal(
             signal_type=SignalType.BUY if direction == 'long' else SignalType.SELL,
             symbol=self.symbol,
@@ -466,22 +491,33 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             tp = entry_price - (self.default_tp_pips * pip_size)
             pos_type = 'short'
 
-        # Calculate volume
-        risk_amount = self._paper_balance * self.risk_per_trade
-        try:
-            pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
-        except (AttributeError, ZeroDivisionError, TypeError) as e:
-            logger.warning(
-                f"Failed to calculate pip value for {self.symbol} from symbol info: {e}. "
-                f"Using fallback value of 10.0 (appropriate for major pairs only)"
+        # Calculate volume - use RiskManager when available (matches Backtester pattern)
+        if self.risk_manager is not None:
+            volume = self.risk_manager.calculate_position_size(
+                entry_price=entry_price,
+                stop_loss_price=sl
             )
-            pip_value = 10.0  # Fallback for major pairs
+            if volume <= 0:
+                logger.debug("Position size is zero or negative, skipping paper trade")
+                return
+        else:
+            # Fallback: inline position sizing based on risk
+            risk_amount = self._paper_balance * self.risk_per_trade
+            try:
+                pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
+            except (AttributeError, ZeroDivisionError, TypeError) as e:
+                logger.warning(
+                    f"Failed to calculate pip value for {self.symbol} from symbol info: {e}. "
+                    f"Using fallback value of 10.0 (appropriate for major pairs only)"
+                )
+                pip_value = 10.0  # Fallback for major pairs
 
-        if pip_value <= 0:
-            logger.error(f"Invalid pip_value {pip_value} for {self.symbol}, using fallback 10.0")
-            pip_value = 10.0
+            if pip_value <= 0:
+                logger.error(f"Invalid pip_value {pip_value} for {self.symbol}, using fallback 10.0")
+                pip_value = 10.0
 
-        volume = risk_amount / (self.default_sl_pips * pip_value)
+            volume = risk_amount / (self.default_sl_pips * pip_value)
+
         volume = max(0.01, min(volume, 10.0))
 
         position = Position(

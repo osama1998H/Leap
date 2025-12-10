@@ -4,11 +4,13 @@ This report analyzes the Leap trading system architecture to identify where feat
 
 ## Executive Summary
 
-The codebase demonstrates strong architectural consistency in several areas (logging, configuration, base class inheritance) but has notable deviations in:
-1. **Position sizing API inconsistency** (Critical)
-2. **TradingError hierarchy underutilization** (Medium)
-3. **Metrics calculation duplication** (Low)
-4. **Checkpoint utility adoption gaps** (Low)
+The codebase demonstrates strong architectural consistency in several areas (logging, configuration, base class inheritance). Previous deviations have been **RESOLVED** as of 2025-12-10:
+
+1. ~~**Position sizing API inconsistency** (Critical)~~ → **RESOLVED**
+2. ~~**TradingError hierarchy underutilization** (Medium)~~ → **RESOLVED**
+3. ~~**Risk validation missing in trading environments** (Medium)~~ → **RESOLVED**
+4. ~~**Metrics calculation duplication** (Low)~~ → **RESOLVED**
+5. **Checkpoint utility adoption gaps** (Low) - No action required (models correctly use checkpoint utilities)
 
 ---
 
@@ -59,49 +61,23 @@ The codebase demonstrates strong architectural consistency in several areas (log
 
 ## Mismatch Analysis
 
-### CRITICAL: Position Sizing API Inconsistency
+### ✅ RESOLVED: Position Sizing API Inconsistency
 
 **Location:** `core/order_manager.py:429-435`
 
-**Issue:** `OrderManager._calculate_position_params()` calls `RiskManager.calculate_position_size()` with an incompatible signature.
+**Previous Issue:** `OrderManager._calculate_position_params()` called `RiskManager.calculate_position_size()` with an incompatible signature.
 
-**Actual call:**
+**Resolution (2025-12-10):** Fixed to use correct signature:
 ```python
 volume = self.risk_manager.calculate_position_size(
-    account_balance=account.balance,
-    risk_percent=risk_percent,
-    stop_loss_pips=sl_pips,
-    pip_value=self._get_pip_value(signal.symbol, symbol_info)
-)
-```
-
-**Expected signature (from `core/risk_manager.py:189-193`):**
-```python
-def calculate_position_size(
-    self,
-    entry_price: float,
-    stop_loss_price: float,
-    volatility: Optional[float] = None
-) -> float:
-```
-
-**Compliant usage (from `evaluation/backtester.py:155-158`):**
-```python
-size = self.risk_manager.calculate_position_size(
     entry_price=entry_price,
-    stop_loss_price=stop_loss_price
+    stop_loss_price=sl_price
 )
 ```
-
-**Impact:** This is a **runtime bug** - the OrderManager will fail at runtime when trying to use RiskManager because the method signature doesn't match.
-
-**Recommendation:** Refactor `OrderManager._calculate_position_params()` to:
-1. Calculate `entry_price` and `stop_loss_price` (price levels, not pips)
-2. Call `self.risk_manager.calculate_position_size(entry_price, stop_loss_price)`
 
 ---
 
-### MEDIUM: TradingError Hierarchy Underutilization
+### ✅ RESOLVED: TradingError Hierarchy Underutilization
 
 **Defined exceptions (in `core/trading_types.py:28-101`):**
 - `TradingError` (base)
@@ -112,119 +88,64 @@ size = self.risk_manager.calculate_position_size(
 - `DataPipelineError`
 - `RiskLimitExceededError`
 
-**Current usage:** Only defined, not actively used throughout the codebase.
-
-**Locations with generic exception handling:**
-- `core/order_manager.py:535` - Uses generic `except Exception`
-- `evaluation/backtester.py:734` - Uses `except Exception` with `logger.exception()`
-
-**Recommendation:**
-1. Replace generic exceptions with domain-specific `TradingError` subclasses
-2. In `OrderManager`, raise `OrderRejectedError` for validation failures
-3. In `MT5BrokerGateway`, raise `BrokerConnectionError` for connection issues
-4. Add catch blocks for `TradingError` hierarchy in calling code
+**Resolution (2025-12-10):**
+- `core/order_manager.py` now imports and catches `TradingError` subclasses
+- `evaluation/backtester.py` now catches `TradingError` specifically before generic `Exception`
 
 ---
 
-### MEDIUM: Inconsistent Risk Validation Flow
+### ✅ RESOLVED: Inconsistent Risk Validation Flow
 
-**Issue:** Different modules implement risk validation differently.
+**Previous Issue:** Different modules implemented risk validation differently.
 
-**Pattern A - Full validation (Correct):**
-`core/order_manager.py:205-225`:
-```python
-should_trade, reason = self.risk_manager.should_take_trade(
-    entry_price=entry_price,
-    stop_loss_price=sl,
-    take_profit_price=tp,
-    direction=direction
-)
-```
-
-**Pattern B - Partial/No validation:**
-`core/trading_env.py:205-232` - Opens positions without `should_take_trade()` validation
-
-`core/live_trading_env.py:368-391` - Opens positions without full risk validation
-
-**Recommendation:**
-1. Add `should_take_trade()` call before opening positions in `TradingEnvironment._open_position()`
-2. Add `should_take_trade()` call before opening positions in `LiveTradingEnvironment._open_position()`
+**Resolution (2025-12-10):**
+- `core/trading_env.py:_open_position()` now calls `should_take_trade()` before opening positions
+- `core/live_trading_env.py:_open_position()` now calls `should_take_trade()` before opening positions
+- Both also use `calculate_position_size()` when RiskManager is available
 
 ---
 
-### LOW: Metrics Calculation Duplication
+### ✅ RESOLVED: Metrics Calculation Duplication
 
-**Issue:** Both `BaseTradingEnvironment` and `Backtester` calculate similar metrics independently.
+**Previous Issue:** `Backtester` calculated metrics inline instead of using `MetricsCalculator`.
 
-**Location 1:** `core/trading_env_base.py:290-313`
-- Delegates to `MetricsCalculator` for Sharpe/Sortino
-
-**Location 2:** `evaluation/backtester.py:489-598`
-- Calculates metrics inline in `_calculate_results()`
-
-**Recommendation:**
-Refactor `Backtester._calculate_results()` to use `MetricsCalculator` for consistency:
+**Resolution (2025-12-10):**
+`evaluation/backtester.py:_calculate_results()` now uses `MetricsCalculator`:
 ```python
 metrics_calc = MetricsCalculator()
+total_return = metrics_calc.total_return(equity)
 sharpe = metrics_calc.sharpe_ratio(returns)
 sortino = metrics_calc.sortino_ratio(returns)
+# ... etc
 ```
 
 ---
 
-### LOW: Checkpoint Save Method Divergence
+### LOW: Checkpoint Save Method Divergence (No Action Required)
 
 **Issue:** `ModelTrainer` uses custom save logic instead of the standardized checkpoint utilities.
 
 **Location:** `training/trainer.py:364-392`
 
-**Current implementation:**
-```python
-def _save_predictor_checkpoint(self, results: Dict):
-    # Saves via predictor.save(path) - delegates to model
-    self.predictor.save(path)
-    # Saves info as separate JSON
-    with open(info_path, 'w') as f:
-        json.dump({...}, f)
-```
-
-**Standard pattern (from CLAUDE.md):**
-```python
-from utils.checkpoint import save_checkpoint, TrainingHistory, CheckpointMetadata
-
-training_history = TrainingHistory(train_losses=losses, val_losses=val_losses)
-metadata = CheckpointMetadata(model_type='transformer', input_dim=128)
-save_checkpoint(path, model.state_dict(), optimizer.state_dict(), config, training_history, metadata)
-```
-
-**Recommendation:**
-While models themselves correctly use the checkpoint utilities, the `ModelTrainer` could use a unified approach to save metadata alongside model checkpoints.
+**Status:** This is acceptable behavior. The `ModelTrainer` delegates to the model's own save method (`predictor.save()`), which uses the checkpoint utilities. The additional JSON metadata is trainer-specific and doesn't need to follow the checkpoint pattern.
 
 ---
 
-### LOW: Paper Trading Position Sizing Divergence
+### ✅ RESOLVED: Paper Trading Position Sizing Divergence
 
-**Issue:** `LiveTradingEnvironment._execute_paper_trade()` calculates position size inline instead of using RiskManager.
+**Previous Issue:** `LiveTradingEnvironment._execute_paper_trade()` calculated position size inline instead of using RiskManager.
 
-**Location:** `core/live_trading_env.py:469-485`
-
-```python
-# Current inline calculation
-risk_amount = self._paper_balance * self.risk_per_trade
-pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
-volume = risk_amount / (self.default_sl_pips * pip_value)
-```
-
-**Standard pattern:**
+**Resolution (2025-12-10):**
+`core/live_trading_env.py:_execute_paper_trade()` now uses RiskManager when available:
 ```python
 if self.risk_manager is not None:
-    volume = self.risk_manager.calculate_position_size(entry_price, stop_loss)
+    volume = self.risk_manager.calculate_position_size(
+        entry_price=entry_price,
+        stop_loss_price=sl
+    )
 else:
     # Fallback inline calculation
 ```
-
-**Recommendation:**
-Use RiskManager when available, fall back to inline calculation only when RiskManager is not configured (matches `Backtester` pattern at line 153-162).
 
 ---
 
@@ -241,10 +162,10 @@ Use RiskManager when available, fall back to inline calculation only when RiskMa
 
 ### Boundaries with Leakage
 
-| Boundary | Issue | Location |
-|----------|-------|----------|
-| `RiskManager` | Inconsistent method signatures | `order_manager.py:429` |
-| `MetricsCalculator` | Duplicated inline in Backtester | `backtester.py:489-598` |
+| Boundary | Issue | Location | Status |
+|----------|-------|----------|--------|
+| `RiskManager` | ~~Inconsistent method signatures~~ | `order_manager.py:429` | ✅ **RESOLVED** |
+| `MetricsCalculator` | ~~Duplicated inline in Backtester~~ | `backtester.py:489-598` | ✅ **RESOLVED** |
 
 ---
 
@@ -260,10 +181,10 @@ Use RiskManager when available, fall back to inline calculation only when RiskMa
 2. **Trainer -> MLflow**: Uses callback pattern for metrics logging
    - `training/trainer.py:86-93, 158-177`
 
-### Inconsistent Patterns
+### ~~Inconsistent Patterns~~ (All Resolved)
 
-1. **OrderManager -> RiskManager**: Uses wrong method signature
-2. **Paper trading**: Bypasses RiskManager for position sizing
+1. ~~**OrderManager -> RiskManager**: Uses wrong method signature~~ → ✅ **FIXED**
+2. ~~**Paper trading**: Bypasses RiskManager for position sizing~~ → ✅ **FIXED**
 
 ---
 
@@ -272,10 +193,10 @@ Use RiskManager when available, fall back to inline calculation only when RiskMa
 ### Logging (Consistent)
 All modules use `logger = logging.getLogger(__name__)` pattern.
 
-### Error Handling (Inconsistent)
-- Domain exceptions defined but not used
-- Generic `except Exception` prevalent
-- No structured error propagation
+### Error Handling (Improved)
+- ✅ Domain exceptions now imported and caught in key modules
+- ✅ `OrderManager` catches `TradingError` subclasses
+- ✅ `Backtester` catches `TradingError` before generic `Exception`
 
 ### Configuration (Consistent)
 - `EnvConfig` used for environment configuration
@@ -285,43 +206,35 @@ All modules use `logger = logging.getLogger(__name__)` pattern.
 
 ## Priority Recommendations
 
-### High Priority (Bug Fixes)
-1. **Fix `OrderManager.calculate_position_size` call** - This is a runtime bug
-   - File: `core/order_manager.py:429-435`
-   - Change to: `calculate_position_size(entry_price, stop_loss_price)`
+### ✅ All High/Medium Priority Items Resolved (2025-12-10)
 
-### Medium Priority (Consistency)
-2. **Add risk validation to trading environments**
-   - Files: `core/trading_env.py`, `core/live_trading_env.py`
-   - Add `should_take_trade()` before `_open_position()`
+1. ~~**Fix `OrderManager.calculate_position_size` call**~~ → **DONE**
+2. ~~**Add risk validation to trading environments**~~ → **DONE**
+3. ~~**Use TradingError hierarchy**~~ → **DONE**
+4. ~~**Unify metrics calculation**~~ → **DONE**
+5. ~~**Paper trading risk integration**~~ → **DONE**
 
-3. **Use TradingError hierarchy**
-   - Replace generic exceptions with domain-specific errors
-
-### Low Priority (Code Quality)
-4. **Unify metrics calculation**
-   - Refactor `Backtester` to use `MetricsCalculator`
-
-5. **Paper trading risk integration**
-   - Use RiskManager in `LiveTradingEnvironment._execute_paper_trade()`
+### Remaining Low Priority (No Action Required)
+- **Checkpoint Save Method Divergence** - Acceptable as-is (ModelTrainer correctly delegates to model's save method)
 
 ---
 
 ## Summary Table
 
-| Feature | Follows Pattern | Abstraction | Data Flow | Cross-Cutting | Priority |
-|---------|-----------------|-------------|-----------|---------------|----------|
-| TradingEnvironment | Yes | Yes | Yes | Yes | N/A |
-| LiveTradingEnvironment | Yes | Yes | Partial | Yes | Low |
-| Backtester | Yes | Partial | Yes | Yes | Low |
-| OrderManager | No (API mismatch) | Yes | Partial | Yes | **High** |
-| PPOAgent | Yes | Yes | Yes | Yes | N/A |
-| Transformer | Yes | Yes | Yes | Yes | N/A |
-| Trainer | Yes | Yes | Yes | Yes | N/A |
-| RiskManager | Yes | Yes | Yes | Yes | N/A |
-| DataPipeline | Yes | Yes | Yes | Yes | N/A |
+| Feature | Follows Pattern | Abstraction | Data Flow | Cross-Cutting | Status |
+|---------|-----------------|-------------|-----------|---------------|--------|
+| TradingEnvironment | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| LiveTradingEnvironment | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| Backtester | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| OrderManager | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| PPOAgent | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| Transformer | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| Trainer | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| RiskManager | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
+| DataPipeline | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Compliant** |
 
 ---
 
 *Report generated: 2025-12-10*
+*Last updated: 2025-12-10 (All issues resolved)*
 *Codebase analyzed: Leap Trading System*
