@@ -47,8 +47,15 @@ export const trainingApi = {
       body: JSON.stringify(config),
     }),
 
-  list: (params?: { status?: string; limit?: number; offset?: number }) =>
-    fetchApi<{ jobs: TrainingJob[]; total: number }>(`/training/jobs${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
+  list: (params?: { status?: string; limit?: number; offset?: number }) => {
+    const filteredParams = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null))
+      : undefined
+    const queryString = filteredParams && Object.keys(filteredParams).length > 0
+      ? '?' + new URLSearchParams(filteredParams as Record<string, string>).toString()
+      : ''
+    return fetchApi<{ jobs: TrainingJob[]; total: number }>(`/training/jobs${queryString}`)
+  },
 
   get: (jobId: string) =>
     fetchApi<TrainingJob>(`/training/jobs/${jobId}`),
@@ -68,8 +75,15 @@ export const backtestApi = {
       body: JSON.stringify(config),
     }),
 
-  list: (params?: { symbol?: string; limit?: number; offset?: number }) =>
-    fetchApi<{ results: BacktestResult[]; total: number }>(`/backtest/results${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`),
+  list: (params?: { symbol?: string; limit?: number; offset?: number }) => {
+    const filteredParams = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null))
+      : undefined
+    const queryString = filteredParams && Object.keys(filteredParams).length > 0
+      ? '?' + new URLSearchParams(filteredParams as Record<string, string>).toString()
+      : ''
+    return fetchApi<{ results: BacktestResult[]; total: number }>(`/backtest/results${queryString}`)
+  },
 
   get: (resultId: string) =>
     fetchApi<BacktestResultDetail>(`/backtest/results/${resultId}`),
@@ -113,10 +127,17 @@ export const modelsApi = {
 export const logsApi = {
   files: () => fetchApi<{ files: LogFile[] }>('/logs/files'),
 
-  get: (filename: string, params?: { level?: string; search?: string; limit?: number; offset?: number }) =>
-    fetchApi<{ filename: string; lines: LogLine[]; totalLines: number }>(
-      `/logs/files/${filename}${params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''}`
-    ),
+  get: (filename: string, params?: { level?: string; search?: string; limit?: number; offset?: number }) => {
+    const filteredParams = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null))
+      : undefined
+    const queryString = filteredParams && Object.keys(filteredParams).length > 0
+      ? '?' + new URLSearchParams(filteredParams as Record<string, string>).toString()
+      : ''
+    return fetchApi<{ filename: string; lines: LogLine[]; totalLines: number }>(
+      `/logs/files/${filename}${queryString}`
+    )
+  },
 }
 
 // System API
