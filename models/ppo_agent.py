@@ -624,6 +624,12 @@ class PPOAgent:
         if patience is not None and eval_env is None:
             logger.warning("Patience set but no eval_env provided. Early stopping disabled.")
 
+        # Display training start message
+        if verbose:
+            start_msg = f"Starting PPO training for {total_timesteps} timesteps (n_steps={self.n_steps})..."
+            print(start_msg, flush=True)
+            logger.info(start_msg)
+
         while timestep < total_timesteps:
             # Collect rollouts
             for step in range(self.n_steps):
@@ -657,16 +663,28 @@ class PPOAgent:
             # Update policy
             update_stats = self.update(last_value)
 
-            # Logging
-            if verbose and len(episode_rewards) > 0:
-                recent_rewards = episode_rewards[-10:]
-                avg_reward = np.mean(recent_rewards)
-                logger.info(
-                    f"Timestep: {timestep}/{total_timesteps} | "
-                    f"Episodes: {n_episodes} | "
-                    f"Avg Reward (10 ep): {avg_reward:.2f} | "
-                    f"Policy Loss: {update_stats['policy_loss']:.4f}"
-                )
+            # Logging - display progress with flush=True for real-time output
+            if verbose:
+                progress_pct = (timestep / total_timesteps) * 100
+                if len(episode_rewards) > 0:
+                    recent_rewards = episode_rewards[-10:]
+                    avg_reward = np.mean(recent_rewards)
+                    progress_msg = (
+                        f"Timestep: {timestep}/{total_timesteps} ({progress_pct:.1f}%) | "
+                        f"Episodes: {n_episodes} | "
+                        f"Avg Reward (10 ep): {avg_reward:.2f} | "
+                        f"Policy Loss: {update_stats['policy_loss']:.4f}"
+                    )
+                else:
+                    # Show progress even before first episode completes
+                    progress_msg = (
+                        f"Timestep: {timestep}/{total_timesteps} ({progress_pct:.1f}%) | "
+                        f"Episodes: {n_episodes} | "
+                        f"Collecting rollouts... | "
+                        f"Policy Loss: {update_stats['policy_loss']:.4f}"
+                    )
+                print(progress_msg, flush=True)
+                logger.info(progress_msg)
 
             # MLflow callback for tracking
             if mlflow_callback is not None:
@@ -692,30 +710,40 @@ class PPOAgent:
                         patience_counter = 0
                         # Deep copy state_dict to avoid tensor sharing during continued training
                         best_state = {k: v.clone().detach().cpu() for k, v in self.network.state_dict().items()}
-                        logger.info(
+                        eval_msg = (
                             f"Evaluation reward: {eval_reward:.2f} (new best) | "
                             f"Patience: {patience_counter}/{patience}"
                         )
+                        print(eval_msg, flush=True)
+                        logger.info(eval_msg)
                     else:
                         patience_counter += 1
-                        logger.info(
+                        eval_msg = (
                             f"Evaluation reward: {eval_reward:.2f} | "
                             f"Best: {best_eval_reward:.2f} | "
                             f"Patience: {patience_counter}/{patience}"
                         )
+                        print(eval_msg, flush=True)
+                        logger.info(eval_msg)
 
                     # Check for early stopping
                     if patience_counter >= patience:
-                        logger.info(f"Early stopping at timestep {timestep} - no improvement for {patience} evaluations")
+                        stop_msg = f"Early stopping at timestep {timestep} - no improvement for {patience} evaluations"
+                        print(stop_msg, flush=True)
+                        logger.info(stop_msg)
                         early_stopped = True
                         break
                 else:
-                    logger.info(f"Evaluation reward: {eval_reward:.2f}")
+                    eval_msg = f"Evaluation reward: {eval_reward:.2f}"
+                    print(eval_msg, flush=True)
+                    logger.info(eval_msg)
 
         # Restore best model if early stopping was used and we have a best state
         if best_state is not None:
             self.network.load_state_dict(best_state)
-            logger.info(f"Restored best model with evaluation reward: {best_eval_reward:.2f}")
+            restore_msg = f"Restored best model with evaluation reward: {best_eval_reward:.2f}"
+            print(restore_msg, flush=True)
+            logger.info(restore_msg)
 
         return {
             'episode_rewards': episode_rewards,
