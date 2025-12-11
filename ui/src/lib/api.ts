@@ -161,6 +161,7 @@ export interface TrainingConfig {
   symbols: string[]
   timeframe: string
   multiTimeframe?: boolean
+  additionalTimeframes?: string[]
   bars: number
   epochs: number
   timesteps: number

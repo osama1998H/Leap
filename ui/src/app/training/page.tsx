@@ -33,6 +33,7 @@ export default function TrainingPage() {
     symbols: ['EURUSD'],
     timeframe: '1h',
     multiTimeframe: false,
+    additionalTimeframes: [],
     bars: 50000,
     epochs: 100,
     timesteps: 1000000,
@@ -43,6 +44,9 @@ export default function TrainingPage() {
     clipEpsilon: 0.2,
     device: 'auto',
   })
+
+  // Get available additional timeframes (exclude primary)
+  const availableAdditionalTimeframes = TIMEFRAMES.filter(tf => tf !== config.timeframe)
 
   const startTraining = useMutation({
     mutationFn: trainingApi.start,
@@ -149,13 +153,62 @@ export default function TrainingPage() {
                       </Select>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="multi-timeframe"
-                        checked={config.multiTimeframe}
-                        onCheckedChange={(checked) => setConfig({ ...config, multiTimeframe: checked })}
-                      />
-                      <Label htmlFor="multi-timeframe">Enable Multi-Timeframe Features</Label>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="multi-timeframe"
+                          checked={config.multiTimeframe}
+                          onCheckedChange={(checked) => {
+                            setConfig({
+                              ...config,
+                              multiTimeframe: checked,
+                              additionalTimeframes: checked ? config.additionalTimeframes : [],
+                            })
+                          }}
+                        />
+                        <Label htmlFor="multi-timeframe">Enable Multi-Timeframe Features</Label>
+                      </div>
+                      {config.multiTimeframe && (
+                        <div className="mt-3 pl-6 border-l-2 border-muted">
+                          <Label className="text-sm">Additional Timeframes</Label>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Click to add timeframes (primary: {config.timeframe})
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {availableAdditionalTimeframes.map((tf) => {
+                              const isSelected = config.additionalTimeframes?.includes(tf)
+                              return (
+                                <Badge
+                                  key={tf}
+                                  variant={isSelected ? 'default' : 'outline'}
+                                  className="cursor-pointer select-none"
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      setConfig({
+                                        ...config,
+                                        additionalTimeframes: config.additionalTimeframes?.filter(t => t !== tf) || [],
+                                      })
+                                    } else {
+                                      setConfig({
+                                        ...config,
+                                        additionalTimeframes: [...(config.additionalTimeframes || []), tf],
+                                      })
+                                    }
+                                  }}
+                                >
+                                  {tf}
+                                  {isSelected && <X className="ml-1 h-3 w-3" />}
+                                </Badge>
+                              )
+                            })}
+                          </div>
+                          {(config.additionalTimeframes?.length ?? 0) > 0 && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {(config.additionalTimeframes?.length ?? 0) + 1} timeframes total: {config.timeframe} (primary){config.additionalTimeframes?.length ? `, ${config.additionalTimeframes.join(', ')}` : ''}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -339,8 +392,19 @@ export default function TrainingPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Timeframe</span>
-                  <span className="font-medium">{config.timeframe}</span>
+                  <span className="font-medium">
+                    {config.timeframe}
+                    {config.multiTimeframe && config.additionalTimeframes?.length
+                      ? ` +${config.additionalTimeframes.length}`
+                      : ''}
+                  </span>
                 </div>
+                {config.multiTimeframe && config.additionalTimeframes?.length ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Additional TFs</span>
+                    <span className="font-medium text-xs">{config.additionalTimeframes.join(', ')}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Bars</span>
                   <span className="font-medium">{config.bars.toLocaleString()}</span>
