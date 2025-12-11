@@ -66,6 +66,26 @@ async def stop_training_job(job_id: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/jobs/{job_id}/pause", response_model=TrainingJobResponse)
+async def pause_training_job(job_id: str):
+    """Pause a running training job (sends SIGSTOP to process)."""
+    try:
+        job_data = await training_service.pause_job(job_id)
+        return TrainingJobResponse(data=job_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/jobs/{job_id}/resume", response_model=TrainingJobResponse)
+async def resume_training_job(job_id: str):
+    """Resume a paused training job (sends SIGCONT to process)."""
+    try:
+        job_data = await training_service.resume_job(job_id)
+        return TrainingJobResponse(data=job_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/jobs/{job_id}/logs", response_model=TrainingLogsResponse)
 async def get_training_logs(
     job_id: str,

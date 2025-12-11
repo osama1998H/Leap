@@ -1,13 +1,15 @@
 import { Link } from 'react-router-dom'
-import { Activity, Sun, Moon, Monitor } from 'lucide-react'
+import { Activity, Sun, Moon, Monitor, Wifi, WifiOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useQuery } from '@tanstack/react-query'
 import { systemApi } from '@/lib/api'
 import { useTheme } from '@/hooks/use-theme'
+import { useWebSocketContext } from '@/hooks/use-websocket'
 
 export default function Header() {
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const { status: wsStatus } = useWebSocketContext()
 
   const { data: health, isLoading, isError } = useQuery({
     queryKey: ['health'],
@@ -26,6 +28,32 @@ export default function Header() {
       return <Badge variant="success">Online</Badge>
     }
     return <Badge variant="destructive">Offline</Badge>
+  }
+
+  const getWsStatusIndicator = () => {
+    switch (wsStatus) {
+      case 'connected':
+        return (
+          <div className="flex items-center gap-1" title="WebSocket connected - Real-time updates active">
+            <Wifi className="h-4 w-4 text-green-500" />
+          </div>
+        )
+      case 'connecting':
+      case 'reconnecting':
+        return (
+          <div className="flex items-center gap-1" title="Connecting to WebSocket...">
+            <Wifi className="h-4 w-4 text-yellow-500 animate-pulse" />
+          </div>
+        )
+      case 'disconnected':
+        return (
+          <div className="flex items-center gap-1" title="WebSocket disconnected - Using polling">
+            <WifiOff className="h-4 w-4 text-muted-foreground" />
+          </div>
+        )
+      default:
+        return null
+    }
   }
 
   const cycleTheme = () => {
@@ -61,6 +89,7 @@ export default function Header() {
           >
             {getThemeIcon()}
           </Button>
+          {getWsStatusIndicator()}
           {getStatusBadge()}
           <span className="text-sm text-muted-foreground">
             v{health?.version || '1.0.0'}

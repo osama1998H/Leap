@@ -304,7 +304,7 @@ class JobManager:
         if not job:
             raise ValueError(f"Job {job_id} not found")
 
-        if job.status not in [JobStatus.RUNNING, JobStatus.STARTING]:
+        if job.status not in [JobStatus.RUNNING, JobStatus.STARTING, JobStatus.PAUSED]:
             raise ValueError(f"Job {job_id} is not running")
 
         if job.process:
@@ -319,6 +319,52 @@ class JobManager:
         job.completed_at = datetime.utcnow()
         await job.notify_subscribers()
         logger.info(f"Stopped job {job_id}")
+        return job
+
+    async def pause_job(self, job_id: str) -> Job:
+        """Pause a running job by sending SIGSTOP."""
+        import signal
+
+        job = self.jobs.get(job_id)
+        if not job:
+            raise ValueError(f"Job {job_id} not found")
+
+        if job.status != JobStatus.RUNNING:
+            raise ValueError(f"Job {job_id} is not running (current status: {job.status.value})")
+
+        if job.process and job.process.pid:
+            try:
+                import os
+                os.kill(job.process.pid, signal.SIGSTOP)
+                job.status = JobStatus.PAUSED
+                await job.notify_subscribers()
+                logger.info(f"Paused job {job_id}")
+            except OSError as e:
+                raise ValueError(f"Failed to pause job {job_id}: {e}")
+
+        return job
+
+    async def resume_job(self, job_id: str) -> Job:
+        """Resume a paused job by sending SIGCONT."""
+        import signal
+
+        job = self.jobs.get(job_id)
+        if not job:
+            raise ValueError(f"Job {job_id} not found")
+
+        if job.status != JobStatus.PAUSED:
+            raise ValueError(f"Job {job_id} is not paused (current status: {job.status.value})")
+
+        if job.process and job.process.pid:
+            try:
+                import os
+                os.kill(job.process.pid, signal.SIGCONT)
+                job.status = JobStatus.RUNNING
+                await job.notify_subscribers()
+                logger.info(f"Resumed job {job_id}")
+            except OSError as e:
+                raise ValueError(f"Failed to resume job {job_id}: {e}")
+
         return job
 
     def get_job(self, job_id: str) -> Optional[Job]:
