@@ -12,7 +12,9 @@ from ..core.job_manager import Job, JobStatus, JobType, job_manager
 from ..schemas.backtest import (
     BacktestCompareData,
     BacktestComparison,
+    BacktestJobData,
     BacktestMetrics,
+    BacktestProgress,
     BacktestResultData,
     BacktestResultSummary,
     BacktestResultSummaryData,
@@ -58,6 +60,48 @@ class BacktestService:
             "status": job.status.value,
             "createdAt": job.created_at.isoformat() + "Z",
         }
+
+    async def list_jobs(
+        self,
+        status: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[BacktestJobData], int]:
+        """List backtest jobs (all statuses)."""
+        job_status = None
+        if status:
+            try:
+                job_status = JobStatus(status)
+            except ValueError:
+                raise ValueError(f"Invalid status: {status}. Valid values: {[s.value for s in JobStatus]}")
+
+        jobs, _ = self.job_manager.list_jobs(
+            job_type=JobType.BACKTEST,
+            status=job_status,
+            limit=limit,
+            offset=offset,
+        )
+
+        return [self._job_to_job_data(j) for j in jobs], len(jobs)
+
+    def _job_to_job_data(self, job: Job) -> BacktestJobData:
+        """Convert job to job data response."""
+        progress = None
+        if job.progress:
+            progress = BacktestProgress(
+                percent=job.progress.get("percent", 0),
+                currentStep=job.progress.get("currentStep"),
+            )
+
+        return BacktestJobData(
+            jobId=job.job_id,
+            status=job.status.value,
+            symbol=job.config.get("symbol", "EURUSD"),
+            timeframe=job.config.get("timeframe", "1h"),
+            config=job.config,
+            progress=progress,
+            createdAt=job.created_at.isoformat() + "Z",
+        )
 
     async def list_results(
         self,

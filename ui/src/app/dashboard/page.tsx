@@ -38,6 +38,12 @@ export default function Dashboard() {
     },
   })
 
+  const { data: backtestJobs } = useQuery({
+    queryKey: ['backtest', 'jobs'],
+    queryFn: () => backtestApi.jobs({ limit: 10 }),
+    refetchInterval: 5000,
+  })
+
   const { data: backtestResults } = useQuery({
     queryKey: ['backtest', 'results'],
     queryFn: () => backtestApi.list({ limit: 5 }),
@@ -49,7 +55,9 @@ export default function Dashboard() {
     refetchInterval: 10000,
   })
 
-  const activeJobs = trainingJobs?.jobs?.filter(j => j.status === 'running') || []
+  const activeTrainingJobs = trainingJobs?.jobs?.filter(j => j.status === 'running') || []
+  const activeBacktestJobs = backtestJobs?.jobs?.filter(j => j.status === 'running') || []
+  const totalActiveJobs = activeTrainingJobs.length + activeBacktestJobs.length
 
   return (
     <div className="space-y-6">
@@ -116,24 +124,25 @@ export default function Dashboard() {
             <Brain className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeJobs.length}</div>
+            <div className="text-2xl font-bold">{totalActiveJobs}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {activeJobs.length > 0 ? 'Running' : 'No active jobs'}
+              {totalActiveJobs > 0 ? `${activeTrainingJobs.length} training, ${activeBacktestJobs.length} backtest` : 'No active jobs'}
             </p>
           </CardContent>
         </Card>
       </div>
 
       {/* Active Jobs */}
-      {activeJobs.length > 0 && (
+      {totalActiveJobs > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Active Jobs</CardTitle>
-            <CardDescription>Currently running training jobs</CardDescription>
+            <CardDescription>Currently running training and backtest jobs</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {activeJobs.map((job) => (
+              {/* Training Jobs */}
+              {activeTrainingJobs.map((job) => (
                 <div key={job.jobId} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-4">
                     <Brain className="h-8 w-8 text-primary" />
@@ -168,6 +177,29 @@ export default function Dashboard() {
                       <Square className="h-4 w-4 mr-1" />
                       Stop
                     </Button>
+                  </div>
+                </div>
+              ))}
+              {/* Backtest Jobs */}
+              {activeBacktestJobs.map((job) => (
+                <div key={job.jobId} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-4">
+                    <TestTube className="h-8 w-8 text-blue-500" />
+                    <div>
+                      <p className="font-medium">{job.symbol} {job.timeframe}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Backtest {job.progress?.currentStep ? `- ${job.progress.currentStep}` : 'running...'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="w-32">
+                      <Progress value={job.progress?.percent ?? 0} />
+                      <p className="text-xs text-muted-foreground text-center mt-1">
+                        {job.progress?.percent ?? 0}%
+                      </p>
+                    </div>
+                    <Badge variant="secondary">Running</Badge>
                   </div>
                 </div>
               ))}

@@ -75,6 +75,16 @@ export const backtestApi = {
       body: JSON.stringify(config),
     }),
 
+  jobs: (params?: { status?: string; limit?: number; offset?: number }) => {
+    const filteredParams = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null))
+      : undefined
+    const queryString = filteredParams && Object.keys(filteredParams).length > 0
+      ? '?' + new URLSearchParams(filteredParams as Record<string, string>).toString()
+      : ''
+    return fetchApi<{ jobs: BacktestJob[]; total: number }>(`/backtest/jobs${queryString}`)
+  },
+
   list: (params?: { symbol?: string; limit?: number; offset?: number }) => {
     const filteredParams = params
       ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null))
@@ -189,6 +199,18 @@ export interface BacktestConfig {
   modelDir: string
   realisticMode?: boolean
   monteCarlo?: boolean
+}
+
+export interface BacktestJob {
+  jobId: string
+  status: string
+  symbol: string
+  timeframe: string
+  progress?: {
+    percent: number
+    currentStep?: string
+  }
+  createdAt: string
 }
 
 export interface BacktestResult {

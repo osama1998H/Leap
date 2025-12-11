@@ -200,3 +200,41 @@ class BacktestCompareResponse(BaseModel):
     """Backtest comparison response."""
 
     data: BacktestCompareData
+
+
+class BacktestProgress(BaseModel):
+    """Backtest progress."""
+
+    percent: float = 0
+    current_step: Optional[str] = Field(None, alias="currentStep")
+
+
+class BacktestJobData(BaseModel):
+    """Backtest job data."""
+
+    job_id: str = Field(alias="jobId")
+    status: str
+    symbol: str
+    timeframe: str
+    config: Optional[dict[str, Any]] = None
+    progress: Optional[BacktestProgress] = None
+    created_at: str = Field(alias="createdAt")
+
+
+class BacktestJobListData(BaseModel):
+    """Backtest job list data."""
+
+    jobs: list[BacktestJobData]
+    total: int
+
+
+class BacktestJobListResponse(BaseModel):
+    """Backtest job list response."""
+
+    data: BacktestJobListData
+
+
+class BacktestJobResponse(BaseModel):
+    """Single backtest job response."""
+
+    data: BacktestJobData
