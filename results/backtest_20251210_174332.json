@@ -1,0 +1,10 @@
+{
+  "total_return": 0.011619729690664644,
+  "sharpe_ratio": -0.7945453980505137,
+  "max_drawdown": 0.04301658164321251,
+  "win_rate": 0.4,
+  "total_trades": 5,
+  "monte_carlo": {
+    "warning": "Insufficient trades for Monte Carlo simulation (minimum 10 required)"
+  }
+}
