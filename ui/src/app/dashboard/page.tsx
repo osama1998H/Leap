@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Brain, TestTube, Activity } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Brain, TestTube, Activity, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,12 +8,34 @@ import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { trainingApi, backtestApi, systemApi } from '@/lib/api'
 import { formatPercent, formatDate } from '@/lib/utils'
+import { useToast } from '@/hooks/use-toast'
 
 export default function Dashboard() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
   const { data: trainingJobs } = useQuery({
     queryKey: ['training', 'jobs'],
     queryFn: () => trainingApi.list({ limit: 5 }),
     refetchInterval: 5000,
+  })
+
+  const stopJob = useMutation({
+    mutationFn: trainingApi.stop,
+    onSuccess: (data) => {
+      toast({
+        title: 'Training Stopped',
+        description: `Job ${data.jobId} has been stopped.`,
+      })
+      queryClient.invalidateQueries({ queryKey: ['training'] })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to stop training',
+        description: error.message,
+        variant: 'destructive',
+      })
+    },
   })
 
   const { data: backtestResults } = useQuery({
@@ -137,6 +159,15 @@ export default function Dashboard() {
                         )}
                       </div>
                     )}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => stopJob.mutate(job.jobId)}
+                      disabled={stopJob.isPending}
+                    >
+                      <Square className="h-4 w-4 mr-1" />
+                      Stop
+                    </Button>
                   </div>
                 </div>
               ))}
