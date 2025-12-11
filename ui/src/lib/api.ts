@@ -254,6 +254,11 @@ export interface BacktestResultDetail extends BacktestResult {
       avgLoser?: number
     }
   }
+  timeSeries?: {
+    equityCurve: number[]
+    drawdownCurve: number[]
+    timestamps: string[]
+  }
   trades?: Trade[]
 }
 

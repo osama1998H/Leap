@@ -1,6 +1,17 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Download, TrendingUp, TrendingDown, Activity } from 'lucide-react'
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -127,6 +138,118 @@ export default function BacktestResultPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Equity Curve & Drawdown Charts */}
+      {result.timeSeries && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Equity Curve */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Equity Curve</CardTitle>
+              <CardDescription>Portfolio value over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart
+                  data={result.timeSeries.equityCurve.map((value, index) => ({
+                    index,
+                    equity: value,
+                    date: result.timeSeries?.timestamps?.[index]?.slice(0, 10) || index,
+                  }))}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="index"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => {
+                      const step = Math.floor(result.timeSeries!.equityCurve.length / 5)
+                      if (value % step === 0) {
+                        return result.timeSeries?.timestamps?.[value]?.slice(5, 10) || ''
+                      }
+                      return ''
+                    }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                    domain={['auto', 'auto']}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => [`$${value.toFixed(2)}`, 'Equity']}
+                    labelFormatter={(label) => result.timeSeries?.timestamps?.[label as number] || label}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="equity"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Drawdown Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Drawdown</CardTitle>
+              <CardDescription>Peak-to-trough decline</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart
+                  data={result.timeSeries.drawdownCurve.map((value, index) => ({
+                    index,
+                    drawdown: value * 100, // Convert to percentage
+                    date: result.timeSeries?.timestamps?.[index]?.slice(0, 10) || index,
+                  }))}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="index"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => {
+                      const step = Math.floor(result.timeSeries!.drawdownCurve.length / 5)
+                      if (value % step === 0) {
+                        return result.timeSeries?.timestamps?.[value]?.slice(5, 10) || ''
+                      }
+                      return ''
+                    }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `${value.toFixed(0)}%`}
+                    domain={['auto', 0]}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => [`${value.toFixed(2)}%`, 'Drawdown']}
+                    labelFormatter={(label) => result.timeSeries?.timestamps?.[label as number] || label}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px',
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="drawdown"
+                    stroke="hsl(var(--destructive))"
+                    fill="hsl(var(--destructive))"
+                    fillOpacity={0.3}
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Performance Metrics */}

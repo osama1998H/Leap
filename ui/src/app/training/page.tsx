@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play } from 'lucide-react'
+import { Play, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,7 +52,7 @@ export default function TrainingPage() {
         description: `Job ${data.jobId} has been started.`,
       })
       queryClient.invalidateQueries({ queryKey: ['training'] })
-      navigate('/')
+      navigate(`/training/${data.jobId}`)
     },
     onError: (error: Error) => {
       toast({
@@ -93,22 +94,40 @@ export default function TrainingPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="symbol">Symbol</Label>
-                      <Select
-                        value={config.symbols[0]}
-                        onValueChange={(value) => setConfig({ ...config, symbols: [value] })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select symbol" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SYMBOLS.map((symbol) => (
-                            <SelectItem key={symbol} value={symbol}>
+                      <Label>Symbols</Label>
+                      <p className="text-xs text-muted-foreground mb-2">Click to select/deselect symbols for training</p>
+                      <div className="flex flex-wrap gap-2">
+                        {SYMBOLS.map((symbol) => {
+                          const isSelected = config.symbols.includes(symbol)
+                          return (
+                            <Badge
+                              key={symbol}
+                              variant={isSelected ? 'default' : 'outline'}
+                              className="cursor-pointer select-none"
+                              onClick={() => {
+                                if (isSelected) {
+                                  // Don't allow deselecting if it's the only symbol
+                                  if (config.symbols.length > 1) {
+                                    setConfig({ ...config, symbols: config.symbols.filter(s => s !== symbol) })
+                                  }
+                                } else {
+                                  setConfig({ ...config, symbols: [...config.symbols, symbol] })
+                                }
+                              }}
+                            >
                               {symbol}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                              {isSelected && config.symbols.length > 1 && (
+                                <X className="ml-1 h-3 w-3" />
+                              )}
+                            </Badge>
+                          )
+                        })}
+                      </div>
+                      {config.symbols.length > 1 && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {config.symbols.length} symbols selected - multi-symbol training enabled
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
