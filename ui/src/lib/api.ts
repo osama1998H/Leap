@@ -157,6 +157,20 @@ export const systemApi = {
 }
 
 // Types
+export interface TransformerConfig {
+  dModel?: number
+  nHeads?: number
+  nEncoderLayers?: number
+  dropout?: number
+  learningRate?: number
+}
+
+export interface PPOConfig {
+  learningRate?: number
+  gamma?: number
+  clipEpsilon?: number
+}
+
 export interface TrainingConfig {
   symbols: string[]
   timeframe: string
@@ -166,6 +180,10 @@ export interface TrainingConfig {
   epochs: number
   timesteps: number
   modelDir?: string
+  config?: {
+    transformer?: TransformerConfig
+    ppo?: PPOConfig
+  }
 }
 
 export interface TrainingJob {

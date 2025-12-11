@@ -69,7 +69,28 @@ export default function TrainingPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    startTraining.mutate(config)
+    // Format the request to match backend schema
+    const request = {
+      symbols: config.symbols,
+      timeframe: config.timeframe,
+      multiTimeframe: config.multiTimeframe,
+      additionalTimeframes: config.additionalTimeframes?.length ? config.additionalTimeframes : undefined,
+      bars: config.bars,
+      epochs: config.epochs,
+      timesteps: config.timesteps,
+      modelDir: config.modelDir,
+      config: {
+        transformer: {
+          dModel: config.dModel,
+          nHeads: config.nHeads,
+        },
+        ppo: {
+          gamma: config.gamma,
+          clipEpsilon: config.clipEpsilon,
+        },
+      },
+    }
+    startTraining.mutate(request)
   }
 
   return (
