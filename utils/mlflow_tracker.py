@@ -102,9 +102,7 @@ class MLflowTracker:
             logger.info(f"MLflow tracking URI: {self.config.tracking_uri}")
 
             # Log the mlflow ui command for convenience
-            # Extract the database path from the URI for the user
             if self.config.tracking_uri.startswith("sqlite:///"):
-                db_path = self.config.tracking_uri[len("sqlite:///"):]
                 logger.info(
                     f"To view experiments, run: "
                     f"mlflow ui --backend-store-uri {self.config.tracking_uri}"

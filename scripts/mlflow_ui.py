@@ -63,7 +63,7 @@ def main():
 
     tracking_uri = f"sqlite:///{db_path}"
 
-    print(f"Starting MLflow UI...")
+    print("Starting MLflow UI...")
     print(f"  Database: {db_path}")
     print(f"  URL: http://{args.host}:{args.port}")
     print()
