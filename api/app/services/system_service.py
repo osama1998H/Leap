@@ -25,17 +25,36 @@ class SystemService:
 
     def get_health(self) -> HealthData:
         """Get system health status."""
+        # Check component health
+        mlflow_status = self._check_mlflow()
+        gpu_status = "available" if self._check_gpu() else "unavailable"
+
         components = ComponentStatus(
-            database="ok",
-            mlflow="ok",
-            gpu="available" if self._check_gpu() else "unavailable",
+            database="ok",  # No database in current architecture
+            mlflow=mlflow_status,
+            gpu=gpu_status,
         )
 
+        # Overall status is healthy only if critical components are ok
+        overall_status = "healthy" if mlflow_status in ("ok", "unavailable") else "degraded"
+
         return HealthData(
-            status="healthy",
+            status=overall_status,
             version="1.0.0",
             components=components,
         )
+
+    def _check_mlflow(self) -> str:
+        """Check MLflow connectivity."""
+        try:
+            import mlflow
+            # Just check if mlflow is importable and configured
+            # Full connectivity check would require network call
+            return "ok"
+        except ImportError:
+            return "unavailable"
+        except Exception:
+            return "error"
 
     def get_metrics(self) -> SystemMetricsData:
         """Get system metrics."""

@@ -15,12 +15,20 @@ import { trainingApi, TrainingConfig } from '@/lib/api'
 const SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF']
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
 
+interface ExtendedTrainingConfig extends TrainingConfig {
+  dModel: number
+  nHeads: number
+  gamma: number
+  clipEpsilon: number
+  device: string
+}
+
 export default function TrainingPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const [config, setConfig] = useState<TrainingConfig>({
+  const [config, setConfig] = useState<ExtendedTrainingConfig>({
     symbols: ['EURUSD'],
     timeframe: '1h',
     multiTimeframe: false,
@@ -28,6 +36,11 @@ export default function TrainingPage() {
     epochs: 100,
     timesteps: 1000000,
     modelDir: './saved_models',
+    dModel: 128,
+    nHeads: 8,
+    gamma: 0.99,
+    clipEpsilon: 0.2,
+    device: 'auto',
   })
 
   const startTraining = useMutation({
@@ -165,7 +178,10 @@ export default function TrainingPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Model Dimension</Label>
-                        <Select defaultValue="128">
+                        <Select
+                          value={String(config.dModel)}
+                          onValueChange={(value) => setConfig({ ...config, dModel: parseInt(value) })}
+                        >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -181,7 +197,10 @@ export default function TrainingPage() {
 
                       <div className="space-y-2">
                         <Label>Attention Heads</Label>
-                        <Select defaultValue="8">
+                        <Select
+                          value={String(config.nHeads)}
+                          onValueChange={(value) => setConfig({ ...config, nHeads: parseInt(value) })}
+                        >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -223,12 +242,26 @@ export default function TrainingPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Gamma (Discount)</Label>
-                        <Input type="number" defaultValue="0.99" step="0.01" min="0.9" max="0.999" />
+                        <Input
+                          type="number"
+                          value={config.gamma}
+                          onChange={(e) => setConfig({ ...config, gamma: parseFloat(e.target.value) || 0.99 })}
+                          step={0.01}
+                          min={0.9}
+                          max={0.999}
+                        />
                       </div>
 
                       <div className="space-y-2">
                         <Label>Clip Epsilon</Label>
-                        <Input type="number" defaultValue="0.2" step="0.05" min="0.1" max="0.3" />
+                        <Input
+                          type="number"
+                          value={config.clipEpsilon}
+                          onChange={(e) => setConfig({ ...config, clipEpsilon: parseFloat(e.target.value) || 0.2 })}
+                          step={0.05}
+                          min={0.1}
+                          max={0.3}
+                        />
                       </div>
                     </div>
                   </CardContent>
@@ -254,7 +287,10 @@ export default function TrainingPage() {
 
                     <div className="space-y-2">
                       <Label>Device</Label>
-                      <Select defaultValue="auto">
+                      <Select
+                        value={config.device}
+                        onValueChange={(value) => setConfig({ ...config, device: value })}
+                      >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>

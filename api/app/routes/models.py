@@ -35,5 +35,5 @@ async def download_model(directory: str):
     return StreamingResponse(
         buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=model.zip"},
+        headers={"Content-Disposition": "attachment; filename=model.zip"},
     )

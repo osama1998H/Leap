@@ -5,8 +5,6 @@ from fastapi import APIRouter, HTTPException
 from ..schemas.config import (
     ConfigResponse,
     ConfigTemplateCreateRequest,
-    ConfigTemplateCreateResponse,
-    ConfigTemplateCreateData,
     ConfigTemplateListData,
     ConfigTemplateResponse,
     ConfigUpdateRequest,

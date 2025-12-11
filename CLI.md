@@ -309,14 +309,14 @@ The Leap Trading System includes a web-based dashboard for visual monitoring and
 
 **Backend API (FastAPI):**
 ```bash
-# Start API server on port 8000
-cd /home/user/Leap && python api/run.py
+# Start API server on port 8000 (from project root)
+python api/run.py
 ```
 
 **Frontend (React + Vite):**
 ```bash
-# Start development server on port 5173
-cd /home/user/Leap/ui && npm run dev
+# Start development server on port 5173 (from project root)
+cd ui && npm run dev
 ```
 
 **Access the UI:** Open `http://localhost:5173` in your browser.

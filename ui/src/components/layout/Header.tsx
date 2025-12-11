@@ -5,11 +5,24 @@ import { useQuery } from '@tanstack/react-query'
 import { systemApi } from '@/lib/api'
 
 export default function Header() {
-  const { data: health } = useQuery({
+  const { data: health, isLoading, isError } = useQuery({
     queryKey: ['health'],
     queryFn: systemApi.health,
     refetchInterval: 30000,
   })
+
+  const getStatusBadge = () => {
+    if (isLoading) {
+      return <Badge variant="secondary">Connecting...</Badge>
+    }
+    if (isError) {
+      return <Badge variant="destructive">Error</Badge>
+    }
+    if (health?.status === 'healthy') {
+      return <Badge variant="success">Online</Badge>
+    }
+    return <Badge variant="destructive">Offline</Badge>
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -38,9 +51,7 @@ export default function Header() {
           </nav>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
-          <Badge variant={health?.status === 'healthy' ? 'success' : 'destructive'}>
-            {health?.status === 'healthy' ? 'Online' : 'Offline'}
-          </Badge>
+          {getStatusBadge()}
           <span className="text-sm text-muted-foreground">
             v{health?.version || '1.0.0'}
           </span>

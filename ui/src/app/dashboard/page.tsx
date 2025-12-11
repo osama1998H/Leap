@@ -60,8 +60,8 @@ export default function Dashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metrics?.cpu?.percent?.toFixed(1) || 0}%</div>
-            <Progress value={metrics?.cpu?.percent || 0} className="mt-2" />
+            <div className="text-2xl font-bold">{metrics?.cpu?.percent?.toFixed(1) ?? 0}%</div>
+            <Progress value={metrics?.cpu?.percent ?? 0} className="mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -70,8 +70,8 @@ export default function Dashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metrics?.memory?.percent?.toFixed(1) || 0}%</div>
-            <Progress value={metrics?.memory?.percent || 0} className="mt-2" />
+            <div className="text-2xl font-bold">{metrics?.memory?.percent?.toFixed(1) ?? 0}%</div>
+            <Progress value={metrics?.memory?.percent ?? 0} className="mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -107,7 +107,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Active Jobs</CardTitle>
-            <CardDescription>Currently running training and backtest jobs</CardDescription>
+            <CardDescription>Currently running training jobs</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -118,15 +118,15 @@ export default function Dashboard() {
                     <div>
                       <p className="font-medium">{job.symbols?.join(', ')} {job.timeframe}</p>
                       <p className="text-sm text-muted-foreground">
-                        Phase: {job.phase || 'Training'} | Epoch: {job.progress?.currentEpoch || 0}/{job.progress?.totalEpochs || 100}
+                        Phase: {job.phase ?? 'Training'} | Epoch: {job.progress?.currentEpoch ?? 0}/{job.progress?.totalEpochs ?? 100}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="w-32">
-                      <Progress value={job.progress?.percent || 0} />
+                      <Progress value={job.progress?.percent ?? 0} />
                       <p className="text-xs text-muted-foreground text-center mt-1">
-                        {job.progress?.percent || 0}%
+                        {job.progress?.percent ?? 0}%
                       </p>
                     </div>
                     {job.metrics?.trainLoss && (

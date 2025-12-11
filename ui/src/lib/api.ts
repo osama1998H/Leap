@@ -25,8 +25,14 @@ async function fetchApi<T>(
   })
 
   if (!response.ok) {
-    const error: ApiError = await response.json()
-    throw new Error(error.error?.message || 'API request failed')
+    let errorMessage = 'API request failed'
+    try {
+      const error: ApiError = await response.json()
+      errorMessage = error.error?.message || errorMessage
+    } catch {
+      // Response was not JSON
+    }
+    throw new Error(errorMessage)
   }
 
   const json = await response.json()
@@ -216,6 +222,8 @@ export interface Trade {
   entryPrice: number
   exitPrice: number
   pnl: number
+  pnlPercent?: number
+  size?: number
   status: string
 }
 
@@ -258,6 +266,7 @@ export interface LogLine {
   number: number
   timestamp?: string
   level?: string
+  logger?: string
   message: string
 }
 

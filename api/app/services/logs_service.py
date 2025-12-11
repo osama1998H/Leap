@@ -99,7 +99,9 @@ class LogsService:
         match = re.match(pattern, line)
 
         if match:
-            timestamp = match.group(1).replace(" ", "T").replace(",", ".") + "Z"
+            # Format timestamp as ISO 8601 (local time, no timezone suffix)
+            # Log timestamps are in local server time
+            timestamp = match.group(1).replace(" ", "T").replace(",", ".")
             level = match.group(2)
             logger_name = match.group(3)
             message = match.group(4)
