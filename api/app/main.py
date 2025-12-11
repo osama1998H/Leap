@@ -15,6 +15,7 @@ from .routes import (
     models_router,
     system_router,
     training_router,
+    websocket_router,
 )
 
 # Configure logging
@@ -85,6 +86,8 @@ app.include_router(config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(models_router, prefix=settings.API_V1_PREFIX)
 app.include_router(logs_router, prefix=settings.API_V1_PREFIX)
 app.include_router(system_router, prefix=settings.API_V1_PREFIX)
+# WebSocket router at root level (not under API prefix)
+app.include_router(websocket_router)
 
 
 # Root endpoint

@@ -63,6 +63,12 @@ export const trainingApi = {
   stop: (jobId: string) =>
     fetchApi<TrainingJob>(`/training/jobs/${jobId}/stop`, { method: 'POST' }),
 
+  pause: (jobId: string) =>
+    fetchApi<TrainingJob>(`/training/jobs/${jobId}/pause`, { method: 'POST' }),
+
+  resume: (jobId: string) =>
+    fetchApi<TrainingJob>(`/training/jobs/${jobId}/resume`, { method: 'POST' }),
+
   logs: (jobId: string) =>
     fetchApi<{ logs: LogEntry[]; hasMore: boolean }>(`/training/jobs/${jobId}/logs`),
 }

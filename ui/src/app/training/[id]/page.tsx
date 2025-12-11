@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Square, Brain, Clock, Activity } from 'lucide-react'
+import { ArrowLeft, Square, Pause, Play, Brain, Clock, Activity, Wifi, WifiOff } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -17,7 +17,10 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { trainingApi } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
-import { useState, useEffect } from 'react'
+import { useWebSocketContext } from '@/hooks/use-websocket'
+import { useTrainingStore } from '@/stores/training'
+import { useUIStore } from '@/stores/ui'
+import { useState, useEffect, useRef } from 'react'
 
 interface LossDataPoint {
   epoch: number
@@ -31,20 +34,34 @@ export default function TrainingMonitorPage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
+  // WebSocket for real-time updates
+  const { status: wsStatus, subscribe, unsubscribe, trainingProgress, logs: wsLogs } = useWebSocketContext()
+
+  // Zustand stores
+  const { updateJobFromProgress } = useTrainingStore()
+  const { addJobNotification, autoScrollLogs } = useUIStore()
+
   // Track loss history for chart
   const [lossHistory, setLossHistory] = useState<LossDataPoint[]>([])
 
+  // Auto-scroll ref for logs
+  const logsEndRef = useRef<HTMLDivElement>(null)
+
+  // Initial data fetch (fallback for when WebSocket isn't connected)
   const { data: job, isLoading, isError } = useQuery({
     queryKey: ['training', 'job', id],
     queryFn: () => trainingApi.get(id!),
     enabled: !!id,
     refetchInterval: (query) => {
-      // Stop polling if job is completed or failed
+      // Only poll if WebSocket is disconnected
+      if (wsStatus === 'connected') {
+        return false
+      }
       const status = query.state.data?.status
       if (status === 'completed' || status === 'failed' || status === 'stopped') {
         return false
       }
-      return 2000 // Poll every 2 seconds while running
+      return 2000
     },
   })
 
@@ -53,6 +70,10 @@ export default function TrainingMonitorPage() {
     queryFn: () => trainingApi.logs(id!),
     enabled: !!id,
     refetchInterval: () => {
+      // Only poll if WebSocket is disconnected
+      if (wsStatus === 'connected') {
+        return false
+      }
       const status = job?.status
       if (status === 'completed' || status === 'failed' || status === 'stopped') {
         return false
@@ -61,6 +82,80 @@ export default function TrainingMonitorPage() {
     },
   })
 
+  // Subscribe to WebSocket updates for this job
+  useEffect(() => {
+    if (id && wsStatus === 'connected') {
+      subscribe('training', id)
+      subscribe('logs', id)
+      return () => {
+        unsubscribe('training', id)
+        unsubscribe('logs', id)
+      }
+    }
+  }, [id, wsStatus, subscribe, unsubscribe])
+
+  // Get real-time progress from WebSocket or fall back to REST data
+  const wsProgress = id ? trainingProgress.get(id) : undefined
+  const currentProgress = wsProgress || job
+
+  // Update store and loss history from WebSocket data
+  useEffect(() => {
+    if (wsProgress) {
+      updateJobFromProgress(wsProgress)
+
+      // Check for job completion/failure and show notification
+      if (wsProgress.status === 'completed' || wsProgress.status === 'failed' || wsProgress.status === 'stopped') {
+        addJobNotification(wsProgress.jobId, wsProgress.status as 'completed' | 'failed' | 'stopped')
+        queryClient.invalidateQueries({ queryKey: ['training'] })
+      }
+    }
+  }, [wsProgress, updateJobFromProgress, addJobNotification, queryClient])
+
+  // Update loss history when progress changes
+  useEffect(() => {
+    const progress = currentProgress
+    if (progress) {
+      const trainLoss = wsProgress?.trainLoss ?? job?.metrics?.trainLoss
+      const valLoss = wsProgress?.valLoss ?? job?.metrics?.valLoss
+      const epoch = wsProgress?.epoch ?? progress?.progress?.currentEpoch
+
+      if (trainLoss !== undefined && epoch !== undefined) {
+        setLossHistory(prev => {
+          const existingIndex = prev.findIndex(p => p.epoch === epoch)
+          const newPoint: LossDataPoint = {
+            epoch,
+            trainLoss: trainLoss ?? null,
+            valLoss: valLoss ?? null,
+          }
+
+          if (existingIndex >= 0) {
+            const updated = [...prev]
+            updated[existingIndex] = newPoint
+            return updated
+          } else {
+            return [...prev, newPoint].sort((a, b) => a.epoch - b.epoch)
+          }
+        })
+      }
+    }
+  }, [currentProgress, wsProgress, job])
+
+  // Filter WebSocket logs for this job
+  const jobWsLogs = wsLogs.filter(log => (log as { jobId?: string }).jobId === id)
+
+  // Merge logs: prefer WebSocket logs when connected and available
+  const displayLogs = wsStatus === 'connected' && jobWsLogs.length > 0
+    ? jobWsLogs
+    : logs?.logs || []
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (autoScrollLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [displayLogs, autoScrollLogs])
+
+  // Mutations for job control
   const stopJob = useMutation({
     mutationFn: trainingApi.stop,
     onSuccess: () => {
@@ -79,31 +174,41 @@ export default function TrainingMonitorPage() {
     },
   })
 
-  // Update loss history when job metrics change
-  useEffect(() => {
-    if (job?.metrics?.trainLoss !== undefined && job?.progress?.currentEpoch !== undefined) {
-      setLossHistory(prev => {
-        const epoch = job.progress?.currentEpoch ?? 0
-        // Check if we already have this epoch
-        const existingIndex = prev.findIndex(p => p.epoch === epoch)
-        const newPoint: LossDataPoint = {
-          epoch,
-          trainLoss: job.metrics?.trainLoss ?? null,
-          valLoss: job.metrics?.valLoss ?? null,
-        }
-
-        if (existingIndex >= 0) {
-          // Update existing point
-          const updated = [...prev]
-          updated[existingIndex] = newPoint
-          return updated
-        } else {
-          // Add new point
-          return [...prev, newPoint].sort((a, b) => a.epoch - b.epoch)
-        }
+  const pauseJob = useMutation({
+    mutationFn: trainingApi.pause,
+    onSuccess: () => {
+      toast({
+        title: 'Training Paused',
+        description: 'The training job has been paused. Resume when ready.',
       })
-    }
-  }, [job?.metrics?.trainLoss, job?.metrics?.valLoss, job?.progress?.currentEpoch])
+      queryClient.invalidateQueries({ queryKey: ['training'] })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to pause training',
+        description: error.message,
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const resumeJob = useMutation({
+    mutationFn: trainingApi.resume,
+    onSuccess: () => {
+      toast({
+        title: 'Training Resumed',
+        description: 'The training job is continuing.',
+      })
+      queryClient.invalidateQueries({ queryKey: ['training'] })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to resume training',
+        description: error.message,
+        variant: 'destructive',
+      })
+    },
+  })
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -115,6 +220,8 @@ export default function TrainingMonitorPage() {
         return <Badge variant="destructive">Failed</Badge>
       case 'stopped':
         return <Badge variant="secondary">Stopped</Badge>
+      case 'paused':
+        return <Badge variant="outline" className="border-yellow-500 text-yellow-600">Paused</Badge>
       case 'pending':
         return <Badge variant="outline">Pending</Badge>
       default:
@@ -122,17 +229,29 @@ export default function TrainingMonitorPage() {
     }
   }
 
-  const formatDuration = (createdAt: string) => {
+  const formatDuration = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${secs}s`
+    }
+    return `${secs}s`
+  }
+
+  const formatETA = (seconds: number | undefined) => {
+    if (seconds === undefined || seconds <= 0) return '-'
+    return formatDuration(Math.floor(seconds))
+  }
+
+  const calculateElapsedSeconds = (createdAt: string) => {
     const start = new Date(createdAt)
     const now = new Date()
-    const diffMs = now.getTime() - start.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMins / 60)
-
-    if (diffHours > 0) {
-      return `${diffHours}h ${diffMins % 60}m`
-    }
-    return `${diffMins}m`
+    return Math.floor((now.getTime() - start.getTime()) / 1000)
   }
 
   if (isLoading) {
@@ -159,7 +278,21 @@ export default function TrainingMonitorPage() {
     )
   }
 
-  const isRunning = job.status === 'running'
+  const status = wsProgress?.status || job.status
+  const isRunning = status === 'running'
+  const isPaused = status === 'paused'
+  const isActive = isRunning || isPaused
+
+  // Get progress values
+  const progressPercent = wsProgress?.progress?.percent ?? job.progress?.percent ?? 0
+  const currentEpoch = wsProgress?.epoch ?? job.progress?.currentEpoch ?? 0
+  const totalEpochs = wsProgress?.totalEpochs ?? job.progress?.totalEpochs ?? 100
+  const trainLoss = wsProgress?.trainLoss ?? job.metrics?.trainLoss
+  const valLoss = wsProgress?.valLoss ?? job.metrics?.valLoss
+  const elapsedSeconds = wsProgress?.elapsedSeconds ?? calculateElapsedSeconds(job.createdAt)
+  const etaSeconds = wsProgress?.estimatedRemainingSeconds
+  const patienceCounter = wsProgress?.patienceCounter
+  const patienceMax = wsProgress?.patienceMax
 
   return (
     <div className="space-y-6">
@@ -176,35 +309,65 @@ export default function TrainingMonitorPage() {
               <h1 className="text-2xl font-bold">
                 {job.symbols?.join(', ')} {job.timeframe}
               </h1>
-              {getStatusBadge(job.status)}
+              {getStatusBadge(status)}
+              {/* WebSocket connection indicator */}
+              <span className="ml-2" title={wsStatus === 'connected' ? 'Live updates active' : 'Using polling'}>
+                {wsStatus === 'connected' ? (
+                  <Wifi className="h-4 w-4 text-green-500" />
+                ) : (
+                  <WifiOff className="h-4 w-4 text-muted-foreground" />
+                )}
+              </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Training Job {job.jobId.slice(0, 8)}...
+              Training Job {job.jobId.slice(0, 12)}...
             </p>
           </div>
         </div>
-        {isRunning && (
-          <Button
-            variant="destructive"
-            onClick={() => stopJob.mutate(job.jobId)}
-            disabled={stopJob.isPending}
-          >
-            <Square className="mr-2 h-4 w-4" />
-            Stop Training
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {isRunning && (
+            <Button
+              variant="outline"
+              onClick={() => pauseJob.mutate(job.jobId)}
+              disabled={pauseJob.isPending}
+            >
+              <Pause className="mr-2 h-4 w-4" />
+              Pause
+            </Button>
+          )}
+          {isPaused && (
+            <Button
+              variant="outline"
+              onClick={() => resumeJob.mutate(job.jobId)}
+              disabled={resumeJob.isPending}
+            >
+              <Play className="mr-2 h-4 w-4" />
+              Resume
+            </Button>
+          )}
+          {isActive && (
+            <Button
+              variant="destructive"
+              onClick={() => stopJob.mutate(job.jobId)}
+              disabled={stopJob.isPending}
+            >
+              <Square className="mr-2 h-4 w-4" />
+              Stop
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Progress & Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Progress</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{job.progress?.percent ?? 0}%</div>
-            <Progress value={job.progress?.percent ?? 0} className="mt-2" />
+            <div className="text-2xl font-bold">{progressPercent}%</div>
+            <Progress value={progressPercent} className="mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -214,10 +377,13 @@ export default function TrainingMonitorPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {job.progress?.currentEpoch ?? 0} / {job.progress?.totalEpochs ?? 100}
+              {currentEpoch} / {totalEpochs}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Phase: {job.phase ?? 'Transformer'}
+              Phase: {wsProgress?.phase ?? job.phase ?? 'Transformer'}
+              {patienceMax !== undefined && (
+                <> | Patience: {patienceCounter ?? 0}/{patienceMax}</>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -228,22 +394,34 @@ export default function TrainingMonitorPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {job.metrics?.trainLoss?.toFixed(6) ?? '-'}
+              {trainLoss?.toFixed(6) ?? '-'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Val: {job.metrics?.valLoss?.toFixed(6) ?? '-'}
+              Val: {valLoss?.toFixed(6) ?? '-'}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Duration</CardTitle>
+            <CardTitle className="text-sm font-medium">Elapsed</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatDuration(job.createdAt)}</div>
+            <div className="text-2xl font-bold">{formatDuration(elapsedSeconds)}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Started: {new Date(job.createdAt).toLocaleTimeString()}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">ETA</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatETA(etaSeconds)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {isRunning ? 'Estimated remaining' : isPaused ? 'Paused' : 'Finished'}
             </p>
           </CardContent>
         </Card>
@@ -253,7 +431,7 @@ export default function TrainingMonitorPage() {
       <Card>
         <CardHeader>
           <CardTitle>Training Loss</CardTitle>
-          <CardDescription>Train and validation loss over epochs</CardDescription>
+          <CardDescription>Train and validation loss over epochs (live updates)</CardDescription>
         </CardHeader>
         <CardContent>
           {lossHistory.length > 0 ? (
@@ -287,6 +465,7 @@ export default function TrainingMonitorPage() {
                   dot={false}
                   name="Train Loss"
                   connectNulls
+                  isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
@@ -296,12 +475,13 @@ export default function TrainingMonitorPage() {
                   dot={false}
                   name="Val Loss"
                   connectNulls
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-              {isRunning ? 'Waiting for training data...' : 'No loss data available'}
+              {isActive ? 'Waiting for training data...' : 'No loss data available'}
             </div>
           )}
         </CardContent>
@@ -310,31 +490,46 @@ export default function TrainingMonitorPage() {
       {/* Training Logs */}
       <Card>
         <CardHeader>
-          <CardTitle>Training Logs</CardTitle>
-          <CardDescription>Recent training output</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Training Logs</CardTitle>
+              <CardDescription>Recent training output (live streaming)</CardDescription>
+            </div>
+            {wsStatus === 'connected' && isActive && (
+              <Badge variant="outline" className="text-green-500 border-green-500">
+                <span className="mr-1 h-2 w-2 rounded-full bg-green-500 animate-pulse inline-block" />
+                Live
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="bg-muted rounded-lg p-4 font-mono text-sm max-h-[300px] overflow-y-auto">
-            {logs?.logs && logs.logs.length > 0 ? (
-              logs.logs.slice(-50).map((log, index) => (
-                <div key={index} className="py-0.5">
-                  <span className="text-muted-foreground">{log.timestamp?.slice(11, 19)}</span>
-                  {' '}
-                  <span className={
-                    log.level === 'ERROR' ? 'text-destructive' :
-                    log.level === 'WARNING' ? 'text-yellow-500' :
-                    log.level === 'DEBUG' ? 'text-muted-foreground' :
-                    'text-foreground'
-                  }>
-                    [{log.level}]
-                  </span>
-                  {' '}
-                  <span>{log.message}</span>
-                </div>
-              ))
+            {displayLogs.length > 0 ? (
+              <>
+                {displayLogs.slice(-100).map((log, index) => (
+                  <div key={index} className="py-0.5">
+                    <span className="text-muted-foreground">
+                      {typeof log.timestamp === 'string' ? log.timestamp.slice(11, 19) : ''}
+                    </span>
+                    {' '}
+                    <span className={
+                      log.level === 'ERROR' ? 'text-destructive' :
+                      log.level === 'WARNING' ? 'text-yellow-500' :
+                      log.level === 'DEBUG' ? 'text-muted-foreground' :
+                      'text-foreground'
+                    }>
+                      [{log.level || 'INFO'}]
+                    </span>
+                    {' '}
+                    <span>{log.message}</span>
+                  </div>
+                ))}
+                <div ref={logsEndRef} />
+              </>
             ) : (
               <div className="text-muted-foreground">
-                {isRunning ? 'Waiting for logs...' : 'No logs available'}
+                {isActive ? 'Waiting for logs...' : 'No logs available'}
               </div>
             )}
           </div>

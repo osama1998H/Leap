@@ -58,6 +58,7 @@ class Job:
         self.result: Optional[dict[str, Any]] = None
         self.output_lines: list[str] = []
         self._subscribers: list[Callable] = []
+        self._log_subscribers: list[Callable] = []
         self._background_tasks: set[asyncio.Task] = set()
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,6 +85,15 @@ class Job:
         if callback in self._subscribers:
             self._subscribers.remove(callback)
 
+    def subscribe_logs(self, callback: Callable) -> None:
+        """Subscribe to log updates."""
+        self._log_subscribers.append(callback)
+
+    def unsubscribe_logs(self, callback: Callable) -> None:
+        """Unsubscribe from log updates."""
+        if callback in self._log_subscribers:
+            self._log_subscribers.remove(callback)
+
     async def notify_subscribers(self) -> None:
         """Notify all subscribers of state change."""
         for callback in self._subscribers:
@@ -91,6 +101,14 @@ class Job:
                 await callback(self)
             except Exception as e:
                 logger.error(f"Error notifying subscriber: {e}")
+
+    async def notify_log_subscribers(self, line: str) -> None:
+        """Notify all log subscribers of a new log line."""
+        for callback in self._log_subscribers:
+            try:
+                await callback(self.job_id, line, self.job_type.value)
+            except Exception as e:
+                logger.error(f"Error notifying log subscriber: {e}")
 
 
 class JobManager:
@@ -230,6 +248,7 @@ class JobManager:
         if not job.process or not job.process.stdout:
             return
 
+        last_progress_notify = 0
         try:
             while True:
                 line = await job.process.stdout.readline()
@@ -238,8 +257,18 @@ class JobManager:
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 job.output_lines.append(decoded)
 
+                # Notify log subscribers for real-time streaming
+                await job.notify_log_subscribers(decoded)
+
                 # Parse progress from output
-                self._parse_progress(job, decoded)
+                progress_changed = self._parse_progress(job, decoded)
+
+                # Notify progress subscribers when progress changes
+                if progress_changed:
+                    current_epoch = job.progress.get("currentEpoch", 0)
+                    if current_epoch > last_progress_notify:
+                        await job.notify_subscribers()
+                        last_progress_notify = current_epoch
 
                 # Keep only last 1000 lines
                 if len(job.output_lines) > 1000:
@@ -264,39 +293,69 @@ class JobManager:
             await job.notify_subscribers()
             logger.info(f"Job {job.job_id} finished with status {job.status.value}")
 
-    def _parse_progress(self, job: Job, line: str) -> None:
-        """Parse progress from output line."""
+    def _parse_progress(self, job: Job, line: str) -> bool:
+        """Parse progress from output line. Returns True if progress changed."""
+        import re
+        changed = False
+
         # Parse training epoch progress
+        # Format: "Epoch 1/100 - train_loss: 0.123456 - val_loss: 0.234567 - lr: 1.00e-04"
         if "Epoch" in line and "/" in line:
             try:
-                # Example: "Epoch 45/100"
-                parts = line.split("Epoch")[1].split()[0].split("/")
-                if len(parts) == 2:
-                    current = int(parts[0])
-                    total = int(parts[1])
+                # Extract epoch numbers
+                epoch_match = re.search(r"Epoch\s+(\d+)/(\d+)", line)
+                if epoch_match:
+                    current = int(epoch_match.group(1))
+                    total = int(epoch_match.group(2))
+                    if job.progress.get("currentEpoch") != current:
+                        changed = True
                     job.progress["currentEpoch"] = current
                     job.progress["totalEpochs"] = total
                     job.progress["percent"] = int((current / total) * 100)
+
+                # Extract train_loss
+                train_loss_match = re.search(r"train_loss:\s*([\d.]+)", line)
+                if train_loss_match:
+                    job.progress["trainLoss"] = float(train_loss_match.group(1))
+                    changed = True
+
+                # Extract val_loss
+                val_loss_match = re.search(r"val_loss:\s*([\d.]+)", line)
+                if val_loss_match:
+                    job.progress["valLoss"] = float(val_loss_match.group(1))
+                    changed = True
+
+                # Extract learning rate
+                lr_match = re.search(r"lr:\s*([\d.e+-]+)", line)
+                if lr_match:
+                    job.progress["learningRate"] = float(lr_match.group(1))
+
+                # Extract patience (format: patience: 0/10)
+                patience_match = re.search(r"patience:\s*(\d+)/(\d+)", line)
+                if patience_match:
+                    job.progress["patienceCounter"] = int(patience_match.group(1))
+                    job.progress["patienceMax"] = int(patience_match.group(2))
+
             except (IndexError, ValueError):
                 pass
 
-        # Parse loss values
-        if "loss" in line.lower():
+        # Also handle legacy format: "Training loss: X.XXXX" or "Validation loss: X.XXXX"
+        elif "loss" in line.lower():
             try:
-                if "train_loss" in line or "Training loss" in line:
-                    # Parse train loss
-                    for part in line.split():
-                        if part.replace(".", "").replace("-", "").isdigit():
-                            job.progress["trainLoss"] = float(part)
-                            break
-                if "val_loss" in line or "Validation loss" in line:
-                    # Parse validation loss
-                    for part in line.split():
-                        if part.replace(".", "").replace("-", "").isdigit():
-                            job.progress["valLoss"] = float(part)
-                            break
+                if "Training loss" in line:
+                    match = re.search(r"Training loss:\s*([\d.]+)", line)
+                    if match:
+                        job.progress["trainLoss"] = float(match.group(1))
+                        changed = True
+                if "Validation loss" in line:
+                    match = re.search(r"Validation loss:\s*([\d.]+)", line)
+                    if match:
+                        job.progress["valLoss"] = float(match.group(1))
+                        changed = True
             except (IndexError, ValueError):
                 pass
+
+        return changed
 
     async def stop_job(self, job_id: str) -> Job:
         """Stop a running job."""
@@ -304,7 +363,7 @@ class JobManager:
         if not job:
             raise ValueError(f"Job {job_id} not found")
 
-        if job.status not in [JobStatus.RUNNING, JobStatus.STARTING]:
+        if job.status not in [JobStatus.RUNNING, JobStatus.STARTING, JobStatus.PAUSED]:
             raise ValueError(f"Job {job_id} is not running")
 
         if job.process:
@@ -319,6 +378,52 @@ class JobManager:
         job.completed_at = datetime.utcnow()
         await job.notify_subscribers()
         logger.info(f"Stopped job {job_id}")
+        return job
+
+    async def pause_job(self, job_id: str) -> Job:
+        """Pause a running job by sending SIGSTOP."""
+        import signal
+
+        job = self.jobs.get(job_id)
+        if not job:
+            raise ValueError(f"Job {job_id} not found")
+
+        if job.status != JobStatus.RUNNING:
+            raise ValueError(f"Job {job_id} is not running (current status: {job.status.value})")
+
+        if job.process and job.process.pid:
+            try:
+                import os
+                os.kill(job.process.pid, signal.SIGSTOP)
+                job.status = JobStatus.PAUSED
+                await job.notify_subscribers()
+                logger.info(f"Paused job {job_id}")
+            except OSError as e:
+                raise ValueError(f"Failed to pause job {job_id}: {e}")
+
+        return job
+
+    async def resume_job(self, job_id: str) -> Job:
+        """Resume a paused job by sending SIGCONT."""
+        import signal
+
+        job = self.jobs.get(job_id)
+        if not job:
+            raise ValueError(f"Job {job_id} not found")
+
+        if job.status != JobStatus.PAUSED:
+            raise ValueError(f"Job {job_id} is not paused (current status: {job.status.value})")
+
+        if job.process and job.process.pid:
+            try:
+                import os
+                os.kill(job.process.pid, signal.SIGCONT)
+                job.status = JobStatus.RUNNING
+                await job.notify_subscribers()
+                logger.info(f"Resumed job {job_id}")
+            except OSError as e:
+                raise ValueError(f"Failed to resume job {job_id}: {e}")
+
         return job
 
     def get_job(self, job_id: str) -> Optional[Job]:

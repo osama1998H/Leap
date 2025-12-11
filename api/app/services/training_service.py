@@ -97,6 +97,16 @@ class TrainingService:
         job = await self.job_manager.stop_job(job_id)
         return self._job_to_response(job)
 
+    async def pause_job(self, job_id: str) -> TrainingJobData:
+        """Pause a running training job."""
+        job = await self.job_manager.pause_job(job_id)
+        return self._job_to_response(job)
+
+    async def resume_job(self, job_id: str) -> TrainingJobData:
+        """Resume a paused training job."""
+        job = await self.job_manager.resume_job(job_id)
+        return self._job_to_response(job)
+
     def get_job_logs(
         self,
         job_id: str,
