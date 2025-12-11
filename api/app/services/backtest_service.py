@@ -154,7 +154,7 @@ class BacktestService:
             results, key=lambda r: r.metrics.risk_adjusted.sharpe_ratio if r.metrics else 0
         )
         best_by_drawdown = max(
-            results, key=lambda r: r.metrics.risk.max_drawdown if r.metrics else -1
+            results, key=lambda r: r.metrics.risk.max_drawdown if r.metrics else float('-inf')
         )
 
         return BacktestCompareData(

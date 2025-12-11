@@ -171,8 +171,8 @@ class ModelsService:
             try:
                 with open(metadata_file) as f:
                     return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading metadata from {metadata_file}: {e}")
+            except (json.JSONDecodeError, IOError, OSError) as e:
+                logger.exception(f"Error loading metadata from {metadata_file}")
         return {}
 
     def _load_config(self, path: Path) -> Optional[dict[str, Any]]:
@@ -182,8 +182,8 @@ class ModelsService:
             try:
                 with open(config_file) as f:
                     return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading config from {config_file}: {e}")
+            except (json.JSONDecodeError, IOError, OSError) as e:
+                logger.exception(f"Error loading config from {config_file}")
         return None
 
 

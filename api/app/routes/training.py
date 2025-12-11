@@ -33,7 +33,10 @@ async def list_training_jobs(
     offset: int = Query(0, ge=0),
 ):
     """List training jobs."""
-    jobs, total = await training_service.list_jobs(status, symbol, limit, offset)
+    try:
+        jobs, total = await training_service.list_jobs(status, symbol, limit, offset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return TrainingJobListResponse(
         data=TrainingJobListData(
             jobs=jobs,

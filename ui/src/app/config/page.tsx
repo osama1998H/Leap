@@ -151,7 +151,7 @@ export default function ConfigPage() {
                   <Label>Lookback Window</Label>
                   <Input
                     type="number"
-                    value={formData.data?.lookbackWindow || 120}
+                    value={formData.data?.lookbackWindow ?? 120}
                     onChange={(e) => updateField('data', 'lookbackWindow', parseInt(e.target.value))}
                   />
                 </div>
@@ -160,7 +160,7 @@ export default function ConfigPage() {
                   <Label>Prediction Horizon</Label>
                   <Input
                     type="number"
-                    value={formData.data?.predictionHorizon || 12}
+                    value={formData.data?.predictionHorizon ?? 12}
                     onChange={(e) => updateField('data', 'predictionHorizon', parseInt(e.target.value))}
                   />
                 </div>
@@ -219,7 +219,7 @@ export default function ConfigPage() {
                   <Label>Encoder Layers</Label>
                   <Input
                     type="number"
-                    value={formData.transformer?.nEncoderLayers || 4}
+                    value={formData.transformer?.nEncoderLayers ?? 4}
                     onChange={(e) => updateField('transformer', 'nEncoderLayers', parseInt(e.target.value))}
                     min={1}
                     max={12}
@@ -230,7 +230,7 @@ export default function ConfigPage() {
                   <Label>Dropout</Label>
                   <Input
                     type="number"
-                    value={formData.transformer?.dropout || 0.1}
+                    value={formData.transformer?.dropout ?? 0.1}
                     onChange={(e) => updateField('transformer', 'dropout', parseFloat(e.target.value))}
                     step={0.05}
                     min={0}
@@ -242,7 +242,7 @@ export default function ConfigPage() {
                   <Label>Learning Rate</Label>
                   <Input
                     type="text"
-                    value={formData.transformer?.learningRate || 0.0001}
+                    value={formData.transformer?.learningRate ?? 0.0001}
                     onChange={(e) => updateField('transformer', 'learningRate', parseFloat(e.target.value))}
                   />
                 </div>
@@ -251,7 +251,7 @@ export default function ConfigPage() {
                   <Label>Epochs</Label>
                   <Input
                     type="number"
-                    value={formData.transformer?.epochs || 100}
+                    value={formData.transformer?.epochs ?? 100}
                     onChange={(e) => updateField('transformer', 'epochs', parseInt(e.target.value))}
                     min={1}
                     max={1000}
@@ -274,7 +274,7 @@ export default function ConfigPage() {
                   <Label>Learning Rate</Label>
                   <Input
                     type="text"
-                    value={formData.ppo?.learningRate || 0.0003}
+                    value={formData.ppo?.learningRate ?? 0.0003}
                     onChange={(e) => updateField('ppo', 'learningRate', parseFloat(e.target.value))}
                   />
                 </div>
@@ -283,7 +283,7 @@ export default function ConfigPage() {
                   <Label>Gamma (Discount Factor)</Label>
                   <Input
                     type="number"
-                    value={formData.ppo?.gamma || 0.99}
+                    value={formData.ppo?.gamma ?? 0.99}
                     onChange={(e) => updateField('ppo', 'gamma', parseFloat(e.target.value))}
                     step={0.01}
                     min={0.9}
@@ -295,7 +295,7 @@ export default function ConfigPage() {
                   <Label>GAE Lambda</Label>
                   <Input
                     type="number"
-                    value={formData.ppo?.gaeLambda || 0.95}
+                    value={formData.ppo?.gaeLambda ?? 0.95}
                     onChange={(e) => updateField('ppo', 'gaeLambda', parseFloat(e.target.value))}
                     step={0.01}
                     min={0.9}
@@ -307,7 +307,7 @@ export default function ConfigPage() {
                   <Label>Clip Epsilon</Label>
                   <Input
                     type="number"
-                    value={formData.ppo?.clipEpsilon || 0.2}
+                    value={formData.ppo?.clipEpsilon ?? 0.2}
                     onChange={(e) => updateField('ppo', 'clipEpsilon', parseFloat(e.target.value))}
                     step={0.05}
                     min={0.1}
@@ -319,7 +319,7 @@ export default function ConfigPage() {
                   <Label>Total Timesteps</Label>
                   <Input
                     type="number"
-                    value={formData.ppo?.totalTimesteps || 1000000}
+                    value={formData.ppo?.totalTimesteps ?? 1000000}
                     onChange={(e) => updateField('ppo', 'totalTimesteps', parseInt(e.target.value))}
                     step={10000}
                     min={10000}
@@ -342,7 +342,7 @@ export default function ConfigPage() {
                   <Label>Max Position Size (%)</Label>
                   <Input
                     type="number"
-                    value={(formData.risk?.maxPositionSize || 0.02) * 100}
+                    value={(formData.risk?.maxPositionSize ?? 0.02) * 100}
                     onChange={(e) => updateField('risk', 'maxPositionSize', parseFloat(e.target.value) / 100)}
                     step={0.5}
                     min={0.5}
@@ -354,7 +354,7 @@ export default function ConfigPage() {
                   <Label>Max Daily Loss (%)</Label>
                   <Input
                     type="number"
-                    value={(formData.risk?.maxDailyLoss || 0.05) * 100}
+                    value={(formData.risk?.maxDailyLoss ?? 0.05) * 100}
                     onChange={(e) => updateField('risk', 'maxDailyLoss', parseFloat(e.target.value) / 100)}
                     step={1}
                     min={1}
@@ -366,7 +366,7 @@ export default function ConfigPage() {
                   <Label>Default Stop Loss (pips)</Label>
                   <Input
                     type="number"
-                    value={formData.risk?.defaultStopLossPips || 50}
+                    value={formData.risk?.defaultStopLossPips ?? 50}
                     onChange={(e) => updateField('risk', 'defaultStopLossPips', parseInt(e.target.value))}
                     min={10}
                     max={200}
@@ -377,7 +377,7 @@ export default function ConfigPage() {
                   <Label>Default Take Profit (pips)</Label>
                   <Input
                     type="number"
-                    value={formData.risk?.defaultTakeProfitPips || 100}
+                    value={formData.risk?.defaultTakeProfitPips ?? 100}
                     onChange={(e) => updateField('risk', 'defaultTakeProfitPips', parseInt(e.target.value))}
                     min={10}
                     max={500}
@@ -400,7 +400,7 @@ export default function ConfigPage() {
                   <Label>Initial Balance ($)</Label>
                   <Input
                     type="number"
-                    value={formData.backtest?.initialBalance || 10000}
+                    value={formData.backtest?.initialBalance ?? 10000}
                     onChange={(e) => updateField('backtest', 'initialBalance', parseInt(e.target.value))}
                     min={1000}
                     step={1000}
@@ -411,7 +411,7 @@ export default function ConfigPage() {
                   <Label>Leverage</Label>
                   <Input
                     type="number"
-                    value={formData.backtest?.leverage || 100}
+                    value={formData.backtest?.leverage ?? 100}
                     onChange={(e) => updateField('backtest', 'leverage', parseInt(e.target.value))}
                     min={1}
                     max={500}
@@ -422,7 +422,7 @@ export default function ConfigPage() {
                   <Label>Spread (pips)</Label>
                   <Input
                     type="number"
-                    value={formData.backtest?.spreadPips || 1.5}
+                    value={formData.backtest?.spreadPips ?? 1.5}
                     onChange={(e) => updateField('backtest', 'spreadPips', parseFloat(e.target.value))}
                     step={0.1}
                     min={0}
@@ -433,7 +433,7 @@ export default function ConfigPage() {
                   <Label>Commission per Lot ($)</Label>
                   <Input
                     type="number"
-                    value={formData.backtest?.commissionPerLot || 7}
+                    value={formData.backtest?.commissionPerLot ?? 7}
                     onChange={(e) => updateField('backtest', 'commissionPerLot', parseFloat(e.target.value))}
                     step={0.5}
                     min={0}

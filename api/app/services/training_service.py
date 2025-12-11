@@ -56,18 +56,32 @@ class TrainingService:
         offset: int = 0,
     ) -> tuple[list[TrainingJobData], int]:
         """List training jobs."""
-        job_status = JobStatus(status) if status else None
+        # Validate status parameter
+        job_status = None
+        if status:
+            try:
+                job_status = JobStatus(status)
+            except ValueError:
+                raise ValueError(f"Invalid status: {status}. Valid values: {[s.value for s in JobStatus]}")
 
-        jobs, total = self.job_manager.list_jobs(
+        # Get all jobs when symbol filter is specified to ensure correct pagination
+        fetch_limit = 1000 if symbol else limit
+        fetch_offset = 0 if symbol else offset
+
+        jobs, _ = self.job_manager.list_jobs(
             job_type=JobType.TRAINING,
             status=job_status,
-            limit=limit,
-            offset=offset,
+            limit=fetch_limit,
+            offset=fetch_offset,
         )
 
         # Filter by symbol if specified
         if symbol:
             jobs = [j for j in jobs if symbol in j.config.get("symbols", [])]
+            total = len(jobs)
+            jobs = jobs[offset : offset + limit]
+        else:
+            total = len(jobs)
 
         return [self._job_to_response(j) for j in jobs], total
 

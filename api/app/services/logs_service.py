@@ -45,17 +45,28 @@ class LogsService:
         offset: int = 0,
     ) -> tuple[list[LogLine], int]:
         """Get log file contents."""
+        # Validate filename to prevent path traversal
+        if not filename or "/" in filename or "\\" in filename or filename.startswith("."):
+            return [], 0
+
         log_path = self.logs_dir / filename
 
-        if not log_path.exists():
+        # Ensure resolved path is still within logs_dir
+        try:
+            resolved_path = log_path.resolve()
+            resolved_path.relative_to(self.logs_dir.resolve())
+        except (ValueError, OSError):
+            logger.warning(f"Path traversal attempt detected: {filename}")
+            return [], 0
+
+        if not resolved_path.exists():
             return [], 0
 
         lines = []
-        total_lines = 0
+        filtered_total = 0
 
-        with open(log_path, encoding="utf-8", errors="replace") as f:
+        with open(resolved_path, encoding="utf-8", errors="replace") as f:
             all_lines = f.readlines()
-            total_lines = len(all_lines)
 
             for i, line in enumerate(all_lines):
                 line = line.rstrip()
@@ -73,11 +84,12 @@ class LogsService:
                     continue
 
                 lines.append(parsed)
+                filtered_total += 1
 
         # Apply pagination
         lines = lines[offset : offset + limit]
 
-        return lines, total_lines
+        return lines, filtered_total
 
     def _parse_log_line(self, line_number: int, line: str) -> LogLine:
         """Parse a log line into structured format."""

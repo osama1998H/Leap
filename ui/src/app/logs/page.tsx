@@ -32,7 +32,7 @@ export default function LogsPage() {
     refetchInterval: 5000,
   })
 
-  const getLevelColor = (logLevel?: string) => {
+  const getLevelColor = (logLevel?: string): "default" | "secondary" | "destructive" | "outline" | "success" | "warning" => {
     switch (logLevel?.toUpperCase()) {
       case 'ERROR':
         return 'destructive'
@@ -164,7 +164,7 @@ export default function LogsPage() {
                       )}
                       {line.level && (
                         <Badge
-                          variant={getLevelColor(line.level) as any}
+                          variant={getLevelColor(line.level)}
                           className="h-5 px-1 text-xs flex-shrink-0"
                         >
                           {line.level.padEnd(7)}
