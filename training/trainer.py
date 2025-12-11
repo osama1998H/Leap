@@ -82,6 +82,11 @@ class ModelTrainer:
         logger.info(f"Training Transformer predictor for {epochs} epochs...")
         logger.info(f"Training data shape: {X_train.shape}")
 
+        # MLflow 3: Create datasets for tracking
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.create_dataset(X_train, "predictor_train", "training")
+            self.mlflow_tracker.create_dataset(X_val, "predictor_val", "validation")
+
         # Create MLflow callback for epoch-level logging
         mlflow_callback = None
         if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
@@ -125,12 +130,23 @@ class ModelTrainer:
                 "predictor", final_metrics, training_duration
             )
 
-            # Log model to MLflow
+            # Log model to MLflow (MLflow 3: creates LoggedModel)
             if hasattr(self.predictor, 'model') and hasattr(self.predictor, 'input_dim'):
                 self.mlflow_tracker.log_predictor_model(
                     model=self.predictor.model,
                     input_dim=self.predictor.input_dim,
                     seq_length=X_train.shape[1] if len(X_train.shape) > 1 else 120
+                )
+
+                # MLflow 3: Link final metrics to model and validation dataset
+                self.mlflow_tracker.log_model_metrics(
+                    metrics={
+                        "final_train_loss": final_metrics["train_loss"],
+                        "final_val_loss": final_metrics["val_loss"],
+                        "best_val_loss": final_metrics["best_val_loss"],
+                    },
+                    model_name="predictor",
+                    dataset_name="predictor_val"
                 )
 
         # Save checkpoint
@@ -239,11 +255,21 @@ class ModelTrainer:
                 "agent", final_metrics, training_duration
             )
 
-            # Log model to MLflow
+            # Log model to MLflow (MLflow 3: creates LoggedModel)
             if hasattr(self.agent, 'network') and hasattr(self.agent, 'state_dim'):
                 self.mlflow_tracker.log_agent_model(
                     model=self.agent.network,
                     state_dim=self.agent.state_dim
+                )
+
+                # MLflow 3: Link final metrics to agent model
+                self.mlflow_tracker.log_model_metrics(
+                    metrics={
+                        "final_reward": final_metrics["final_reward"],
+                        "total_episodes": float(final_metrics["total_episodes"]),
+                        "avg_episode_length": final_metrics["avg_episode_length"],
+                    },
+                    model_name="agent"
                 )
 
         # Save checkpoint

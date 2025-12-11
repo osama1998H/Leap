@@ -3,6 +3,11 @@ Leap Trading System - MLflow Experiment Tracking
 
 Centralized MLflow tracking for experiment management, model versioning,
 and metrics logging across the trading system.
+
+MLflow 3 Features:
+- LoggedModel: First-class model entities with unique IDs
+- Dataset tracking: Link metrics to specific datasets
+- Model-metric linking: Associate metrics with model versions
 """
 
 import logging
@@ -12,11 +17,13 @@ from typing import Any, Dict, List, Optional, Union
 from contextlib import contextmanager
 
 import numpy as np
+import pandas as pd
 
 try:
     import torch
     import mlflow
     import mlflow.pytorch
+    import mlflow.data
     from mlflow.models import infer_signature
     MLFLOW_AVAILABLE = True
 except ImportError:
@@ -65,9 +72,13 @@ class MLflowTracker:
         self._is_setup = False
         self._system_metrics_available = False
 
+        # MLflow 3: Track datasets and logged models
+        self._datasets: Dict[str, Any] = {}  # name -> Dataset object
+        self._logged_models: Dict[str, str] = {}  # name -> model_id
+
         if not MLFLOW_AVAILABLE:
             logger.warning(
-                "MLflow is not installed. Install with: pip install mlflow"
+                "MLflow is not installed. Install with: pip install 'mlflow>=3'"
             )
 
     @property
@@ -264,6 +275,160 @@ class MLflowTracker:
         except Exception as e:
             logger.warning(f"Failed to log artifacts from {local_dir}: {e}")
 
+    # =========================================================================
+    # MLflow 3: Dataset Tracking
+    # =========================================================================
+
+    def create_dataset(
+        self,
+        data: Union[pd.DataFrame, np.ndarray],
+        name: str,
+        context: str = "training"
+    ) -> Optional[Any]:
+        """Create and log an MLflow dataset for tracking.
+
+        MLflow 3 Feature: Datasets can be linked to metrics for full lineage.
+
+        Args:
+            data: DataFrame or numpy array to track
+            name: Dataset name (e.g., "train", "val", "test")
+            context: Context for the dataset ("training", "validation", "testing")
+
+        Returns:
+            MLflow Dataset object if successful, None otherwise
+        """
+        if not self.is_enabled:
+            return None
+
+        try:
+            # Convert numpy array to DataFrame if needed
+            if isinstance(data, np.ndarray):
+                if data.ndim == 1:
+                    df = pd.DataFrame({"data": data})
+                elif data.ndim == 2:
+                    df = pd.DataFrame(data)
+                else:
+                    # For 3D data (sequences), flatten for tracking
+                    df = pd.DataFrame({
+                        "shape": [str(data.shape)],
+                        "samples": [data.shape[0]],
+                        "seq_length": [data.shape[1] if data.ndim > 1 else 1],
+                        "features": [data.shape[2] if data.ndim > 2 else data.shape[1] if data.ndim > 1 else 1]
+                    })
+            else:
+                df = data
+
+            # Create MLflow dataset
+            dataset = mlflow.data.from_pandas(df, name=name)
+
+            # Log as input
+            mlflow.log_input(dataset, context=context)
+
+            # Store for later reference
+            self._datasets[name] = dataset
+
+            logger.info(f"Created dataset '{name}' with context '{context}'")
+            return dataset
+
+        except Exception as e:
+            logger.warning(f"Failed to create dataset {name}: {e}")
+            return None
+
+    def get_dataset(self, name: str) -> Optional[Any]:
+        """Get a previously created dataset by name.
+
+        Args:
+            name: Dataset name
+
+        Returns:
+            MLflow Dataset object if found, None otherwise
+        """
+        return self._datasets.get(name)
+
+    def log_model_metrics(
+        self,
+        metrics: Dict[str, float],
+        model_name: str,
+        dataset_name: Optional[str] = None,
+        step: Optional[int] = None
+    ) -> None:
+        """Log metrics linked to a specific model and optionally a dataset.
+
+        MLflow 3 Feature: Links metrics to LoggedModel entities for tracking
+        model performance across different datasets.
+
+        Args:
+            metrics: Dictionary of metric names and values
+            model_name: Name of the logged model (e.g., "predictor", "agent")
+            dataset_name: Optional dataset name to link metrics to
+            step: Optional step number
+        """
+        if not self.is_enabled:
+            return
+
+        try:
+            model_id = self._logged_models.get(model_name)
+            dataset = self._datasets.get(dataset_name) if dataset_name else None
+
+            if model_id:
+                # Use MLflow 3's model-linked metrics
+                mlflow.log_metrics(
+                    metrics=metrics,
+                    step=step,
+                    model_id=model_id,
+                    dataset=dataset
+                )
+                logger.debug(
+                    f"Logged metrics linked to model '{model_name}'"
+                    + (f" and dataset '{dataset_name}'" if dataset_name else "")
+                )
+            else:
+                # Fallback to regular metrics
+                mlflow.log_metrics(metrics, step=step)
+                logger.debug(f"Logged metrics (no model link): {list(metrics.keys())}")
+
+        except Exception as e:
+            # Fallback for older MLflow versions
+            logger.debug(f"Model-linked metrics not available, using standard: {e}")
+            mlflow.log_metrics(metrics, step=step)
+
+    def get_logged_model(self, model_name: str) -> Optional[Any]:
+        """Get a LoggedModel by name.
+
+        Args:
+            model_name: Name of the model (e.g., "predictor", "agent")
+
+        Returns:
+            LoggedModel object if found, None otherwise
+        """
+        if not self.is_enabled:
+            return None
+
+        model_id = self._logged_models.get(model_name)
+        if not model_id:
+            return None
+
+        try:
+            return mlflow.get_logged_model(model_id)
+        except Exception as e:
+            logger.warning(f"Failed to get logged model {model_name}: {e}")
+            return None
+
+    def get_model_id(self, model_name: str) -> Optional[str]:
+        """Get the model ID for a logged model.
+
+        Args:
+            model_name: Name of the model
+
+        Returns:
+            Model ID string if found, None otherwise
+        """
+        return self._logged_models.get(model_name)
+
+    # =========================================================================
+    # End MLflow 3 Dataset Tracking
+    # =========================================================================
+
     def log_predictor_params(
         self,
         config: TransformerConfig,
@@ -328,9 +493,12 @@ class MLflowTracker:
         registered_model_name: Optional[str] = None,
         input_example: Optional[np.ndarray] = None,
         signature=None,
-        extra_files: Optional[List[str]] = None
+        extra_files: Optional[List[str]] = None,
+        model_params: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
         """Log a PyTorch model to MLflow.
+
+        MLflow 3: Creates a LoggedModel entity with unique ID for tracking.
 
         Args:
             model: PyTorch nn.Module to log
@@ -339,6 +507,7 @@ class MLflowTracker:
             input_example: Sample input for signature inference
             signature: Model signature (inferred if input_example provided)
             extra_files: Additional files to include with model
+            model_params: MLflow 3 - Model parameters to attach to LoggedModel
 
         Returns:
             Model URI if successful, None otherwise
@@ -390,18 +559,32 @@ class MLflowTracker:
             if self.config.register_models and registered_model_name:
                 register_name = registered_model_name
 
-            # Log the model
-            # Note: artifact_path is deprecated, use name instead
-            model_info = mlflow.pytorch.log_model(
-                pytorch_model=model,
-                name=artifact_path,
-                signature=signature,
-                input_example=input_example,
-                registered_model_name=register_name,
-                extra_files=extra_files
-            )
+            # Log the model with MLflow 3 params support
+            log_kwargs = {
+                "pytorch_model": model,
+                "name": artifact_path,
+                "signature": signature,
+                "input_example": input_example,
+                "registered_model_name": register_name,
+                "extra_files": extra_files,
+            }
 
-            logger.info(f"Logged PyTorch model: {artifact_path}")
+            # MLflow 3: Add params for LoggedModel
+            if model_params:
+                log_kwargs["params"] = model_params
+
+            model_info = mlflow.pytorch.log_model(**log_kwargs)
+
+            # MLflow 3: Store model_id for later metric linking
+            if hasattr(model_info, 'model_id') and model_info.model_id:
+                self._logged_models[artifact_path] = model_info.model_id
+                logger.info(
+                    f"Logged PyTorch model: {artifact_path} "
+                    f"(model_id: {model_info.model_id})"
+                )
+            else:
+                logger.info(f"Logged PyTorch model: {artifact_path}")
+
             if register_name:
                 logger.info(f"Registered model as: {register_name}")
 
@@ -415,14 +598,18 @@ class MLflowTracker:
         self,
         model,
         input_dim: int,
-        seq_length: int = 120
+        seq_length: int = 120,
+        model_config: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
         """Log Transformer predictor model with proper signature.
+
+        MLflow 3: Creates LoggedModel with params for model tracking.
 
         Args:
             model: TransformerPredictor model
             input_dim: Number of input features
             seq_length: Sequence length
+            model_config: Optional model configuration to attach as params
 
         Returns:
             Model URI if successful, None otherwise
@@ -464,24 +651,38 @@ class MLflowTracker:
         except Exception as e:
             logger.warning(f"Could not infer predictor signature: {e}")
 
+        # MLflow 3: Build model params
+        model_params = {
+            "input_dim": input_dim,
+            "seq_length": seq_length,
+            "model_type": "transformer_predictor",
+        }
+        if model_config:
+            model_params.update(model_config)
+
         return self.log_pytorch_model(
             model=model,
             artifact_path="predictor",
             registered_model_name=self.config.registered_model_name_predictor,
             input_example=None,  # Skip input_example to avoid dict output validation error
-            signature=signature
+            signature=signature,
+            model_params=model_params
         )
 
     def log_agent_model(
         self,
         model,
-        state_dim: int
+        state_dim: int,
+        model_config: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
         """Log PPO agent model with proper signature.
+
+        MLflow 3: Creates LoggedModel with params for model tracking.
 
         Args:
             model: PPOAgent network
             state_dim: State dimension
+            model_config: Optional model configuration to attach as params
 
         Returns:
             Model URI if successful, None otherwise
@@ -514,12 +715,21 @@ class MLflowTracker:
         except Exception as e:
             logger.warning(f"Could not infer agent signature: {e}")
 
+        # MLflow 3: Build model params
+        model_params = {
+            "state_dim": state_dim,
+            "model_type": "ppo_agent",
+        }
+        if model_config:
+            model_params.update(model_config)
+
         return self.log_pytorch_model(
             model=model,
             artifact_path="agent",
             registered_model_name=self.config.registered_model_name_agent,
             input_example=None,  # Skip input_example to avoid tuple output validation error
-            signature=signature
+            signature=signature,
+            model_params=model_params
         )
 
     def log_backtest_results(
