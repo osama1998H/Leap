@@ -607,26 +607,30 @@ class LeapTradingSystem:
                 available_cols = [c for c in all_cols if c in train_data.columns]
                 train_features = train_data[available_cols].values
 
-                # Create sequences (X) and targets (y)
-                sequences = []
-                targets = []
+                # Create sequences (X) and targets (y) - VECTORIZED
+                n_samples = len(train_features) - lookback_window - prediction_horizon
 
-                for i in range(len(train_features) - lookback_window - prediction_horizon):
-                    seq = train_features[i:i + lookback_window]
-                    # Target is the return after prediction_horizon bars
-                    future_close = train_data['close'].iloc[i + lookback_window + prediction_horizon - 1]
-                    current_close = train_data['close'].iloc[i + lookback_window - 1]
-                    target_return = (future_close - current_close) / current_close
-
-                    sequences.append(seq)
-                    targets.append(target_return)
-
-                if len(sequences) < 100:
-                    logger.warning(f"Insufficient training data in fold: {len(sequences)} sequences")
+                if n_samples < 100:
+                    logger.warning(f"Insufficient training data in fold: {n_samples} sequences")
                     return None
 
-                X_train = np.array(sequences)
-                y_train = np.array(targets).reshape(-1, 1)
+                # Use numpy sliding window for efficient sequence creation
+                from numpy.lib.stride_tricks import sliding_window_view
+
+                # Create sliding windows: shape (n_windows, lookback_window, n_features)
+                X_train = sliding_window_view(train_features, window_shape=lookback_window, axis=0)
+                X_train = X_train[:n_samples].copy()  # Copy for contiguous array
+
+                # Vectorized target computation: returns from current to future close
+                close_prices = train_data['close'].values
+                current_indices = np.arange(lookback_window - 1, lookback_window - 1 + n_samples)
+                future_indices = current_indices + prediction_horizon
+
+                current_close = close_prices[current_indices]
+                future_close = close_prices[future_indices]
+                targets = (future_close - current_close) / (current_close + 1e-10)
+
+                y_train = targets.reshape(-1, 1)
 
                 # Split into train/val (80/20)
                 split_idx = int(len(X_train) * 0.8)
