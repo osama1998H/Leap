@@ -17,6 +17,12 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        heading: ['Poppins', 'Arial', 'sans-serif'],
+        body: ['Lora', 'Georgia', 'serif'],
+        sans: ['Poppins', 'Arial', 'sans-serif'],
+        serif: ['Lora', 'Georgia', 'serif'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -53,6 +59,14 @@ module.exports = {
         },
         profit: "hsl(var(--profit))",
         loss: "hsl(var(--loss))",
+        // Anthropic brand accent colors
+        brand: {
+          orange: "#d97757",
+          blue: "#6a9bcc",
+          green: "#788c5d",
+          dark: "#141413",
+          light: "#faf9f5",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -68,10 +82,15 @@ module.exports = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "pulse-slow": {
+          "0%, 100%": { opacity: "0.6", transform: "scale(1)" },
+          "50%": { opacity: "1", transform: "scale(1.05)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-slow": "pulse-slow 3s ease-in-out infinite",
       },
     },
   },
