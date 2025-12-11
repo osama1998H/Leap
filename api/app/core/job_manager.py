@@ -295,41 +295,57 @@ class JobManager:
 
     def _parse_progress(self, job: Job, line: str) -> bool:
         """Parse progress from output line. Returns True if progress changed."""
+        import re
         changed = False
 
         # Parse training epoch progress
+        # Format: "Epoch 1/100 - train_loss: 0.123456 - val_loss: 0.234567 - lr: 1.00e-04"
         if "Epoch" in line and "/" in line:
             try:
-                # Example: "Epoch 45/100"
-                parts = line.split("Epoch")[1].split()[0].split("/")
-                if len(parts) == 2:
-                    current = int(parts[0])
-                    total = int(parts[1])
+                # Extract epoch numbers
+                epoch_match = re.search(r"Epoch\s+(\d+)/(\d+)", line)
+                if epoch_match:
+                    current = int(epoch_match.group(1))
+                    total = int(epoch_match.group(2))
                     if job.progress.get("currentEpoch") != current:
                         changed = True
                     job.progress["currentEpoch"] = current
                     job.progress["totalEpochs"] = total
                     job.progress["percent"] = int((current / total) * 100)
+
+                # Extract train_loss
+                train_loss_match = re.search(r"train_loss:\s*([\d.]+)", line)
+                if train_loss_match:
+                    job.progress["trainLoss"] = float(train_loss_match.group(1))
+                    changed = True
+
+                # Extract val_loss
+                val_loss_match = re.search(r"val_loss:\s*([\d.]+)", line)
+                if val_loss_match:
+                    job.progress["valLoss"] = float(val_loss_match.group(1))
+                    changed = True
+
+                # Extract learning rate
+                lr_match = re.search(r"lr:\s*([\d.e+-]+)", line)
+                if lr_match:
+                    job.progress["learningRate"] = float(lr_match.group(1))
+
             except (IndexError, ValueError):
                 pass
 
-        # Parse loss values
-        if "loss" in line.lower():
+        # Also handle legacy format: "Training loss: X.XXXX" or "Validation loss: X.XXXX"
+        elif "loss" in line.lower():
             try:
-                if "train_loss" in line or "Training loss" in line:
-                    # Parse train loss
-                    for part in line.split():
-                        if part.replace(".", "").replace("-", "").isdigit():
-                            job.progress["trainLoss"] = float(part)
-                            changed = True
-                            break
-                if "val_loss" in line or "Validation loss" in line:
-                    # Parse validation loss
-                    for part in line.split():
-                        if part.replace(".", "").replace("-", "").isdigit():
-                            job.progress["valLoss"] = float(part)
-                            changed = True
-                            break
+                if "Training loss" in line:
+                    match = re.search(r"Training loss:\s*([\d.]+)", line)
+                    if match:
+                        job.progress["trainLoss"] = float(match.group(1))
+                        changed = True
+                if "Validation loss" in line:
+                    match = re.search(r"Validation loss:\s*([\d.]+)", line)
+                    if match:
+                        job.progress["valLoss"] = float(match.group(1))
+                        changed = True
             except (IndexError, ValueError):
                 pass
 
