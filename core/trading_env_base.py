@@ -109,6 +109,10 @@ class BaseTradingEnvironment(gym.Env, ABC):
         self.state: TradingState = None
         self.current_step = 0
 
+        # Track previous drawdown for delta-based reward calculation
+        # This enables penalizing drawdown INCREASES rather than cumulative drawdown
+        self._prev_drawdown = 0.0
+
         # History tracking
         self.history = self._create_empty_history()
 
@@ -133,6 +137,8 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'positions': [],
             'prices': []
         }
+        # Reset drawdown tracking for new episode
+        self._prev_drawdown = 0.0
 
     # -------------------------------------------------------------------------
     # Abstract methods - must be implemented by subclasses
@@ -201,27 +207,54 @@ class BaseTradingEnvironment(gym.Env, ABC):
     def _calculate_reward(self, prev_equity: float) -> float:
         """
         Calculate reward using multiple components:
-        - Returns-based reward
-        - Risk-adjusted reward
-        - Drawdown penalty
+        - Returns-based reward (primary signal)
+        - Delta-based drawdown penalty (only penalize INCREASES in drawdown)
+        - Small recovery bonus (incentivize reducing drawdown)
+        - Position holding cost
+
+        The key insight is that max_drawdown is monotonically increasing within
+        an episode, so using it directly as a penalty makes ALL rewards negative
+        over time. Instead, we use the CHANGE in drawdown (delta) to only
+        penalize when risk increases, while rewarding recovery.
         """
         # Guard against zero or negative prev_equity (account wiped out)
         if prev_equity <= 0:
             return -1.0
 
-        # Return component
+        # === Return Component (primary reward signal) ===
         safe_prev_equity = max(prev_equity, 1e-8)
         returns = (self.state.equity - prev_equity) / safe_prev_equity
-        return_reward = returns * 100  # Scale up
+        return_reward = returns * 100  # Scale to make returns meaningful
 
-        # Drawdown penalty
-        drawdown_penalty = -self.state.max_drawdown * 10
+        # === Delta-Based Drawdown Penalty ===
+        # Calculate current drawdown (resets to 0 when equity makes new high)
+        current_drawdown = 0.0
+        if self.state.peak_equity > 0:
+            current_drawdown = (self.state.peak_equity - self.state.equity) / self.state.peak_equity
+            current_drawdown = max(0.0, current_drawdown)  # Ensure non-negative
 
-        # Position holding cost (encourage decisive actions)
+        # Only penalize when drawdown INCREASES (delta > 0)
+        # This avoids the cumulative penalty problem
+        drawdown_delta = current_drawdown - self._prev_drawdown
+        drawdown_penalty = 0.0
+        recovery_bonus = 0.0
+
+        if drawdown_delta > 0:
+            # Penalize increasing drawdown (entering deeper drawdown)
+            drawdown_penalty = -drawdown_delta * 50  # Scale factor for significance
+        elif drawdown_delta < 0:
+            # Small bonus for recovering from drawdown
+            recovery_bonus = -drawdown_delta * 25  # Half the penalty scale
+
+        # Update previous drawdown for next step
+        self._prev_drawdown = current_drawdown
+
+        # === Position Holding Cost ===
+        # Small cost to encourage decisive actions (not holding forever)
         holding_cost = -len(self._get_open_positions()) * 0.0001
 
-        # Combine rewards
-        reward = return_reward + drawdown_penalty + holding_cost
+        # === Combine Reward Components ===
+        reward = return_reward + drawdown_penalty + recovery_bonus + holding_cost
 
         return float(reward)
 
@@ -272,7 +305,7 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'total_pnl': self.state.total_pnl,
             'max_drawdown': self.state.max_drawdown,
             'current_step': self.current_step,
-            'positions': len(self._get_open_positions())
+            'open_positions': len(self._get_open_positions())
         }
 
     def _check_termination(self) -> bool:
