@@ -52,6 +52,8 @@ export interface TrainingProgressData {
   trainLoss?: number;
   valLoss?: number;
   learningRate?: number;
+  patienceCounter?: number;
+  patienceMax?: number;
   elapsedSeconds?: number;
   estimatedRemainingSeconds?: number;
 }

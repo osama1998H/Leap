@@ -589,7 +589,8 @@ class TransformerPredictor:
             # Log progress for real-time monitoring (parseable format)
             current_lr = self.optimizer.param_groups[0]['lr']
             progress_val_loss = val_loss if X_val is not None else avg_train_loss
-            print(f"Epoch {epoch + 1}/{epochs} - train_loss: {avg_train_loss:.6f} - val_loss: {progress_val_loss:.6f} - lr: {current_lr:.2e}", flush=True)
+            patience_info = f" - patience: {patience_counter}/{patience}" if X_val is not None else ""
+            print(f"Epoch {epoch + 1}/{epochs} - train_loss: {avg_train_loss:.6f} - val_loss: {progress_val_loss:.6f} - lr: {current_lr:.2e}{patience_info}", flush=True)
 
         # Restore best model
         if best_state is not None:

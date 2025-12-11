@@ -44,6 +44,8 @@ async def job_update_callback(job: Job) -> None:
             "trainLoss": job.progress.get("trainLoss"),
             "valLoss": job.progress.get("valLoss"),
             "learningRate": job.progress.get("learningRate"),
+            "patienceCounter": job.progress.get("patienceCounter"),
+            "patienceMax": job.progress.get("patienceMax"),
         })
         if job.started_at:
             elapsed = (job.completed_at or datetime.now(timezone.utc)) - job.started_at

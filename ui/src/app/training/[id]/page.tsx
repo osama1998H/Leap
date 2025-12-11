@@ -291,6 +291,8 @@ export default function TrainingMonitorPage() {
   const valLoss = wsProgress?.valLoss ?? job.metrics?.valLoss
   const elapsedSeconds = wsProgress?.elapsedSeconds ?? calculateElapsedSeconds(job.createdAt)
   const etaSeconds = wsProgress?.estimatedRemainingSeconds
+  const patienceCounter = wsProgress?.patienceCounter
+  const patienceMax = wsProgress?.patienceMax
 
   return (
     <div className="space-y-6">
@@ -379,6 +381,9 @@ export default function TrainingMonitorPage() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Phase: {wsProgress?.phase ?? job.phase ?? 'Transformer'}
+              {patienceMax !== undefined && (
+                <> | Patience: {patienceCounter ?? 0}/{patienceMax}</>
+              )}
             </p>
           </CardContent>
         </Card>

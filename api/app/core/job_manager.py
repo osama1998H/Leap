@@ -330,6 +330,12 @@ class JobManager:
                 if lr_match:
                     job.progress["learningRate"] = float(lr_match.group(1))
 
+                # Extract patience (format: patience: 0/10)
+                patience_match = re.search(r"patience:\s*(\d+)/(\d+)", line)
+                if patience_match:
+                    job.progress["patienceCounter"] = int(patience_match.group(1))
+                    job.progress["patienceMax"] = int(patience_match.group(2))
+
             except (IndexError, ValueError):
                 pass
 
