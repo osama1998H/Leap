@@ -20,7 +20,7 @@ export default function Sidebar() {
   const location = useLocation()
 
   return (
-    <aside className="hidden md:flex w-64 flex-col border-r bg-background">
+    <aside className="flex w-64 flex-col border-r bg-background">
       <nav className="flex flex-col gap-1 p-4">
         {navigation.map((item) => {
           const isActive = location.pathname === item.href
