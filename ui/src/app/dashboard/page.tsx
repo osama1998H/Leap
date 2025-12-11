@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Brain, TestTube, Activity, Square, Eye, Wifi, WifiOff, Pause, Play } from 'lucide-react'
+import { Plus, Brain, TestTube, Activity, Square, Eye, Wifi, WifiOff, Pause, Play, FlaskConical, ExternalLink } from 'lucide-react'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -108,6 +108,54 @@ export default function Dashboard() {
     },
   })
 
+  // MLflow status query
+  const { data: mlflowStatus } = useQuery({
+    queryKey: ['mlflow', 'status'],
+    queryFn: systemApi.mlflowStatus,
+    refetchInterval: 30000, // Check every 30 seconds
+  })
+
+  // MLflow launch mutation
+  const launchMlflow = useMutation({
+    mutationFn: systemApi.launchMlflow,
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({
+          title: 'MLflow UI',
+          description: data.message,
+        })
+        // Open MLflow in a new tab
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+        // Refresh status
+        queryClient.invalidateQueries({ queryKey: ['mlflow', 'status'] })
+      } else {
+        toast({
+          title: 'MLflow Launch Failed',
+          description: data.message,
+          variant: 'destructive',
+        })
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Failed to launch MLflow',
+        description: error.message,
+        variant: 'destructive',
+      })
+    },
+  })
+
+  // Handle MLflow button click
+  const handleMlflowClick = () => {
+    if (mlflowStatus?.running && mlflowStatus.url) {
+      // MLflow is already running, just open it
+      window.open(mlflowStatus.url, '_blank', 'noopener,noreferrer')
+    } else {
+      // Launch MLflow first
+      launchMlflow.mutate()
+    }
+  }
+
   // Merge WebSocket progress with REST data for training jobs
   const enhancedTrainingJobs = trainingJobs?.jobs?.map(job => {
     const wsProgress = trainingProgress.get(job.jobId)
@@ -173,6 +221,18 @@ export default function Dashboard() {
               <Plus className="mr-2 h-4 w-4" />
               New Backtest
             </Link>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleMlflowClick}
+            disabled={launchMlflow.isPending}
+          >
+            <FlaskConical className="mr-2 h-4 w-4" />
+            {launchMlflow.isPending ? 'Launching...' : 'MLflow'}
+            <ExternalLink className="ml-2 h-3 w-3" />
+            {mlflowStatus?.running && (
+              <span className="ml-2 h-2 w-2 rounded-full bg-green-500" title="MLflow is running" />
+            )}
           </Button>
         </div>
       </div>

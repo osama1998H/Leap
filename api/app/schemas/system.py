@@ -79,3 +79,33 @@ class HealthResponse(BaseModel):
     """Health check response."""
 
     data: HealthData
+
+
+class MLflowStatusData(BaseModel):
+    """MLflow status data."""
+
+    running: bool
+    url: Optional[str] = None
+    port: int = 5000
+    tracking_uri: str
+    experiment_name: str
+
+
+class MLflowStatusResponse(BaseModel):
+    """MLflow status response."""
+
+    data: MLflowStatusData
+
+
+class MLflowLaunchData(BaseModel):
+    """MLflow launch result data."""
+
+    success: bool
+    url: str
+    message: str
+
+
+class MLflowLaunchResponse(BaseModel):
+    """MLflow launch response."""
+
+    data: MLflowLaunchData
