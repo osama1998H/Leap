@@ -1,6 +1,8 @@
 """WebSocket route for real-time updates."""
 
+import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -9,6 +11,14 @@ from ..core.job_manager import Job, job_manager
 from ..core.websocket_manager import Channel, MessageType, ws_manager
 
 logger = logging.getLogger(__name__)
+
+# Regex pattern to parse log lines (matches common Python logging format)
+LOG_PATTERN = re.compile(
+    r"^(?P<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:,\d{3})?)\s+"
+    r"(?:(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+)?"
+    r"(?:(?P<logger>[\w.]+)\s+)?"
+    r"(?P<message>.*)$"
+)
 
 router = APIRouter(tags=["websocket"])
 
@@ -73,6 +83,35 @@ async def job_update_callback(job: Job) -> None:
     await ws_manager.broadcast_to_channel(channel, msg_type, data, job.job_id)
 
 
+async def broadcast_log_entry(job_id: str, line: str, job_type: str = "training") -> None:
+    """Broadcast a log entry to WebSocket subscribers."""
+    # Parse the log line
+    match = LOG_PATTERN.match(line)
+    if match:
+        data = {
+            "jobId": job_id,
+            "timestamp": match.group("timestamp"),
+            "level": match.group("level") or "INFO",
+            "logger": match.group("logger") or "",
+            "message": match.group("message"),
+        }
+    else:
+        # Unparseable line - send as plain message
+        data = {
+            "jobId": job_id,
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "level": "INFO",
+            "logger": "",
+            "message": line,
+        }
+
+    # Determine channel
+    channel = Channel.LOGS.value
+
+    # Broadcast to subscribers
+    await ws_manager.broadcast_to_channel(channel, MessageType.LOG_ENTRY, data, job_id)
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates."""
@@ -105,6 +144,7 @@ def setup_job_subscribers():
     # Subscribe to all existing jobs
     for job_id, job in job_manager.jobs.items():
         job.subscribe(job_update_callback)
+        job.subscribe_logs(broadcast_log_entry)
 
 
 # Monkey-patch job creation to auto-subscribe new jobs
@@ -115,6 +155,7 @@ def _create_job_with_subscriber(job_type, config):
     """Wrapper to add WebSocket subscriber to new jobs."""
     job = _original_create_job(job_type, config)
     job.subscribe(job_update_callback)
+    job.subscribe_logs(broadcast_log_entry)
     return job
 
 

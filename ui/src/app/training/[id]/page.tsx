@@ -35,7 +35,7 @@ export default function TrainingMonitorPage() {
   const { toast } = useToast()
 
   // WebSocket for real-time updates
-  const { status: wsStatus, subscribe, unsubscribe, trainingProgress } = useWebSocketContext()
+  const { status: wsStatus, subscribe, unsubscribe, trainingProgress, logs: wsLogs } = useWebSocketContext()
 
   // Zustand stores
   const { updateJobFromProgress } = useTrainingStore()
@@ -140,12 +140,20 @@ export default function TrainingMonitorPage() {
     }
   }, [currentProgress, wsProgress, job])
 
+  // Filter WebSocket logs for this job
+  const jobWsLogs = wsLogs.filter(log => (log as { jobId?: string }).jobId === id)
+
+  // Merge logs: prefer WebSocket logs when connected and available
+  const displayLogs = wsStatus === 'connected' && jobWsLogs.length > 0
+    ? jobWsLogs
+    : logs?.logs || []
+
   // Auto-scroll logs
   useEffect(() => {
     if (autoScrollLogs && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [logs, autoScrollLogs])
+  }, [displayLogs, autoScrollLogs])
 
   // Mutations for job control
   const stopJob = useMutation({
@@ -492,11 +500,13 @@ export default function TrainingMonitorPage() {
         </CardHeader>
         <CardContent>
           <div className="bg-muted rounded-lg p-4 font-mono text-sm max-h-[300px] overflow-y-auto">
-            {logs?.logs && logs.logs.length > 0 ? (
+            {displayLogs.length > 0 ? (
               <>
-                {logs.logs.slice(-50).map((log, index) => (
+                {displayLogs.slice(-100).map((log, index) => (
                   <div key={index} className="py-0.5">
-                    <span className="text-muted-foreground">{log.timestamp?.slice(11, 19)}</span>
+                    <span className="text-muted-foreground">
+                      {typeof log.timestamp === 'string' ? log.timestamp.slice(11, 19) : ''}
+                    </span>
                     {' '}
                     <span className={
                       log.level === 'ERROR' ? 'text-destructive' :
@@ -504,7 +514,7 @@ export default function TrainingMonitorPage() {
                       log.level === 'DEBUG' ? 'text-muted-foreground' :
                       'text-foreground'
                     }>
-                      [{log.level}]
+                      [{log.level || 'INFO'}]
                     </span>
                     {' '}
                     <span>{log.message}</span>

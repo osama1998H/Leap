@@ -58,6 +58,7 @@ class Job:
         self.result: Optional[dict[str, Any]] = None
         self.output_lines: list[str] = []
         self._subscribers: list[Callable] = []
+        self._log_subscribers: list[Callable] = []
         self._background_tasks: set[asyncio.Task] = set()
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,6 +85,15 @@ class Job:
         if callback in self._subscribers:
             self._subscribers.remove(callback)
 
+    def subscribe_logs(self, callback: Callable) -> None:
+        """Subscribe to log updates."""
+        self._log_subscribers.append(callback)
+
+    def unsubscribe_logs(self, callback: Callable) -> None:
+        """Unsubscribe from log updates."""
+        if callback in self._log_subscribers:
+            self._log_subscribers.remove(callback)
+
     async def notify_subscribers(self) -> None:
         """Notify all subscribers of state change."""
         for callback in self._subscribers:
@@ -91,6 +101,14 @@ class Job:
                 await callback(self)
             except Exception as e:
                 logger.error(f"Error notifying subscriber: {e}")
+
+    async def notify_log_subscribers(self, line: str) -> None:
+        """Notify all log subscribers of a new log line."""
+        for callback in self._log_subscribers:
+            try:
+                await callback(self.job_id, line, self.job_type.value)
+            except Exception as e:
+                logger.error(f"Error notifying log subscriber: {e}")
 
 
 class JobManager:
@@ -230,6 +248,7 @@ class JobManager:
         if not job.process or not job.process.stdout:
             return
 
+        last_progress_notify = 0
         try:
             while True:
                 line = await job.process.stdout.readline()
@@ -238,8 +257,18 @@ class JobManager:
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 job.output_lines.append(decoded)
 
+                # Notify log subscribers for real-time streaming
+                await job.notify_log_subscribers(decoded)
+
                 # Parse progress from output
-                self._parse_progress(job, decoded)
+                progress_changed = self._parse_progress(job, decoded)
+
+                # Notify progress subscribers when progress changes
+                if progress_changed:
+                    current_epoch = job.progress.get("currentEpoch", 0)
+                    if current_epoch > last_progress_notify:
+                        await job.notify_subscribers()
+                        last_progress_notify = current_epoch
 
                 # Keep only last 1000 lines
                 if len(job.output_lines) > 1000:
@@ -264,8 +293,10 @@ class JobManager:
             await job.notify_subscribers()
             logger.info(f"Job {job.job_id} finished with status {job.status.value}")
 
-    def _parse_progress(self, job: Job, line: str) -> None:
-        """Parse progress from output line."""
+    def _parse_progress(self, job: Job, line: str) -> bool:
+        """Parse progress from output line. Returns True if progress changed."""
+        changed = False
+
         # Parse training epoch progress
         if "Epoch" in line and "/" in line:
             try:
@@ -274,6 +305,8 @@ class JobManager:
                 if len(parts) == 2:
                     current = int(parts[0])
                     total = int(parts[1])
+                    if job.progress.get("currentEpoch") != current:
+                        changed = True
                     job.progress["currentEpoch"] = current
                     job.progress["totalEpochs"] = total
                     job.progress["percent"] = int((current / total) * 100)
@@ -288,15 +321,19 @@ class JobManager:
                     for part in line.split():
                         if part.replace(".", "").replace("-", "").isdigit():
                             job.progress["trainLoss"] = float(part)
+                            changed = True
                             break
                 if "val_loss" in line or "Validation loss" in line:
                     # Parse validation loss
                     for part in line.split():
                         if part.replace(".", "").replace("-", "").isdigit():
                             job.progress["valLoss"] = float(part)
+                            changed = True
                             break
             except (IndexError, ValueError):
                 pass
+
+        return changed
 
     async def stop_job(self, job_id: str) -> Job:
         """Stop a running job."""
