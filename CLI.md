@@ -360,6 +360,60 @@ The backend exposes REST API endpoints at `http://localhost:8000/api/v1/`:
 
 ---
 
+## MLflow Experiment Tracking
+
+Leap uses MLflow 3 for experiment tracking, model versioning, and metrics logging.
+
+### Viewing Experiments
+
+**Recommended (helper script):**
+```bash
+# Launch MLflow UI with proper configuration
+python scripts/mlflow_ui.py --port 5000
+```
+
+**Manual method:**
+```bash
+# Must specify the backend-store-uri to find the database
+mlflow ui --backend-store-uri sqlite:///$(pwd)/mlflow.db --port 5000
+```
+
+Open `http://localhost:5000` in your browser to view experiments.
+
+### MLflow CLI Options
+
+Available for `train` and `backtest` commands:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--mlflow-experiment` | string | `leap-trading` | MLflow experiment name |
+| `--mlflow-tracking-uri` | string | `sqlite:///mlflow.db` | MLflow tracking URI |
+| `--no-mlflow` | flag | `False` | Disable MLflow tracking |
+
+**Examples:**
+```bash
+# Train with custom experiment name
+python main.py train --mlflow-experiment my-experiment
+
+# Disable MLflow tracking
+python main.py train --no-mlflow
+
+# Use custom tracking server
+python main.py train --mlflow-tracking-uri http://localhost:5000
+```
+
+### What Gets Tracked
+
+| Category | Tracked Data |
+|----------|--------------|
+| **Parameters** | Model hyperparameters, training config, data settings |
+| **Metrics** | Train/val loss, episode rewards, backtest results |
+| **Artifacts** | Model weights, training history, config snapshots |
+| **Datasets** | Training/validation data metadata (MLflow 3) |
+| **Models** | PyTorch models with signatures (Model Registry) |
+
+---
+
 ## Global Options
 
 These options are available for all commands:

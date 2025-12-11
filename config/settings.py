@@ -177,7 +177,10 @@ class MLflowConfig:
     enabled: bool = True
     # Database backend (SQLite) - filesystem backend deprecated Feb 2026
     # See: https://github.com/mlflow/mlflow/issues/18534
-    tracking_uri: str = "sqlite:///mlflow.db"
+    # Note: Use absolute path so mlflow ui can find the database from any directory
+    tracking_uri: str = field(
+        default_factory=lambda: f"sqlite:///{os.path.abspath('mlflow.db')}"
+    )
     experiment_name: str = "leap-trading"
     run_name_prefix: str = "training"
 
