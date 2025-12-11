@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Lora:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Anthropic Brand Colors - Light Mode */
+    --background: 45 33% 97%;          /* #faf9f5 - warm off-white */
+    --foreground: 60 3% 8%;            /* #141413 - almost black */
+    --card: 0 0% 100%;                 /* white cards for contrast */
+    --card-foreground: 60 3% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 60 3% 8%;
+    --primary: 15 62% 60%;             /* #d97757 - Anthropic orange */
+    --primary-foreground: 45 33% 97%;
+    --secondary: 50 24% 89%;           /* #e8e6dc - light gray */
+    --secondary-foreground: 60 3% 8%;
+    --muted: 50 24% 89%;
+    --muted-foreground: 49 7% 47%;     /* mid gray, darker for readability */
+    --accent: 210 46% 61%;             /* #6a9bcc - Anthropic blue */
+    --accent-foreground: 45 33% 97%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 45 33% 97%;
+    --border: 50 18% 85%;
+    --input: 50 18% 85%;
+    --ring: 15 62% 60%;                /* orange ring */
+    --radius: 0.75rem;
+
+    /* Trading colors */
+    --profit: 86 20% 46%;              /* #788c5d - Anthropic green */
+    --loss: 0 72% 51%;
+
+    /* Chart colors using brand palette */
+    --chart-1: 15 62% 60%;             /* orange */
+    --chart-2: 210 46% 61%;            /* blue */
+    --chart-3: 86 20% 46%;             /* green */
+    --chart-4: 49 7% 67%;              /* mid gray */
+  }
+
+  .dark {
+    /* Anthropic Brand Colors - Dark Mode */
+    --background: 60 3% 8%;            /* #141413 - almost black */
+    --foreground: 45 33% 97%;          /* #faf9f5 - warm off-white */
+    --card: 60 3% 12%;                 /* slightly lighter than bg */
+    --card-foreground: 45 33% 97%;
+    --popover: 60 3% 12%;
+    --popover-foreground: 45 33% 97%;
+    --primary: 15 62% 60%;             /* #d97757 - Anthropic orange */
+    --primary-foreground: 60 3% 8%;
+    --secondary: 60 3% 16%;
+    --secondary-foreground: 45 33% 97%;
+    --muted: 60 3% 16%;
+    --muted-foreground: 49 7% 67%;     /* mid gray */
+    --accent: 210 46% 61%;             /* #6a9bcc - Anthropic blue */
+    --accent-foreground: 60 3% 8%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 45 33% 97%;
+    --border: 60 3% 20%;
+    --input: 60 3% 20%;
+    --ring: 15 62% 60%;
+
+    /* Trading colors - brighter for dark mode */
+    --profit: 86 25% 55%;
+    --loss: 0 72% 60%;
+
+    /* Chart colors */
+    --chart-1: 15 65% 65%;
+    --chart-2: 210 50% 65%;
+    --chart-3: 86 25% 55%;
+    --chart-4: 49 10% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Lora', Georgia, serif;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Headings use Poppins */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', Arial, sans-serif;
+    font-weight: 600;
+  }
+
+  /* UI elements use Poppins */
+  button, input, select, textarea, label {
+    font-family: 'Poppins', Arial, sans-serif;
+  }
+
+  /* Navigation and badges */
+  nav, .badge, [role="tablist"] {
+    font-family: 'Poppins', Arial, sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-profit {
+    color: hsl(var(--profit));
+  }
+  .text-loss {
+    color: hsl(var(--loss));
+  }
+  .bg-profit {
+    background-color: hsl(var(--profit));
+  }
+  .bg-loss {
+    background-color: hsl(var(--loss));
+  }
+
+  /* Anthropic gradient text */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)), hsl(var(--profit)));
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient 4s ease infinite;
+  }
+
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Font family utilities */
+  .font-heading {
+    font-family: 'Poppins', Arial, sans-serif;
+  }
+
+  .font-body {
+    font-family: 'Lora', Georgia, serif;
+  }
+}

@@ -19,6 +19,8 @@ python main.py [COMMAND] [OPTIONS]
 | `walkforward` | Run walk-forward optimization with rolling train/test splits |
 | `evaluate` | Evaluate trained models on test data |
 | `autotrade` | Start auto-trader with MetaTrader5 integration (Windows only) |
+| `api/run.py` | Start Web UI backend API server |
+| `ui (npm run dev)` | Start Web UI frontend development server |
 
 ---
 
@@ -296,6 +298,65 @@ export MT5_PASSWORD=your_password
 export MT5_SERVER=YourBroker-Server
 python main.py autotrade --paper
 ```
+
+---
+
+## Web UI
+
+The Leap Trading System includes a web-based dashboard for visual monitoring and configuration.
+
+### Starting the Web UI
+
+**Backend API (FastAPI):**
+```bash
+# Start API server on port 8000 (from project root)
+python api/run.py
+```
+
+**Frontend (React + Vite):**
+```bash
+# Start development server on port 5173 (from project root)
+cd ui && npm run dev
+```
+
+**Access the UI:** Open `http://localhost:5173` in your browser.
+
+### Quick Start
+
+```bash
+# Terminal 1: Start backend
+python api/run.py
+
+# Terminal 2: Start frontend
+cd ui && npm run dev
+```
+
+### Web UI Features
+
+| Page | Description |
+|------|-------------|
+| **Dashboard** | System overview, active jobs, recent results |
+| **Training** | Configure and launch training jobs |
+| **Backtest** | Run backtests and view results |
+| **Config** | Edit system configuration |
+| **Logs** | View and search application logs |
+
+### API Endpoints
+
+The backend exposes REST API endpoints at `http://localhost:8000/api/v1/`:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check |
+| `POST /training/start` | Start training job |
+| `GET /training/jobs` | List training jobs |
+| `POST /backtest/run` | Run backtest |
+| `GET /backtest/results` | List backtest results |
+| `GET /config` | Get configuration |
+| `PUT /config` | Update configuration |
+| `GET /models` | List trained models |
+| `GET /logs/files` | List log files |
+| `GET /metrics/system` | System metrics (CPU, memory, GPU) |
 
 ---
 
