@@ -1,8 +1,7 @@
 """WebSocket route for real-time updates."""
 
-import asyncio
-import json
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -37,7 +36,7 @@ async def job_update_callback(job: Job) -> None:
             "learningRate": job.progress.get("learningRate"),
         })
         if job.started_at:
-            elapsed = (job.completed_at or __import__("datetime").datetime.utcnow()) - job.started_at
+            elapsed = (job.completed_at or datetime.now(timezone.utc)) - job.started_at
             data["elapsedSeconds"] = int(elapsed.total_seconds())
             # Estimate remaining time based on epoch progress
             if job.progress.get("currentEpoch") and job.progress.get("totalEpochs"):

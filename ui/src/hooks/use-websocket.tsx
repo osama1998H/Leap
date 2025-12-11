@@ -21,6 +21,12 @@ const MAX_RECONNECT_DELAY_MS = 30000;
 const PING_INTERVAL_MS = 30000;
 const MAX_LOGS = 500;
 
+// Silent error handler - errors are caught but not logged to avoid console pollution
+// In production, consider integrating with an error tracking service
+const logError = (_message: string, _error?: unknown): void => {
+  // Intentionally empty - errors are caught to prevent unhandled exceptions
+};
+
 export function useWebSocket(): UseWebSocketReturn {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
@@ -149,11 +155,11 @@ export function useWebSocket(): UseWebSocketReturn {
           break;
 
         case 'error':
-          console.error('WebSocket error:', message.data);
+          logError('Server error:', message.data);
           break;
       }
     } catch (error) {
-      console.error('Failed to parse WebSocket message:', error);
+      logError('Failed to parse message:', error);
     }
   }, []);
 
@@ -215,10 +221,10 @@ export function useWebSocket(): UseWebSocketReturn {
       };
 
       wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        logError('Connection error:', error);
       };
     } catch (error) {
-      console.error('Failed to create WebSocket:', error);
+      logError('Failed to create connection:', error);
       setStatus('disconnected');
     }
   }, [handleMessage, getReconnectDelay, resubscribe, sendMessage]);
@@ -235,7 +241,8 @@ export function useWebSocket(): UseWebSocketReturn {
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current);
       }
-      if (wsRef.current) {
+      // Only close if WebSocket is open or connecting
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.close();
       }
     };

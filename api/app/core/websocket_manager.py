@@ -1,9 +1,8 @@
 """WebSocket connection manager for real-time updates."""
 
 import asyncio
-import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
@@ -145,7 +144,7 @@ class WebSocketManager:
         message = {
             "type": message_type.value,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         try:
             await websocket.send_json(message)
@@ -163,7 +162,7 @@ class WebSocketManager:
         message = {
             "type": message_type.value,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
 
         # Get subscribers for both specific job and general channel

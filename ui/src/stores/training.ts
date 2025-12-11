@@ -219,9 +219,9 @@ export const useTrainingStore = create<TrainingState & TrainingActions>()(
         clearCompletedJobs: () =>
           set((state) => {
             const newJobs = new Map(state.activeJobs);
-            for (const [jobId, job] of newJobs) {
+            for (const [id, job] of newJobs) {
               if (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') {
-                newJobs.delete(jobId);
+                newJobs.delete(id);
               }
             }
             return { activeJobs: newJobs };
