@@ -58,6 +58,7 @@ class Job:
         self.result: Optional[dict[str, Any]] = None
         self.output_lines: list[str] = []
         self._subscribers: list[Callable] = []
+        self._background_tasks: set[asyncio.Task] = set()
 
     def to_dict(self) -> dict[str, Any]:
         """Convert job to dictionary."""
@@ -208,8 +209,10 @@ class JobManager:
             job.status = JobStatus.RUNNING
             logger.info(f"Started job {job_id} with PID {job.process.pid}")
 
-            # Start output reader task
-            asyncio.create_task(self._read_output(job))
+            # Start output reader task and store reference to prevent GC
+            task = asyncio.create_task(self._read_output(job))
+            job._background_tasks.add(task)
+            task.add_done_callback(job._background_tasks.discard)
 
             await job.notify_subscribers()
             return job

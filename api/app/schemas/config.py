@@ -52,7 +52,10 @@ class BacktestConfigFull(BaseModel):
     initial_balance: float = Field(10000, alias="initialBalance")
     leverage: int = 100
     spread_pips: float = Field(1.5, alias="spreadPips")
+    slippage_pips: float = Field(0.5, alias="slippagePips")
     commission_per_lot: float = Field(7.0, alias="commissionPerLot")
+    risk_per_trade: float = Field(0.02, alias="riskPerTrade")
+    n_simulations: int = Field(1000, alias="nSimulations", description="Number of Monte Carlo simulations")
 
 
 class SystemConfigData(BaseModel):

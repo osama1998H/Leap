@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
@@ -28,6 +28,32 @@ class ModelsService:
     def __init__(self):
         self.models_dir = settings.SAVED_MODELS_DIR
 
+    def _validate_path(self, directory: str) -> Optional[Path]:
+        """Validate and resolve path, preventing directory traversal attacks.
+
+        Returns the resolved path if valid, None if path traversal detected.
+        """
+        model_path = Path(directory)
+        if not model_path.is_absolute():
+            model_path = settings.PROJECT_ROOT / directory
+
+        # Resolve to absolute path (resolves .., symlinks, etc.)
+        try:
+            resolved_path = model_path.resolve()
+        except (OSError, ValueError):
+            return None
+
+        # Verify the resolved path is within PROJECT_ROOT
+        project_root = settings.PROJECT_ROOT.resolve()
+        try:
+            resolved_path.relative_to(project_root)
+        except ValueError:
+            # Path is outside PROJECT_ROOT - potential traversal attack
+            logger.warning(f"Path traversal attempt detected: {directory}")
+            return None
+
+        return resolved_path
+
     def list_models(self) -> list[ModelInfo]:
         """List all saved models."""
         models = []
@@ -49,11 +75,8 @@ class ModelsService:
 
     def get_model_detail(self, directory: str) -> Optional[ModelDetailData]:
         """Get detailed model information."""
-        model_path = Path(directory)
-        if not model_path.is_absolute():
-            model_path = settings.PROJECT_ROOT / directory
-
-        if not model_path.exists():
+        model_path = self._validate_path(directory)
+        if not model_path or not model_path.exists():
             return None
 
         # Get files
@@ -81,11 +104,8 @@ class ModelsService:
 
     def create_download(self, directory: str) -> Optional[BytesIO]:
         """Create a ZIP file of the model directory."""
-        model_path = Path(directory)
-        if not model_path.is_absolute():
-            model_path = settings.PROJECT_ROOT / directory
-
-        if not model_path.exists():
+        model_path = self._validate_path(directory)
+        if not model_path or not model_path.exists():
             return None
 
         buffer = BytesIO()
@@ -118,11 +138,11 @@ class ModelsService:
 
         if predictor_exists:
             stat = (path / "predictor.pt").stat()
-            predictor_mtime = datetime.fromtimestamp(stat.st_mtime).isoformat() + "Z"
+            predictor_mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
         if agent_exists:
             stat = (path / "agent.pt").stat()
-            agent_mtime = datetime.fromtimestamp(stat.st_mtime).isoformat() + "Z"
+            agent_mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
         return ModelInfo(
             directory=str(path),

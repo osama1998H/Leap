@@ -3,7 +3,7 @@
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -31,7 +31,7 @@ class LogsService:
             files.append(LogFileInfo(
                 name=log_file.name,
                 size=stat.st_size,
-                modifiedAt=datetime.fromtimestamp(stat.st_mtime).isoformat() + "Z",
+                modifiedAt=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
             ))
 
         return files

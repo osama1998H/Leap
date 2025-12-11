@@ -71,6 +71,11 @@ async def get_training_logs(
     limit: int = Query(100, ge=1, le=1000),
 ):
     """Get logs for a training job."""
+    # Verify job exists first for consistent error handling
+    job_data = await training_service.get_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
     logs, has_more = training_service.get_job_logs(job_id, level, since, limit)
     return TrainingLogsResponse(
         data=TrainingLogsData(

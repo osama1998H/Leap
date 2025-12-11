@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -25,11 +26,41 @@ logger = logging.getLogger(__name__)
 class ConfigService:
     """Service for managing configuration."""
 
+    # Allowed characters for template names/IDs (alphanumeric, dash, underscore)
+    _SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
     def __init__(self):
         self.config_file = settings.CONFIG_DIR / "system_config.json"
         self.templates_dir = settings.CONFIG_DIR / "templates"
         self.templates_dir.mkdir(parents=True, exist_ok=True)
         self._current_config: Optional[SystemConfigData] = None
+
+    def _sanitize_template_name(self, name: str) -> str:
+        """Sanitize template name to prevent path traversal.
+
+        Only allows alphanumeric characters, dashes, and underscores.
+        """
+        # Remove any path separators and suspicious characters
+        sanitized = re.sub(r"[^a-zA-Z0-9_\- ]", "", name)
+        # Convert spaces to dashes
+        sanitized = sanitized.replace(" ", "-").lower()
+        # Limit length
+        return sanitized[:50] if sanitized else "template"
+
+    def _validate_template_id(self, template_id: str) -> bool:
+        """Validate template ID to prevent path traversal attacks.
+
+        Returns True if the ID is safe, False otherwise.
+        """
+        # Reject any path traversal attempts
+        if ".." in template_id or "/" in template_id or "\\" in template_id:
+            logger.warning(f"Path traversal attempt in template_id: {template_id}")
+            return False
+        # Only allow safe characters
+        if not self._SAFE_NAME_PATTERN.match(template_id):
+            logger.warning(f"Invalid characters in template_id: {template_id}")
+            return False
+        return True
 
     def get_config(self) -> SystemConfigData:
         """Get current system configuration."""
@@ -125,17 +156,25 @@ class ConfigService:
         self, name: str, description: Optional[str], config: dict[str, Any]
     ) -> ConfigTemplate:
         """Create a new configuration template."""
-        template_id = f"{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:6]}"
+        # Sanitize the name to prevent path traversal
+        safe_name = self._sanitize_template_name(name)
+        template_id = f"{safe_name}-{uuid.uuid4().hex[:6]}"
         created_at = datetime.utcnow().isoformat() + "Z"
 
         template_data = {
-            "name": name,
+            "name": name,  # Store original name for display
             "description": description,
             "config": config,
             "createdAt": created_at,
         }
 
         template_file = self.templates_dir / f"{template_id}.json"
+
+        # Extra safety: verify the path is within templates_dir
+        resolved_path = template_file.resolve()
+        if not str(resolved_path).startswith(str(self.templates_dir.resolve())):
+            raise ValueError("Invalid template name")
+
         with open(template_file, "w") as f:
             json.dump(template_data, f, indent=2)
 
@@ -148,7 +187,7 @@ class ConfigService:
 
     def get_template(self, template_id: str) -> Optional[dict[str, Any]]:
         """Get a configuration template."""
-        # Built-in templates
+        # Built-in templates (these IDs are safe by definition)
         if template_id == "quick-test":
             return {
                 "transformer": {"epochs": 20},
@@ -168,8 +207,22 @@ class ConfigService:
                 "data": {"bars": 100000},
             }
 
+        # Validate template_id to prevent path traversal
+        if not self._validate_template_id(template_id):
+            return None
+
         # User templates
         template_file = self.templates_dir / f"{template_id}.json"
+
+        # Extra safety: verify resolved path is within templates_dir
+        try:
+            resolved_path = template_file.resolve()
+            if not str(resolved_path).startswith(str(self.templates_dir.resolve())):
+                logger.warning(f"Path traversal blocked for template: {template_id}")
+                return None
+        except (OSError, ValueError):
+            return None
+
         if template_file.exists():
             with open(template_file) as f:
                 data = json.load(f)

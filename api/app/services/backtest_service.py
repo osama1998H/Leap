@@ -167,63 +167,159 @@ class BacktestService:
         )
 
     def _job_to_summary(self, job: Job) -> Optional[BacktestResultSummaryData]:
-        """Convert job to result summary."""
+        """Convert job to result summary.
+
+        Note: Currently returns placeholder metrics. In production, this should
+        parse actual results from job.result or job.output_lines.
+        """
         if job.status != JobStatus.COMPLETED:
             return None
+
+        # Try to parse actual metrics from job result/output
+        metrics = self._parse_metrics_from_job(job)
 
         return BacktestResultSummaryData(
             resultId=job.job_id,
             symbol=job.config.get("symbol", "EURUSD"),
             timeframe=job.config.get("timeframe", "1h"),
             summary=BacktestResultSummary(
-                totalReturn=0.12,  # Placeholder - would come from actual results
-                sharpeRatio=1.5,
-                maxDrawdown=-0.08,
-                winRate=0.55,
-                totalTrades=100,
+                totalReturn=metrics.get("total_return", 0.0),
+                sharpeRatio=metrics.get("sharpe_ratio", 0.0),
+                maxDrawdown=metrics.get("max_drawdown", 0.0),
+                winRate=metrics.get("win_rate", 0.0),
+                totalTrades=metrics.get("total_trades", 0),
             ),
             completedAt=job.completed_at.isoformat() + "Z" if job.completed_at else datetime.utcnow().isoformat() + "Z",
         )
 
+    def _parse_metrics_from_job(self, job: Job) -> dict[str, Any]:
+        """Parse metrics from job output.
+
+        Attempts to extract real metrics from job output lines.
+        Returns default values if parsing fails.
+        """
+        metrics: dict[str, Any] = {
+            "total_return": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "win_rate": 0.0,
+            "total_trades": 0,
+        }
+
+        # If job has stored result, use it
+        if job.result:
+            metrics.update({
+                "total_return": job.result.get("total_return", 0.0),
+                "sharpe_ratio": job.result.get("sharpe_ratio", 0.0),
+                "max_drawdown": job.result.get("max_drawdown", 0.0),
+                "win_rate": job.result.get("win_rate", 0.0),
+                "total_trades": job.result.get("total_trades", 0),
+            })
+            return metrics
+
+        # Try parsing from output lines
+        for line in job.output_lines:
+            line_lower = line.lower()
+            try:
+                if "total return" in line_lower or "total_return" in line_lower:
+                    # Extract numeric value
+                    for part in line.split():
+                        part = part.strip("%").replace(",", "")
+                        try:
+                            val = float(part)
+                            metrics["total_return"] = val / 100 if abs(val) > 1 else val
+                            break
+                        except ValueError:
+                            continue
+                elif "sharpe" in line_lower:
+                    for part in line.split():
+                        try:
+                            metrics["sharpe_ratio"] = float(part)
+                            break
+                        except ValueError:
+                            continue
+                elif "drawdown" in line_lower:
+                    for part in line.split():
+                        part = part.strip("%").replace(",", "")
+                        try:
+                            val = float(part)
+                            metrics["max_drawdown"] = -abs(val / 100 if abs(val) > 1 else val)
+                            break
+                        except ValueError:
+                            continue
+                elif "win rate" in line_lower or "win_rate" in line_lower:
+                    for part in line.split():
+                        part = part.strip("%").replace(",", "")
+                        try:
+                            val = float(part)
+                            metrics["win_rate"] = val / 100 if val > 1 else val
+                            break
+                        except ValueError:
+                            continue
+                elif "total trades" in line_lower or "total_trades" in line_lower:
+                    for part in line.split():
+                        try:
+                            metrics["total_trades"] = int(part)
+                            break
+                        except ValueError:
+                            continue
+            except Exception:
+                continue
+
+        return metrics
+
     def _job_to_result(self, job: Job) -> BacktestResultData:
-        """Convert job to full result."""
-        # Generate sample metrics - in real implementation, parse from job output
+        """Convert job to full result.
+
+        Note: Uses parsed metrics from job output when available,
+        otherwise returns zero values. Full implementation should
+        parse detailed metrics from the backtest results file.
+        """
+        # Parse basic metrics from job
+        parsed = self._parse_metrics_from_job(job)
+
+        # Build metrics using parsed values where available
+        total_trades = parsed.get("total_trades", 0)
+        win_rate = parsed.get("win_rate", 0.0)
+        winning_trades = int(total_trades * win_rate) if total_trades > 0 else 0
+        losing_trades = total_trades - winning_trades
+
         metrics = BacktestMetrics(
             returns=ReturnMetrics(
-                totalReturn=0.124,
-                annualizedReturn=0.285,
-                cagr=0.285,
+                totalReturn=parsed.get("total_return", 0.0),
+                annualizedReturn=parsed.get("total_return", 0.0) * 2,  # Rough estimate
+                cagr=parsed.get("total_return", 0.0) * 2,
             ),
             risk=RiskMetrics(
-                volatility=0.182,
-                downsideVolatility=0.145,
-                maxDrawdown=-0.082,
-                maxDrawdownDuration=72,
-                var95=-0.012,
-                cvar95=-0.018,
+                volatility=0.0,
+                downsideVolatility=0.0,
+                maxDrawdown=parsed.get("max_drawdown", 0.0),
+                maxDrawdownDuration=0,
+                var95=0.0,
+                cvar95=0.0,
             ),
             riskAdjusted=RiskAdjustedMetrics(
-                sharpeRatio=1.85,
-                sortinoRatio=2.12,
-                calmarRatio=3.48,
-                omegaRatio=1.65,
+                sharpeRatio=parsed.get("sharpe_ratio", 0.0),
+                sortinoRatio=0.0,
+                calmarRatio=0.0,
+                omegaRatio=0.0,
             ),
             trade=TradeMetrics(
-                totalTrades=156,
-                winningTrades=91,
-                losingTrades=65,
-                winRate=0.583,
-                profitFactor=1.87,
-                avgTrade=79.5,
-                avgWinner=125.4,
-                avgLoser=-87.2,
-                largestWinner=485.0,
-                largestLoser=-312.0,
+                totalTrades=total_trades,
+                winningTrades=winning_trades,
+                losingTrades=losing_trades,
+                winRate=win_rate,
+                profitFactor=0.0,
+                avgTrade=0.0,
+                avgWinner=0.0,
+                avgLoser=0.0,
+                largestWinner=0.0,
+                largestLoser=0.0,
             ),
             distribution=DistributionMetrics(
-                skewness=0.34,
-                kurtosis=2.15,
-                tailRatio=1.25,
+                skewness=0.0,
+                kurtosis=0.0,
+                tailRatio=0.0,
             ),
         )
 
@@ -233,9 +329,9 @@ class BacktestService:
             timeframe=job.config.get("timeframe", "1h"),
             config=job.config,
             metrics=metrics,
-            timeSeries=None,  # Would be populated from actual results
-            trades=None,  # Would be populated from actual results
-            monteCarlo=None,  # Would be populated if enabled
+            timeSeries=None,  # TODO: Parse from results file
+            trades=None,  # TODO: Parse from results file
+            monteCarlo=None,  # TODO: Parse if enabled
             completedAt=job.completed_at.isoformat() + "Z" if job.completed_at else datetime.utcnow().isoformat() + "Z",
         )
 

@@ -90,21 +90,45 @@ class TrainingService:
         since: Optional[datetime] = None,
         limit: int = 100,
     ) -> tuple[list[LogEntry], bool]:
-        """Get logs for a training job."""
+        """Get logs for a training job.
+
+        Args:
+            job_id: The job ID to get logs for
+            level: Optional log level filter (INFO, DEBUG, WARNING, ERROR)
+            since: Optional timestamp to filter logs (only return logs after this time)
+            limit: Maximum number of log entries to return
+        """
         job = self.job_manager.get_job(job_id)
         if not job:
             return [], False
 
         logs = []
-        for line in job.output_lines[-limit:]:
+        for line in job.output_lines:
             # Parse log line
             entry = self._parse_log_line(line)
             if entry:
+                # Filter by level
                 if level and entry.level != level:
                     continue
+
+                # Filter by timestamp (since parameter)
+                if since and entry.timestamp:
+                    try:
+                        # Parse the entry timestamp (format: YYYY-MM-DDTHH:MM:SSZ)
+                        entry_time = datetime.fromisoformat(entry.timestamp.replace("Z", "+00:00"))
+                        since_aware = since.replace(tzinfo=entry_time.tzinfo) if since.tzinfo is None else since
+                        if entry_time <= since_aware:
+                            continue
+                    except (ValueError, AttributeError):
+                        # If timestamp parsing fails, include the entry
+                        pass
+
                 logs.append(entry)
 
-        has_more = len(job.output_lines) > limit
+        # Apply limit after filtering
+        has_more = len(logs) > limit
+        logs = logs[-limit:]  # Take the most recent entries
+
         return logs, has_more
 
     def _parse_log_line(self, line: str) -> Optional[LogEntry]:
