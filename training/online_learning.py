@@ -12,6 +12,10 @@ from datetime import datetime
 import logging
 import threading
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from utils.mlflow_tracker import MLflowTracker
 
 logger = logging.getLogger(__name__)
 
@@ -103,17 +107,33 @@ class OnlineLearningManager:
     - Automatic model adaptation triggers
     - Market regime detection
     - Catastrophic forgetting prevention
+    - MLflow tracking for experiment logging
     """
 
     def __init__(
         self,
         predictor,  # TransformerPredictor
         agent,      # PPOAgent
-        config: Optional[AdaptationConfig] = None
+        config: Optional[AdaptationConfig] = None,
+        mlflow_tracker: Optional['MLflowTracker'] = None
     ):
         self.predictor = predictor
         self.agent = agent
         self.config = config or AdaptationConfig()
+        self.mlflow_tracker = mlflow_tracker
+
+        # Log online learning config to MLflow at initialization
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_online_learning_params({
+                "error_threshold": self.config.error_threshold,
+                "drawdown_threshold": self.config.drawdown_threshold,
+                "performance_window": self.config.performance_window,
+                "adaptation_frequency": self.config.adaptation_frequency,
+                "min_samples_for_adaptation": self.config.min_samples_for_adaptation,
+                "learning_rate_decay": self.config.learning_rate_decay,
+                "max_adaptations_per_day": self.config.max_adaptations_per_day,
+                "regime_detection_enabled": self.config.regime_detection_enabled,
+            })
 
         # Performance tracking
         self.performance_history: deque = deque(maxlen=1000)
@@ -212,6 +232,13 @@ class OnlineLearningManager:
         if self._should_adapt():
             adaptation_result = self._perform_adaptation()
 
+            # Log adaptation event to MLflow
+            if self.mlflow_tracker and self.mlflow_tracker.is_enabled and adaptation_result:
+                self.mlflow_tracker.log_online_adaptation(
+                    adaptation_result=adaptation_result,
+                    step=self.step_count
+                )
+
         # Calculate current performance
         current_performance = self._calculate_performance()
 
@@ -225,6 +252,20 @@ class OnlineLearningManager:
             market_regime=self.current_regime
         )
         self.performance_history.append(metrics)
+
+        # Log step metrics to MLflow (periodically to avoid too much overhead)
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            if self.step_count % 100 == 0:  # Log every 100 steps
+                self.mlflow_tracker.log_online_learning_step(
+                    metrics={
+                        "prediction_error": metrics.prediction_error,
+                        "trading_reward": trading_reward,
+                        "sharpe_ratio": metrics.sharpe_ratio,
+                        "win_rate": metrics.win_rate,
+                        "profit_factor": current_performance.get('profit_factor', 0),
+                    },
+                    step=self.step_count
+                )
 
         return {
             'step': self.step_count,
@@ -381,7 +422,7 @@ class OnlineLearningManager:
 
         recent = list(self.performance_history)[-100:]
 
-        return {
+        report = {
             'total_steps': self.step_count,
             'total_adaptations': self.total_adaptations,
             'current_regime': self.current_regime,
@@ -391,6 +432,12 @@ class OnlineLearningManager:
             'avg_win_rate': float(np.mean([m.win_rate for m in recent])),
             'regime_distribution': self._get_regime_distribution()
         }
+
+        # Log final report to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_online_learning_report(report)
+
+        return report
 
     def _get_regime_distribution(self) -> Dict[str, float]:
         """Get distribution of market regimes."""

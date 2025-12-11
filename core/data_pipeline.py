@@ -18,6 +18,10 @@ except ImportError:
     MT5_AVAILABLE = False
 
 from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from utils.mlflow_tracker import MLflowTracker
 
 
 logger = logging.getLogger(__name__)
@@ -532,6 +536,8 @@ class DataPipeline:
     """
     Main data pipeline for fetching, processing, and streaming market data.
     Supports both batch and online (streaming) modes.
+
+    Supports MLflow tracking for feature engineering metrics.
     """
 
     TIMEFRAME_MAP = {
@@ -545,12 +551,13 @@ class DataPipeline:
         "1w": mt5.TIMEFRAME_W1 if MT5_AVAILABLE else 10080,
     }
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, mlflow_tracker: Optional['MLflowTracker'] = None):
         self.config = config or {}
         self.feature_engineer = FeatureEngineer(config)
         self.scalers: Dict[str, RobustScaler] = {}
         self.data_cache: Dict[str, deque] = {}
         self.is_connected = False
+        self.mlflow_tracker = mlflow_tracker
 
     def connect(self) -> bool:
         """Connect to MetaTrader 5."""
@@ -811,12 +818,35 @@ class DataPipeline:
         feature_cols = list(self.feature_engineer.feature_names)
 
         # Add multi-timeframe features if provided
+        additional_timeframes = None
         if additional_timeframes_data:
+            additional_timeframes = list(additional_timeframes_data.keys())
             df = self._add_multi_timeframe_features(
                 df, additional_timeframes_data, feature_cols
             )
 
         features = df[feature_cols].values if feature_cols else None
+
+        # Log feature engineering metrics to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_feature_engineering_params(
+                n_features=len(feature_cols),
+                feature_names=feature_cols,
+                multi_timeframe_enabled=additional_timeframes_data is not None,
+                additional_timeframes=additional_timeframes
+            )
+
+            # Log feature statistics (aggregated)
+            if features is not None and len(features) > 0:
+                feature_stats = {}
+                for i, feat_name in enumerate(feature_cols[:50]):  # Limit to first 50
+                    feat_values = features[:, i]
+                    feature_stats[feat_name] = {
+                        "mean": float(np.nanmean(feat_values)),
+                        "std": float(np.nanstd(feat_values)),
+                        "missing_rate": float(np.isnan(feat_values).mean()),
+                    }
+                self.mlflow_tracker.log_feature_statistics(feature_stats)
 
         return MarketData(
             symbol=symbol,

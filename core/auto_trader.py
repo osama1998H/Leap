@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from models.transformer import TransformerPredictor
     from models.ppo_agent import PPOAgent
     from training.online_learning import OnlineLearningManager
+    from utils.mlflow_tracker import MLflowTracker
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,8 @@ class AutoTrader:
         risk_manager: Optional['RiskManager'] = None,
         online_manager: Optional['OnlineLearningManager'] = None,
         data_pipeline: Optional[DataPipeline] = None,
-        config: Optional[AutoTraderConfig] = None
+        config: Optional[AutoTraderConfig] = None,
+        mlflow_tracker: Optional['MLflowTracker'] = None
     ):
         """
         Initialize auto-trader.
@@ -141,6 +143,7 @@ class AutoTrader:
             online_manager: Online learning manager
             data_pipeline: Data pipeline for features
             config: Auto-trader configuration
+            mlflow_tracker: MLflow tracker for experiment logging
         """
         self.broker = broker
         self.predictor = predictor
@@ -149,6 +152,7 @@ class AutoTrader:
         self.online_manager = online_manager
         self.data_pipeline = data_pipeline or DataPipeline()
         self.config = config or AutoTraderConfig()
+        self.mlflow_tracker = mlflow_tracker
 
         # Components
         self.order_manager = OrderManager(
@@ -257,6 +261,20 @@ class AutoTrader:
             self._set_state(TraderState.ERROR)
             return False
 
+        # Log auto-trader configuration to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_autotrader_params({
+                "paper_mode": self.config.paper_mode,
+                "symbols": self.config.symbols,
+                "risk_per_trade": self.config.risk_per_trade,
+                "max_positions": self.config.max_positions,
+                "default_sl_pips": self.config.default_sl_pips,
+                "default_tp_pips": self.config.default_tp_pips,
+                "min_confidence": self.config.min_confidence,
+                "prediction_threshold": self.config.prediction_threshold,
+                "enable_online_learning": self.config.enable_online_learning,
+            })
+
         # Reset stop event
         self._stop_event.clear()
 
@@ -299,6 +317,21 @@ class AutoTrader:
             account = self.broker.get_account_info()
             self.session.end_time = datetime.now()
             self.session.end_balance = account.balance if account else self.session.start_balance
+
+            # Log final session statistics to MLflow
+            if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+                self.mlflow_tracker.log_autotrader_session({
+                    "total_trades": self.session.total_trades,
+                    "winning_trades": self.session.winning_trades,
+                    "losing_trades": self.session.losing_trades,
+                    "total_pnl": self.session.total_pnl,
+                    "win_rate": self.session.win_rate,
+                    "max_drawdown": self.session.max_drawdown,
+                    "signals_generated": self.session.signals_generated,
+                    "signals_executed": self.session.signals_executed,
+                    "signals_rejected": self.session.signals_rejected,
+                    "online_adaptations": self.session.online_adaptations,
+                })
 
         self._set_state(TraderState.STOPPED)
         logger.info("AutoTrader stopped")
@@ -847,10 +880,12 @@ class AutoTrader:
 
         if self._last_heartbeat is None:
             self._last_heartbeat = now
+            self._heartbeat_count = 0
 
         elapsed = (now - self._last_heartbeat).total_seconds()
         if elapsed >= self.config.heartbeat_interval:
             self._last_heartbeat = now
+            self._heartbeat_count = getattr(self, '_heartbeat_count', 0) + 1
 
             try:
                 account = self.broker.get_account_info()
@@ -862,6 +897,15 @@ class AutoTrader:
                         f"equity=${account.equity:.2f}, "
                         f"positions={positions}"
                     )
+
+                    # Log heartbeat metrics to MLflow
+                    if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+                        self.mlflow_tracker.log_autotrader_heartbeat(
+                            balance=account.balance,
+                            equity=account.equity,
+                            positions=positions,
+                            step=self._heartbeat_count
+                        )
                 else:
                     logger.info("Heartbeat: disconnected")
             except Exception:

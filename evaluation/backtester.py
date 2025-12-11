@@ -19,6 +19,7 @@ from core.trading_types import Trade, TradingError  # Consolidated Trade datacla
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
     from evaluation.metrics import MetricsCalculator
+    from utils.mlflow_tracker import MLflowTracker
 
 logger = logging.getLogger(__name__)
 
@@ -593,6 +594,8 @@ class WalkForwardOptimizer:
 
     Splits data into training and testing windows that roll forward through time,
     preventing look-ahead bias and testing out-of-sample performance.
+
+    Supports MLflow tracking for comprehensive experiment logging.
     """
 
     def __init__(
@@ -600,12 +603,14 @@ class WalkForwardOptimizer:
         train_window: int = 180,  # Days
         test_window: int = 30,    # Days
         step_size: int = 30,      # Days to step forward
-        n_splits: Optional[int] = None
+        n_splits: Optional[int] = None,
+        mlflow_tracker: Optional['MLflowTracker'] = None
     ):
         self.train_window = train_window
         self.test_window = test_window
         self.step_size = step_size
         self.n_splits = n_splits
+        self.mlflow_tracker = mlflow_tracker
 
     def generate_splits(
         self,
@@ -666,6 +671,15 @@ class WalkForwardOptimizer:
             logger.warning("No valid splits generated")
             return {}
 
+        # Log walk-forward parameters to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_walkforward_params(
+                train_window=self.train_window,
+                test_window=self.test_window,
+                step_size=self.step_size,
+                n_splits=len(splits)
+            )
+
         results = []
 
         if parallel:
@@ -682,6 +696,8 @@ class WalkForwardOptimizer:
                     result = future.result()
                     if result:
                         results.append(result)
+                        # Log fold results to MLflow
+                        self._log_fold_to_mlflow(result)
         else:
             for i, (train_data, test_data) in enumerate(splits):
                 result = self._run_single_fold(
@@ -689,9 +705,56 @@ class WalkForwardOptimizer:
                 )
                 if result:
                     results.append(result)
+                    # Log fold results to MLflow
+                    self._log_fold_to_mlflow(result)
 
         # Aggregate results
-        return self._aggregate_results(results)
+        aggregated = self._aggregate_results(results)
+
+        # Log summary to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled and aggregated:
+            self.mlflow_tracker.log_walkforward_summary(aggregated)
+
+        return aggregated
+
+    def _log_fold_to_mlflow(self, fold_result: Dict) -> None:
+        """Log a single fold's results to MLflow."""
+        if not self.mlflow_tracker or not self.mlflow_tracker.is_enabled:
+            return
+
+        fold_idx = fold_result.get('fold', 0)
+        result = fold_result.get('result')
+
+        if result is None:
+            return
+
+        # Extract metrics from BacktestResult
+        metrics = {
+            'total_return': result.total_return,
+            'sharpe_ratio': result.sharpe_ratio,
+            'sortino_ratio': result.sortino_ratio,
+            'max_drawdown': result.max_drawdown,
+            'win_rate': result.win_rate,
+            'profit_factor': result.profit_factor,
+            'total_trades': result.total_trades,
+            'calmar_ratio': result.calmar_ratio,
+            'volatility': result.volatility,
+        }
+
+        # Filter out inf values
+        metrics = {
+            k: v for k, v in metrics.items()
+            if v is not None and not (isinstance(v, float) and (np.isinf(v) or np.isnan(v)))
+        }
+
+        self.mlflow_tracker.log_walkforward_fold(
+            fold_idx=fold_idx,
+            metrics=metrics,
+            train_start=str(fold_result.get('train_start', '')),
+            train_end=str(fold_result.get('train_end', '')),
+            test_start=str(fold_result.get('test_start', '')),
+            test_end=str(fold_result.get('test_end', ''))
+        )
 
     def _run_single_fold(
         self,
@@ -780,11 +843,19 @@ class MonteCarloSimulator:
 
     Performance: Fully vectorized implementation using numpy broadcasting.
     ~50-100x faster than loop-based approach for typical simulation sizes.
+
+    Supports MLflow tracking for comprehensive experiment logging.
     """
 
-    def __init__(self, n_simulations: int = 1000, confidence_level: float = 0.95):
+    def __init__(
+        self,
+        n_simulations: int = 1000,
+        confidence_level: float = 0.95,
+        mlflow_tracker: Optional['MLflowTracker'] = None
+    ):
         self.n_simulations = n_simulations
         self.confidence_level = confidence_level
+        self.mlflow_tracker = mlflow_tracker
 
     def simulate_from_trades(self, trades: List[Trade]) -> Dict:
         """
@@ -796,6 +867,13 @@ class MonteCarloSimulator:
         if len(trades) < 10:
             logger.warning("Not enough trades for Monte Carlo simulation")
             return {}
+
+        # Log Monte Carlo parameters to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_monte_carlo_params(
+                n_simulations=self.n_simulations,
+                confidence_level=self.confidence_level
+            )
 
         trade_returns = np.array([t.pnl_pct for t in trades])
         n_trades = len(trades)
@@ -831,7 +909,7 @@ class MonteCarloSimulator:
         # Max drawdown for each simulation
         max_drawdowns = np.max(drawdowns, axis=1)
 
-        return {
+        results = {
             'final_equity': {
                 'mean': float(np.mean(final_values)),
                 'std': float(np.std(final_values)),
@@ -847,3 +925,9 @@ class MonteCarloSimulator:
             'probability_of_profit': float(np.mean(final_values > 1.0)),
             'probability_of_ruin': float(np.mean(final_values < 0.5))  # 50% loss
         }
+
+        # Log results to MLflow
+        if self.mlflow_tracker and self.mlflow_tracker.is_enabled:
+            self.mlflow_tracker.log_monte_carlo_results(results)
+
+        return results
