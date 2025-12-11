@@ -160,6 +160,9 @@ export const logsApi = {
 export const systemApi = {
   health: () => fetchApi<HealthStatus>('/health'),
   metrics: () => fetchApi<SystemMetrics>('/metrics/system'),
+  mlflowStatus: () => fetchApi<MLflowStatus>('/mlflow/status'),
+  launchMlflow: () =>
+    fetchApi<MLflowLaunchResult>('/mlflow/launch', { method: 'POST' }),
 }
 
 // Types
@@ -353,4 +356,18 @@ export interface SystemMetrics {
   memory: { total: number; used: number; percent: number }
   gpu: { available: boolean; name?: string }
   disk: { total: number; used: number; percent: number }
+}
+
+export interface MLflowStatus {
+  running: boolean
+  url: string | null
+  port: number
+  tracking_uri: string
+  experiment_name: string
+}
+
+export interface MLflowLaunchResult {
+  success: boolean
+  url: string
+  message: string
 }
