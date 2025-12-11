@@ -101,6 +101,15 @@ class MLflowTracker:
             mlflow.set_tracking_uri(self.config.tracking_uri)
             logger.info(f"MLflow tracking URI: {self.config.tracking_uri}")
 
+            # Log the mlflow ui command for convenience
+            # Extract the database path from the URI for the user
+            if self.config.tracking_uri.startswith("sqlite:///"):
+                db_path = self.config.tracking_uri[len("sqlite:///"):]
+                logger.info(
+                    f"To view experiments, run: "
+                    f"mlflow ui --backend-store-uri {self.config.tracking_uri}"
+                )
+
             # Set or create experiment
             experiment = mlflow.set_experiment(self.config.experiment_name)
             logger.info(
@@ -304,19 +313,23 @@ class MLflowTracker:
             # Convert numpy array to DataFrame if needed
             if isinstance(data, np.ndarray):
                 if data.ndim == 1:
-                    df = pd.DataFrame({"data": data})
+                    df = pd.DataFrame({"data": data.astype(np.float64)})
                 elif data.ndim == 2:
-                    df = pd.DataFrame(data)
+                    df = pd.DataFrame(data.astype(np.float64))
                 else:
-                    # For 3D data (sequences), flatten for tracking
+                    # For 3D data (sequences), store metadata as floats to avoid
+                    # MLflow warning about integer columns not supporting NaN
                     df = pd.DataFrame({
                         "shape": [str(data.shape)],
-                        "samples": [data.shape[0]],
-                        "seq_length": [data.shape[1] if data.ndim > 1 else 1],
-                        "features": [data.shape[2] if data.ndim > 2 else data.shape[1] if data.ndim > 1 else 1]
+                        "samples": [float(data.shape[0])],
+                        "seq_length": [float(data.shape[1]) if data.ndim > 1 else 1.0],
+                        "features": [float(data.shape[2]) if data.ndim > 2 else float(data.shape[1]) if data.ndim > 1 else 1.0]
                     })
             else:
-                df = data
+                # For DataFrames, convert integer columns to float to avoid warnings
+                df = data.copy()
+                for col in df.select_dtypes(include=['int', 'int64', 'int32']).columns:
+                    df[col] = df[col].astype(np.float64)
 
             # Create MLflow dataset
             dataset = mlflow.data.from_pandas(df, name=name)
