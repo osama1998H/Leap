@@ -124,7 +124,17 @@ class TradingEnvironment(BaseTradingEnvironment):
         super().reset(seed=seed)
         _ = options  # Required by Gymnasium API but currently unused
 
-        self.current_step = self.window_size
+        # Randomize starting point to sample different market regimes
+        # Leave room for max_episode_steps + window_size
+        max_start = len(self.data) - self.max_episode_steps - 1
+        if max_start > self.window_size:
+            self.current_step = self.np_random.integers(self.window_size, max_start)
+        else:
+            self.current_step = self.window_size
+
+        # Reset episode step counter
+        self._episode_step = 0
+
         self.state = TradingState(
             balance=self.initial_balance,
             equity=self.initial_balance,
@@ -155,13 +165,16 @@ class TradingEnvironment(BaseTradingEnvironment):
 
         # Move to next step
         self.current_step += 1
+        self._episode_step += 1
 
         # Check if episode is done
+        # Terminated: natural end conditions (bankruptcy, max drawdown, end of data)
         terminated = (
             self.current_step >= len(self.data) - 1 or
             self._check_termination()
         )
-        truncated = False
+        # Truncated: artificial limit to keep episodes manageable for learning
+        truncated = self._episode_step >= self.max_episode_steps
 
         # Record history
         self._record_history(action, reward, current_price)

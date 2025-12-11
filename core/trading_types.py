@@ -129,6 +129,7 @@ class EnvConfig:
     take_profit_pct: float = 0.04  # 4% take profit
     window_size: int = 60
     max_drawdown_threshold: float = 0.5  # 50% max drawdown terminates episode
+    max_episode_steps: int = 2000  # Max steps per episode (prevents extremely long episodes)
 
     @classmethod
     def from_params(
@@ -142,7 +143,8 @@ class EnvConfig:
         stop_loss_pct: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
         window_size: Optional[int] = None,
-        max_drawdown_threshold: Optional[float] = None
+        max_drawdown_threshold: Optional[float] = None,
+        max_episode_steps: Optional[int] = None
     ) -> 'EnvConfig':
         """
         Factory method to create EnvConfig from individual parameters.
@@ -164,7 +166,8 @@ class EnvConfig:
             stop_loss_pct=stop_loss_pct if stop_loss_pct is not None else defaults.stop_loss_pct,
             take_profit_pct=take_profit_pct if take_profit_pct is not None else defaults.take_profit_pct,
             window_size=window_size if window_size is not None else defaults.window_size,
-            max_drawdown_threshold=max_drawdown_threshold if max_drawdown_threshold is not None else defaults.max_drawdown_threshold
+            max_drawdown_threshold=max_drawdown_threshold if max_drawdown_threshold is not None else defaults.max_drawdown_threshold,
+            max_episode_steps=max_episode_steps if max_episode_steps is not None else defaults.max_episode_steps
         )
 
 

@@ -91,6 +91,7 @@ class BaseTradingEnvironment(gym.Env, ABC):
         self.take_profit_pct = config.take_profit_pct
         self.window_size = config.window_size
         self.max_drawdown_threshold = config.max_drawdown_threshold
+        self.max_episode_steps = config.max_episode_steps
 
         self.render_mode = render_mode
         self.risk_manager = risk_manager
@@ -108,6 +109,7 @@ class BaseTradingEnvironment(gym.Env, ABC):
         # State and step counter (initialized by subclass reset)
         self.state: TradingState = None
         self.current_step = 0
+        self._episode_step = 0  # Steps within current episode (for max_episode_steps)
 
         # Track previous drawdown for delta-based reward calculation
         # This enables penalizing drawdown INCREASES rather than cumulative drawdown
