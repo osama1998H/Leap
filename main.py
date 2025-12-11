@@ -1198,13 +1198,18 @@ Examples:
                 }
             ):
                 # Log parameters
-                tracker.log_params({
+                params = {
                     "symbol": primary_symbol,
                     "timeframe": timeframe,
                     "n_bars": n_bars,
                     "realistic_mode": args.realistic,
-                    "monte_carlo": args.monte_carlo
-                })
+                    "monte_carlo": args.monte_carlo,
+                    "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+                }
+                if additional_timeframes:
+                    params["additional_timeframes"] = ",".join(additional_timeframes)
+                    params["n_additional_timeframes"] = len(additional_timeframes)
+                tracker.log_params(params)
 
                 # Log backtest metrics (basic)
                 tracker.log_backtest_results(analysis)
@@ -1249,13 +1254,18 @@ Examples:
                 }
             ):
                 # Log base parameters
-                tracker.log_params({
+                params = {
                     "symbol": primary_symbol,
                     "timeframe": timeframe,
                     "n_bars": n_bars,
                     "train_window_days": config.backtest.train_window_days,
                     "test_window_days": config.backtest.test_window_days,
-                })
+                    "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+                }
+                if additional_timeframes:
+                    params["additional_timeframes"] = ",".join(additional_timeframes)
+                    params["n_additional_timeframes"] = len(additional_timeframes)
+                tracker.log_params(params)
 
                 # Run walk-forward test (MLflow tracking handled inside)
                 results = system.walk_forward_test(market_data)
@@ -1366,6 +1376,20 @@ Examples:
                 }
             )
             run_context.__enter__()
+
+            # Log autotrade parameters including multi-timeframe
+            params = {
+                "symbol": primary_symbol,
+                "timeframe": timeframe,
+                "paper_mode": args.paper,
+                "risk_per_trade": trader_config.risk_per_trade,
+                "max_positions": trader_config.max_positions,
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
 
         # Start trading
         mode = "PAPER" if args.paper else "LIVE"
