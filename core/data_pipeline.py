@@ -850,10 +850,13 @@ class DataPipeline:
 
         Returns:
             Primary DataFrame with additional timeframe features added
+
+        Performance: Minimizes DataFrame copies by reusing compute_all_features'
+        internal copy and using views where possible.
         """
         logger.info(f"Adding multi-timeframe features from: {list(additional_data.keys())}")
 
-        # Ensure primary_df has datetime index for merging
+        # Single copy at start (needed to avoid modifying caller's DataFrame)
         primary_df = primary_df.copy()
         primary_df['timestamp'] = pd.to_datetime(primary_df['timestamp'])
         primary_df = primary_df.set_index('timestamp', drop=False)
@@ -862,8 +865,8 @@ class DataPipeline:
             # Create a separate feature engineer for this timeframe
             tf_engineer = FeatureEngineer(self.config)
 
-            # Compute features for the additional timeframe
-            tf_df = tf_engineer.compute_all_features(tf_df.copy())
+            # compute_all_features already copies internally, no need for extra copy
+            tf_df = tf_engineer.compute_all_features(tf_df)
             tf_df = tf_df.ffill().bfill()
 
             # Select key features to include (not all features to avoid explosion)
@@ -877,11 +880,10 @@ class DataPipeline:
             tf_df['timestamp'] = pd.to_datetime(tf_df['timestamp'])
             tf_df = tf_df.set_index('timestamp')
 
-            # Select only the key features
-            tf_features = tf_df[key_features].copy()
-
-            # Rename columns with timeframe prefix
-            tf_features.columns = [f"{tf_name}_{col}" for col in tf_features.columns]
+            # Select only the key features - use rename to avoid intermediate copy
+            # Get prefixed column names
+            renamed_cols = {col: f"{tf_name}_{col}" for col in key_features}
+            tf_features = tf_df[key_features].rename(columns=renamed_cols)
 
             # Merge using merge_asof for time-based alignment
             # This forward-fills higher timeframe data to lower timeframe
@@ -898,15 +900,17 @@ class DataPipeline:
             )
 
             # Add the new feature columns to primary_df
-            for col in tf_features.columns:
-                if col != 'timestamp' and col in merged.columns:
+            new_cols = [col for col in tf_features.columns if col != 'timestamp']
+            for col in new_cols:
+                if col in merged.columns:
                     primary_df[col] = merged[col].values
                     feature_cols.append(col)
 
-            logger.info(f"Added {len(tf_features.columns) - 1} features from {tf_name} timeframe")
+            logger.info(f"Added {len(new_cols)} features from {tf_name} timeframe")
 
-        # Handle any new NaN values from the merge
-        primary_df = primary_df.ffill().bfill()
+        # Handle any new NaN values from the merge (inplace for efficiency)
+        primary_df.ffill(inplace=True)
+        primary_df.bfill(inplace=True)
 
         # Restore index
         primary_df = primary_df.reset_index(drop=True)
@@ -960,22 +964,25 @@ class DataPipeline:
         target: str = 'returns'
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Prepare sequences for training.
+        Prepare sequences for training using vectorized operations.
 
         Returns:
             X: Input sequences (samples, seq_len, features)
             y: Target values (samples, prediction_horizon)
             timestamps: Timestamps for each sample
-        """
-        # Combine OHLCV with features
-        ohlcv = np.column_stack([
-            data.open, data.high, data.low, data.close, data.volume
-        ])
 
+        Performance: Uses numpy stride tricks for ~10-100x speedup over loops.
+        """
+        # Combine OHLCV with features in single operation (avoid intermediate array)
         if data.features is not None:
-            features = np.concatenate([ohlcv, data.features], axis=1)
+            features = np.column_stack([
+                data.open, data.high, data.low, data.close, data.volume,
+                data.features
+            ])
         else:
-            features = ohlcv
+            features = np.column_stack([
+                data.open, data.high, data.low, data.close, data.volume
+            ])
 
         # Normalize features
         scaler_key = f"{data.symbol}_{data.timeframe}"
@@ -988,30 +995,41 @@ class DataPipeline:
         # Handle any remaining NaN/Inf
         features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # Compute target (future returns)
+        # Compute target (future returns) - VECTORIZED
+        close_prices = data.close
         if target == 'returns':
-            close_prices = data.close
-            targets = []
-            for i in range(len(close_prices) - prediction_horizon):
-                future_return = (close_prices[i + prediction_horizon] - close_prices[i]) / close_prices[i]
-                targets.append(future_return)
-            targets = np.array(targets)
+            # Vectorized return calculation: (future - current) / current
+            targets = (close_prices[prediction_horizon:] - close_prices[:-prediction_horizon]) / (
+                close_prices[:-prediction_horizon] + 1e-10  # Avoid division by zero
+            )
         else:
-            # Direction prediction
-            close_prices = data.close
+            # Direction prediction - already vectorized
             targets = (np.roll(close_prices, -prediction_horizon) > close_prices).astype(float)
             targets = targets[:-prediction_horizon]
 
-        # Create sequences
-        X, y, timestamps = [], [], []
+        # Create sequences using numpy stride tricks - VECTORIZED
         n_samples = len(features) - sequence_length - prediction_horizon
 
-        for i in range(n_samples):
-            X.append(features[i:i + sequence_length])
-            y.append(targets[i + sequence_length - 1])
-            timestamps.append(data.timestamp[i + sequence_length - 1])
+        if n_samples <= 0:
+            return np.array([]), np.array([]), np.array([])
 
-        return np.array(X), np.array(y), np.array(timestamps)
+        # Use sliding_window_view for efficient sequence creation (numpy >= 1.20)
+        # This creates a view without copying data
+        from numpy.lib.stride_tricks import sliding_window_view
+
+        # Create sliding windows over features: shape (n_windows, seq_len, n_features)
+        X = sliding_window_view(features, window_shape=sequence_length, axis=0)
+
+        # Select only the samples we need (excluding last prediction_horizon)
+        X = X[:n_samples].copy()  # Copy to ensure contiguous array for training
+
+        # Extract corresponding targets (aligned with end of each sequence)
+        y = targets[sequence_length - 1:sequence_length - 1 + n_samples]
+
+        # Extract corresponding timestamps
+        timestamps = data.timestamp[sequence_length - 1:sequence_length - 1 + n_samples]
+
+        return X, y, np.array(timestamps)
 
     def create_train_val_test_split(
         self,

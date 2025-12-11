@@ -699,7 +699,10 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         self._update_drawdown()
 
     def _fetch_initial_data(self):
-        """Fetch initial market data for observation buffer."""
+        """Fetch initial market data for observation buffer.
+
+        Performance: Uses vectorized stacking instead of per-element loops.
+        """
         if self.data_pipeline is None:
             return
 
@@ -710,18 +713,21 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         )
 
         if market_data is not None:
-            for i in range(len(market_data.close)):
-                ohlcv = np.array([
-                    market_data.open[i],
-                    market_data.high[i],
-                    market_data.low[i],
-                    market_data.close[i],
-                    market_data.volume[i]
-                ])
-                self._price_buffer.append(ohlcv)
+            # Vectorized: Stack all OHLCV data at once instead of looping
+            ohlcv_array = np.column_stack([
+                market_data.open,
+                market_data.high,
+                market_data.low,
+                market_data.close,
+                market_data.volume
+            ])
 
-                if market_data.features is not None:
-                    self._feature_buffer.append(market_data.features[i])
+            # Extend buffer with all rows at once (convert to list of arrays)
+            self._price_buffer.extend([ohlcv_array[i] for i in range(len(ohlcv_array))])
+
+            # Features - also vectorized
+            if market_data.features is not None:
+                self._feature_buffer.extend([market_data.features[i] for i in range(len(market_data.features))])
 
     def _update_data_buffer(self):
         """Update data buffer with latest tick."""

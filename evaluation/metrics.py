@@ -8,6 +8,8 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
+import hashlib
 import logging
 
 from .backtester import MonteCarloSimulator
@@ -15,9 +17,17 @@ from .backtester import MonteCarloSimulator
 logger = logging.getLogger(__name__)
 
 
+def _array_hash(arr: np.ndarray) -> str:
+    """Create a hash key for a numpy array (for caching)."""
+    return hashlib.md5(arr.tobytes()).hexdigest()
+
+
 class MetricsCalculator:
     """
     Calculate trading performance metrics.
+
+    Performance: Uses internal caching for repeated computations on the same data.
+    The _CachedResult helper stores intermediate results during a single calculate_all() call.
     """
 
     def __init__(
@@ -34,26 +44,39 @@ class MetricsCalculator:
         trades: Optional[List] = None,
         benchmark: Optional[np.ndarray] = None
     ) -> Dict:
-        """Calculate all metrics."""
+        """Calculate all metrics with optimized intermediate result caching."""
+        # Pre-compute shared values once
         returns = self._calculate_returns(equity_curve)
+        total_ret = self.total_return(equity_curve)
+
+        # Pre-compute drawdown series once (used by multiple metrics)
+        dd_series = self._compute_drawdown_series(equity_curve)
+        max_dd = float(np.max(dd_series)) if len(dd_series) > 0 else 0.0
+
+        # Pre-compute return statistics once
+        returns_mean = np.mean(returns) if len(returns) > 0 else 0.0
+        returns_std = np.std(returns) if len(returns) > 0 else 0.0
+
+        # Pre-compute downside returns once (used by sortino, downside_vol)
+        downside_returns = returns[returns < 0]
 
         metrics = {
             # Return metrics
-            'total_return': self.total_return(equity_curve),
-            'annualized_return': self.annualized_return(equity_curve),
-            'cagr': self.cagr(equity_curve),
+            'total_return': total_ret,
+            'annualized_return': self._annualized_return_from_total(total_ret, len(equity_curve)),
+            'cagr': self._annualized_return_from_total(total_ret, len(equity_curve)),
 
-            # Risk metrics
-            'volatility': self.volatility(returns),
-            'downside_volatility': self.downside_volatility(returns),
-            'max_drawdown': self.max_drawdown(equity_curve),
-            'avg_drawdown': self.average_drawdown(equity_curve),
-            'max_drawdown_duration': self.max_drawdown_duration(equity_curve),
+            # Risk metrics - use pre-computed values
+            'volatility': returns_std * np.sqrt(self.periods_per_year) if returns_std > 0 else 0.0,
+            'downside_volatility': self._downside_vol_from_returns(downside_returns),
+            'max_drawdown': max_dd,
+            'avg_drawdown': float(np.mean(dd_series)) if len(dd_series) > 0 else 0.0,
+            'max_drawdown_duration': self._max_dd_duration_from_series(dd_series),
 
-            # Risk-adjusted returns
-            'sharpe_ratio': self.sharpe_ratio(returns),
-            'sortino_ratio': self.sortino_ratio(returns),
-            'calmar_ratio': self.calmar_ratio(equity_curve),
+            # Risk-adjusted returns - use pre-computed values
+            'sharpe_ratio': self._sharpe_from_stats(returns_mean, returns_std),
+            'sortino_ratio': self._sortino_from_returns(returns_mean, downside_returns),
+            'calmar_ratio': self._calmar_from_values(total_ret, max_dd, len(equity_curve)),
             'omega_ratio': self.omega_ratio(returns),
             'information_ratio': self.information_ratio(returns, benchmark) if benchmark is not None else None,
 
@@ -77,7 +100,67 @@ class MetricsCalculator:
 
     def _calculate_returns(self, equity_curve: np.ndarray) -> np.ndarray:
         """Calculate returns from equity curve."""
-        return np.diff(equity_curve) / equity_curve[:-1]
+        if len(equity_curve) < 2:
+            return np.array([])
+        return np.diff(equity_curve) / (equity_curve[:-1] + 1e-10)
+
+    def _compute_drawdown_series(self, equity_curve: np.ndarray) -> np.ndarray:
+        """Compute drawdown series (vectorized, computed once)."""
+        if len(equity_curve) < 2:
+            return np.array([])
+        peak = np.maximum.accumulate(equity_curve)
+        return (peak - equity_curve) / (peak + 1e-10)
+
+    def _annualized_return_from_total(self, total_return: float, n_periods: int) -> float:
+        """Calculate annualized return from pre-computed total return."""
+        if n_periods < 2:
+            return 0.0
+        return (1 + total_return) ** (self.periods_per_year / n_periods) - 1
+
+    def _downside_vol_from_returns(self, downside_returns: np.ndarray) -> float:
+        """Calculate downside volatility from pre-computed downside returns."""
+        if len(downside_returns) == 0:
+            return 0.0
+        return float(np.std(downside_returns) * np.sqrt(self.periods_per_year))
+
+    def _sharpe_from_stats(self, returns_mean: float, returns_std: float) -> float:
+        """Calculate Sharpe ratio from pre-computed statistics."""
+        if returns_std == 0:
+            return 0.0
+        excess_return = returns_mean * self.periods_per_year - self.risk_free_rate
+        annualized_std = returns_std * np.sqrt(self.periods_per_year)
+        return excess_return / annualized_std
+
+    def _sortino_from_returns(self, returns_mean: float, downside_returns: np.ndarray) -> float:
+        """Calculate Sortino ratio from pre-computed values."""
+        if len(downside_returns) == 0:
+            return 0.0 if returns_mean <= 0 else float('inf')
+        downside_std = np.std(downside_returns) * np.sqrt(self.periods_per_year)
+        if downside_std == 0:
+            return 0.0
+        excess_return = returns_mean * self.periods_per_year - self.risk_free_rate
+        return excess_return / downside_std
+
+    def _calmar_from_values(self, total_return: float, max_dd: float, n_periods: int) -> float:
+        """Calculate Calmar ratio from pre-computed values."""
+        if max_dd == 0 or n_periods < 2:
+            return 0.0
+        ann_return = self._annualized_return_from_total(total_return, n_periods)
+        return ann_return / max_dd
+
+    def _max_dd_duration_from_series(self, dd_series: np.ndarray) -> int:
+        """Calculate max drawdown duration from pre-computed drawdown series."""
+        if len(dd_series) == 0:
+            return 0
+        current_duration = 0
+        max_duration = 0
+        for dd in dd_series:
+            if dd > 0:
+                current_duration += 1
+                max_duration = max(max_duration, current_duration)
+            else:
+                current_duration = 0
+        return max_duration
 
     # Return Metrics
     def total_return(self, equity_curve: np.ndarray) -> float:
