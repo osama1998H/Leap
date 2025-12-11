@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -60,7 +60,7 @@ cover/
 local_settings.py
 
 # Leap trading system logs
-logs/
+/logs/
 db.sqlite3
 db.sqlite3-journal
 
@@ -223,3 +223,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node.js / Frontend
+node_modules/
+ui/dist/
+.npm
+*.tgz
+.eslintcache
