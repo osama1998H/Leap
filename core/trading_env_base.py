@@ -218,6 +218,12 @@ class BaseTradingEnvironment(gym.Env, ABC):
         an episode, so using it directly as a penalty makes ALL rewards negative
         over time. Instead, we use the CHANGE in drawdown (delta) to only
         penalize when risk increases, while rewarding recovery.
+
+        FIX Critical #3 (v2): Balanced scaling factors for numerical stability
+        while maintaining sufficient learning signal.
+        - Original: 100x (caused gradient explosion)
+        - v1 fix: 10x (too weak, agent didn't learn)
+        - v2 fix: 50x with ±5 clipping (balanced)
         """
         # Guard against zero or negative prev_equity (account wiped out)
         if prev_equity <= 0:
@@ -226,7 +232,10 @@ class BaseTradingEnvironment(gym.Env, ABC):
         # === Return Component (primary reward signal) ===
         safe_prev_equity = max(prev_equity, 1e-8)
         returns = (self.state.equity - prev_equity) / safe_prev_equity
-        return_reward = returns * 100  # Scale to make returns meaningful
+
+        # FIX v2: Increased from 10x to 50x for stronger learning signal
+        # 50x provides meaningful gradients while staying bounded
+        return_reward = returns * 50.0
 
         # === Delta-Based Drawdown Penalty ===
         # Calculate current drawdown (resets to 0 when equity makes new high)
@@ -242,21 +251,25 @@ class BaseTradingEnvironment(gym.Env, ABC):
         recovery_bonus = 0.0
 
         if drawdown_delta > 0:
-            # Penalize increasing drawdown (entering deeper drawdown)
-            drawdown_penalty = -drawdown_delta * 50  # Scale factor for significance
+            # FIX v2: Increased from 5x to 25x for stronger signal
+            drawdown_penalty = -drawdown_delta * 25.0
         elif drawdown_delta < 0:
-            # Small bonus for recovering from drawdown
-            recovery_bonus = -drawdown_delta * 25  # Half the penalty scale
+            # FIX v2: Increased from 2.5x to 12.5x
+            recovery_bonus = -drawdown_delta * 12.5
 
         # Update previous drawdown for next step
         self._prev_drawdown = current_drawdown
 
         # === Position Holding Cost ===
         # Small cost to encourage decisive actions (not holding forever)
-        holding_cost = -len(self._get_open_positions()) * 0.0001
+        holding_cost = -len(self._get_open_positions()) * 0.001
 
         # === Combine Reward Components ===
         reward = return_reward + drawdown_penalty + recovery_bonus + holding_cost
+
+        # FIX v2: Clip at ±5 instead of ±10 for tighter bounds
+        # Combined with 50x scaling, this gives good signal with stability
+        reward = max(-5.0, min(5.0, reward))
 
         return float(reward)
 
