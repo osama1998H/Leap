@@ -1309,6 +1309,19 @@ Examples:
             logger.error("Models not loaded. Please train models first.")
             sys.exit(1)
 
+        # For autotrade, use config.auto_trader settings as defaults (not config.data)
+        # CLI args still take priority: --symbol/--symbols > config.auto_trader > config.data
+        if args.symbols:
+            autotrade_symbols = args.symbols
+        elif args.symbol:
+            autotrade_symbols = [args.symbol]
+        elif config.auto_trader.symbols:
+            autotrade_symbols = config.auto_trader.symbols
+        else:
+            autotrade_symbols = symbols  # Fall back to earlier computed value
+
+        autotrade_timeframe = args.timeframe or config.auto_trader.timeframe or timeframe
+
         # Create broker gateway
         broker = MT5BrokerGateway(
             login=config.auto_trader.mt5_login,
@@ -1319,8 +1332,8 @@ Examples:
 
         # Create auto-trader config with model environment dimensions
         trader_config = AutoTraderConfig(
-            symbols=symbols,
-            timeframe=timeframe,
+            symbols=autotrade_symbols,
+            timeframe=autotrade_timeframe,
             risk_per_trade=config.auto_trader.risk_per_trade,
             max_positions=config.auto_trader.max_positions,
             default_sl_pips=config.auto_trader.default_sl_pips,
@@ -1355,7 +1368,7 @@ Examples:
         mode = "PAPER" if args.paper else "LIVE"
         print(f"\n{'='*60}")
         print(f"  LEAP AUTO-TRADER - {mode} MODE")
-        print(f"  Symbols: {', '.join(symbols)}")
+        print(f"  Symbols: {', '.join(autotrade_symbols)}")
         print(f"  Risk per trade: {trader_config.risk_per_trade*100:.1f}%")
         print(f"  Max positions: {trader_config.max_positions}")
         print(f"{'='*60}\n")
