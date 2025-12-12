@@ -54,6 +54,8 @@ class ModelTrainer:
         self.agent_timesteps = self.config.get('agent_timesteps', 100000)
         self.batch_size = self.config.get('batch_size', 64)
         self.patience = self.config.get('patience', 15)
+        # PPO patience defaults to transformer patience for backward compatibility
+        self.ppo_patience = self.config.get('ppo_patience', self.patience)
 
         # Checkpointing
         self.checkpoint_dir = self.config.get('checkpoint_dir', './checkpoints')
@@ -179,9 +181,9 @@ class ModelTrainer:
         timesteps = total_timesteps or self.agent_timesteps
         start_time = time.time()
 
-        # Determine patience: explicit arg > config > default (15)
+        # Determine patience: explicit arg > ppo_patience config > default (15)
         if patience is None:
-            patience = self.patience
+            patience = self.ppo_patience
 
         # Allow patience=0 to disable early stopping
         effective_patience = patience if patience > 0 else None

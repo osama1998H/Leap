@@ -99,6 +99,7 @@ class PPOConfig:
     n_epochs: int = 10  # Epochs per update
     batch_size: int = 64
     total_timesteps: int = 1_000_000
+    patience: int = 15  # Early stopping patience (requires eval_env)
 
     # Online learning
     online_update_frequency: int = 500
