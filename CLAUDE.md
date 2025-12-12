@@ -25,8 +25,7 @@ Leap is an AI-powered forex trading system combining Transformer-based price pre
 python main.py train --symbol EURUSD --epochs 100 --timesteps 100000
 python main.py train --symbols EURUSD GBPUSD --multi-timeframe  # Multi-symbol + multi-timeframe
 
-# Backtesting
-python main.py backtest --symbol EURUSD --realistic --monte-carlo
+# Validation
 python main.py walkforward --symbol EURUSD
 
 # Live Trading (Windows only - requires MT5)

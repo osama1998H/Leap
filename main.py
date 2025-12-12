@@ -32,7 +32,6 @@ from models.ppo_agent import PPOAgent
 from training.trainer import ModelTrainer
 from training.online_learning import OnlineLearningManager, AdaptiveTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
-from evaluation.metrics import PerformanceAnalyzer
 import logging
 from utils.logging_config import setup_logging
 from utils.mlflow_tracker import MLflowTracker, create_tracker, MLFLOW_AVAILABLE
@@ -102,7 +101,7 @@ class LeapTradingSystem:
     - Prediction model (Transformer)
     - RL agent (PPO)
     - Risk management
-    - Backtesting
+    - Walk-forward validation
     - Online learning
     """
 
@@ -426,133 +425,6 @@ class LeapTradingSystem:
         finally:
             if run_context is not None:
                 run_context.__exit__(None, None, None)
-
-    def backtest(
-        self,
-        market_data,
-        _strategy_type: str = 'combined',  # Reserved for future multi-strategy support
-        realistic_mode: bool = False,
-        enable_monte_carlo: bool = False
-    ):
-        """Run backtest on historical data.
-
-        Args:
-            market_data: Market data to backtest on
-            _strategy_type: Strategy type (reserved for future use)
-            realistic_mode: If True, applies realistic trading constraints:
-                - Minimum 4 hours between trades
-                - Maximum 5 trades per day
-                - Maximum position size of 10 lots (1M units)
-        """
-        import pandas as pd
-
-        # Prepare data as DataFrame
-        df = pd.DataFrame({
-            'open': market_data.open,
-            'high': market_data.high,
-            'low': market_data.low,
-            'close': market_data.close,
-            'volume': market_data.volume
-        })
-
-        # Add features - use pd.concat to avoid DataFrame fragmentation
-        if market_data.features is not None:
-            feature_dict = {
-                name: market_data.features[:, i]
-                for i, name in enumerate(market_data.feature_names)
-            }
-            feature_df = pd.DataFrame(feature_dict)
-            df = pd.concat([df, feature_df], axis=1)
-
-        # Create backtester
-        backtester = Backtester(
-            initial_balance=self.config.backtest.initial_balance,
-            commission_rate=self.config.backtest.commission_per_lot / 100000,
-            spread_pips=self.config.backtest.spread_pips,
-            slippage_pips=self.config.backtest.slippage_pips,
-            leverage=self.config.backtest.leverage,
-            realistic_mode=realistic_mode
-        )
-
-        if realistic_mode:
-            logger.info("Running backtest with REALISTIC constraints (limited trades, capped position size)")
-
-        # Determine which feature names to use for inference
-        # Use saved model feature names if available, otherwise use current features
-        if self._model_feature_names:
-            inference_feature_names = self._model_feature_names
-            # Validate that all required features exist in current data
-            current_features = set(market_data.feature_names) if market_data.feature_names else set()
-            missing_features = set(inference_feature_names) - current_features
-            if missing_features:
-                logger.warning(
-                    f"Model requires {len(missing_features)} features not in current data: "
-                    f"{list(missing_features)[:5]}{'...' if len(missing_features) > 5 else ''}"
-                )
-        else:
-            inference_feature_names = list(market_data.feature_names) if market_data.feature_names else []
-            if self._predictor is not None:
-                # Check for mismatch when using old model without saved feature names
-                current_dim = 5 + len(inference_feature_names)  # OHLCV + features
-                if current_dim != self._predictor.input_dim:
-                    raise ValueError(
-                        f"Feature dimension mismatch: model expects {self._predictor.input_dim} features, "
-                        f"but current data has {current_dim} (5 OHLCV + {len(inference_feature_names)} computed). "
-                        f"The saved model does not have feature_names metadata, so automatic "
-                        f"feature matching is not possible. Please retrain the model with:\n"
-                        f"  python main.py train --symbol {market_data.symbol}"
-                    )
-
-        # Define strategy
-        def strategy(data, predictor=None, agent=None, positions=None):
-            """Combined prediction + RL strategy."""
-            if len(data) < self.config.data.lookback_window + 1:
-                return {'action': 'hold'}
-
-            # Get features for prediction
-            if predictor is not None and len(data) >= self.config.data.lookback_window:
-                # Prepare input - include OHLCV + computed features to match training
-                recent_data = data.tail(self.config.data.lookback_window)
-                ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
-                feature_cols = ohlcv_cols + inference_feature_names
-                features = recent_data[feature_cols].values
-
-                if features is not None:
-                    # Make prediction
-                    X = features.reshape(1, self.config.data.lookback_window, -1)
-                    prediction = predictor.predict(X)
-                    pred_return = prediction['prediction'][0, 0]
-
-                    # Simple threshold-based decision
-                    if pred_return > 0.001:
-                        return {'action': 'buy', 'stop_loss_pips': 50}
-                    elif pred_return < -0.001:
-                        return {'action': 'sell', 'stop_loss_pips': 50}
-
-            return {'action': 'hold'}
-
-        # Run backtest
-        logger.info("Running backtest...")
-        result = backtester.run(
-            data=df,
-            strategy=strategy,
-            predictor=self._predictor
-        )
-
-        # Analyze results
-        analyzer_config = {
-            'enable_monte_carlo': enable_monte_carlo,
-            'n_simulations': self.config.backtest.n_simulations,
-            'confidence_level': self.config.backtest.confidence_level
-        }
-        analyzer = PerformanceAnalyzer(config=analyzer_config)
-        analysis = analyzer.analyze(result)
-
-        # Print report
-        report = analyzer.generate_report(analysis)
-        print(report)
-
-        return result, analysis
 
     def walk_forward_test(self, market_data):
         """Run walk-forward optimization.
@@ -898,15 +770,15 @@ def main():
         epilog="""
 Examples:
   python main.py train --symbol EURUSD --epochs 100
-  python main.py backtest --symbol EURUSD
-  python main.py autotrade --paper
+  python main.py walkforward --symbol EURUSD
   python main.py evaluate --model-dir ./models
+  python main.py autotrade --paper
         """
     )
 
     parser.add_argument(
         'command',
-        choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'],
+        choices=['train', 'evaluate', 'walkforward', 'autotrade'],
         help='Command to execute'
     )
 
@@ -966,18 +838,6 @@ Examples:
         '--paper',
         action='store_true',
         help='Use paper trading mode'
-    )
-
-    parser.add_argument(
-        '--realistic',
-        action='store_true',
-        help='Enable realistic backtesting constraints (limited trades, capped position size)'
-    )
-
-    parser.add_argument(
-        '--monte-carlo',
-        action='store_true',
-        help='Run Monte Carlo simulation for risk analysis'
     )
 
     parser.add_argument(
@@ -1136,82 +996,6 @@ Examples:
                 'agent_episodes': len(results['agent']['episode_rewards'])
             }
         print(json.dumps(summary, indent=2))
-
-    elif args.command == 'backtest':
-        logger.info("Starting backtest...")
-
-        # Load data
-        market_data = system.load_data(
-            symbol=primary_symbol,
-            timeframe=timeframe,
-            n_bars=n_bars,
-            additional_timeframes=additional_timeframes
-        )
-
-        if market_data is None:
-            sys.exit(1)
-
-        # Load models if available
-        if os.path.exists(args.model_dir):
-            system.load_models(args.model_dir)
-
-        # Run backtest
-        _result, analysis = system.backtest(
-            market_data,
-            realistic_mode=args.realistic,
-            enable_monte_carlo=args.monte_carlo
-        )
-
-        # Save results
-        results_dir = os.path.join(config.base_dir, 'results')
-        os.makedirs(results_dir, exist_ok=True)
-
-        results_data = {
-            'total_return': analysis.get('total_return'),
-            'sharpe_ratio': analysis.get('sharpe_ratio'),
-            'max_drawdown': analysis.get('max_drawdown'),
-            'win_rate': analysis.get('win_rate'),
-            'total_trades': analysis.get('total_trades')
-        }
-
-        # Include Monte Carlo results if available
-        if 'monte_carlo' in analysis:
-            results_data['monte_carlo'] = analysis['monte_carlo']
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        results_file = os.path.join(results_dir, f'backtest_{timestamp}.json')
-        with open(results_file, 'w') as f:
-            json.dump(results_data, f, indent=2)
-
-        # Log backtest results to MLflow
-        tracker = system.mlflow_tracker
-        if tracker and tracker.is_enabled:
-            run_name = f"backtest-{primary_symbol}-{timeframe}-{timestamp}"
-            with tracker.start_run(
-                run_name=run_name,
-                tags={
-                    "symbol": primary_symbol,
-                    "timeframe": timeframe,
-                    "command": "backtest",
-                    "realistic_mode": str(args.realistic)
-                }
-            ):
-                # Log parameters
-                tracker.log_params({
-                    "symbol": primary_symbol,
-                    "timeframe": timeframe,
-                    "n_bars": n_bars,
-                    "realistic_mode": args.realistic,
-                    "monte_carlo": args.monte_carlo
-                })
-
-                # Log backtest metrics
-                tracker.log_backtest_results(analysis)
-
-                # Log results file as artifact
-                tracker.log_artifact(results_file)
-
-                logger.info(f"Backtest results logged to MLflow: {run_name}")
 
     elif args.command == 'walkforward':
         logger.info("Starting walk-forward analysis...")

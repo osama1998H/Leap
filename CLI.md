@@ -15,7 +15,6 @@ python main.py [COMMAND] [OPTIONS]
 | Command | Description |
 |---------|-------------|
 | `train` | Train Transformer predictor and PPO reinforcement learning agent |
-| `backtest` | Run backtest on historical market data |
 | `walkforward` | Run walk-forward optimization with rolling train/test splits |
 | `evaluate` | Evaluate trained models on test data |
 | `autotrade` | Start auto-trader with MetaTrader5 integration (Windows only) |
@@ -91,57 +90,6 @@ python main.py train --multi-timeframe --config config/my_config.json
 
 # Full multi-symbol + multi-timeframe training
 python main.py train --symbols EURUSD GBPUSD --multi-timeframe
-```
-
----
-
-### backtest
-
-Run backtesting on historical market data with optional realistic trading constraints.
-
-**Syntax:**
-```bash
-python main.py backtest [OPTIONS]
-```
-
-**Options:**
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--symbol` | `-s` | string | `EURUSD` | Trading symbol |
-| `--timeframe` | `-t` | string | `1h` | Timeframe for data |
-| `--bars` | `-b` | integer | `50000` | Number of historical bars to load |
-| `--model-dir` | `-m` | string | `./saved_models` | Directory to load trained models from |
-| `--realistic` | | flag | `False` | Enable realistic trading constraints |
-| `--monte-carlo` | | flag | `False` | Run Monte Carlo simulation for risk analysis |
-| `--config` | `-c` | string | | Path to configuration JSON file |
-| `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
-| `--log-file` | | string | | Custom log file path |
-
-**Realistic Mode Constraints:**
-When `--realistic` is enabled, the following constraints are applied:
-- Minimum 4 hours between trades
-- Maximum 5 trades per day
-- Maximum 10 lots position size
-
-**Output Metrics:**
-- Total return (%)
-- Sharpe ratio
-- Maximum drawdown (%)
-- Win rate (%)
-- Total number of trades
-- Monte Carlo risk analysis (if enabled)
-
-**Examples:**
-```bash
-# Basic backtest
-python main.py backtest --symbol EURUSD
-
-# Backtest with realistic constraints and Monte Carlo analysis
-python main.py backtest --symbol EURUSD --realistic --monte-carlo
-
-# Backtest with more historical data
-python main.py backtest --bars 100000 --model-dir ./my_models
 ```
 
 ---
@@ -337,7 +285,7 @@ cd ui && npm run dev
 |------|-------------|
 | **Dashboard** | System overview, active jobs, recent results |
 | **Training** | Configure and launch training jobs |
-| **Backtest** | Run backtests and view results |
+| **Validation** | Run walk-forward validation and view results |
 | **Config** | Edit system configuration |
 | **Logs** | View and search application logs |
 
@@ -350,8 +298,8 @@ The backend exposes REST API endpoints at `http://localhost:8000/api/v1/`:
 | `GET /health` | Health check |
 | `POST /training/start` | Start training job |
 | `GET /training/jobs` | List training jobs |
-| `POST /backtest/run` | Run backtest |
-| `GET /backtest/results` | List backtest results |
+| `POST /walkforward/run` | Run walk-forward validation |
+| `GET /walkforward/results` | List validation results |
 | `GET /config` | Get configuration |
 | `PUT /config` | Update configuration |
 | `GET /models` | List trained models |
@@ -382,7 +330,7 @@ Open `http://localhost:5000` in your browser to view experiments.
 
 ### MLflow CLI Options
 
-Available for `train` and `backtest` commands:
+Available for `train` and `walkforward` commands:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -407,7 +355,7 @@ python main.py train --mlflow-tracking-uri http://localhost:5000
 | Category | Tracked Data |
 |----------|--------------|
 | **Parameters** | Model hyperparameters, training config, data settings |
-| **Metrics** | Train/val loss, episode rewards, backtest results |
+| **Metrics** | Train/val loss, episode rewards, walk-forward results |
 | **Artifacts** | Model weights, training history, config snapshots |
 | **Datasets** | Training/validation data metadata (MLflow 3) |
 | **Models** | PyTorch models with signatures (Model Registry) |
@@ -450,7 +398,7 @@ For detailed documentation of the configuration system (dataclasses, type safety
 | `transformer` | Transformer model architecture and training hyperparameters |
 | `ppo` | PPO reinforcement learning agent configuration |
 | `risk` | Risk management parameters (position sizing, stop-loss, etc.) |
-| `backtest` | Backtesting simulation settings |
+| `backtest` | Walk-forward and simulation settings |
 | `logging` | Log output configuration |
 | `auto_trader` | Auto-trading specific settings |
 
@@ -464,7 +412,7 @@ See [README.md](README.md#project-structure) for complete project directory stru
 - `saved_models/` - Model weights, config snapshots, `model_metadata.json`
 - `logs/` - Log files (`leap_YYYYMMDD_HHMMSS.log`)
 - `checkpoints/` - Training checkpoints
-- `results/` - Backtest and evaluation results
+- `results/` - Walk-forward and evaluation results
 
 ---
 
@@ -491,8 +439,8 @@ See [README.md](README.md#project-structure) for complete project directory stru
 
 ### Performance Tips
 - Start with smaller `--bars` values for initial testing
-- Use `--realistic` mode for production-quality backtests
-- Enable `--monte-carlo` for risk analysis on important backtests
+- Use walk-forward validation to prevent overfitting
+- Run with `--log-level DEBUG` for detailed progress information
 
 ---
 
@@ -507,13 +455,10 @@ python main.py train --symbol EURUSD --timeframe 1h --epochs 100 --timesteps 100
 # 2. Evaluate trained models
 python main.py evaluate --model-dir ./saved_models
 
-# 3. Run backtest with realistic constraints
-python main.py backtest --symbol EURUSD --realistic --monte-carlo
-
-# 4. Run walk-forward optimization
+# 3. Run walk-forward optimization (validates strategy robustness)
 python main.py walkforward --symbol EURUSD --bars 100000
 
-# 5. Paper trade to validate (Windows only - requires MT5)
+# 4. Paper trade to validate (Windows only - requires MT5)
 python main.py autotrade --paper --symbol EURUSD
 ```
 
@@ -522,7 +467,7 @@ python main.py autotrade --paper --symbol EURUSD
 ```bash
 # Create a config file, then use it across commands
 python main.py train --config config/aggressive.json
-python main.py backtest --config config/aggressive.json --realistic
+python main.py walkforward --config config/aggressive.json
 python main.py evaluate --config config/aggressive.json
 ```
 
@@ -536,7 +481,7 @@ python main.py train --symbols EURUSD GBPUSD USDJPY
 # Method 2: Shell loop for more control
 for symbol in EURUSD GBPUSD USDJPY; do
     python main.py train --symbol $symbol --model-dir ./models_$symbol
-    python main.py backtest --symbol $symbol --model-dir ./models_$symbol --realistic
+    python main.py walkforward --symbol $symbol
 done
 ```
 
