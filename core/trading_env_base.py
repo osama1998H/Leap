@@ -218,6 +218,10 @@ class BaseTradingEnvironment(gym.Env, ABC):
         an episode, so using it directly as a penalty makes ALL rewards negative
         over time. Instead, we use the CHANGE in drawdown (delta) to only
         penalize when risk increases, while rewarding recovery.
+
+        FIX Critical #3: Reduced scaling factors to prevent numerical instability.
+        Previous 100x scaling caused gradient explosion in PPO training.
+        Now uses 10x scaling with bounded output for stable learning.
         """
         # Guard against zero or negative prev_equity (account wiped out)
         if prev_equity <= 0:
@@ -226,7 +230,10 @@ class BaseTradingEnvironment(gym.Env, ABC):
         # === Return Component (primary reward signal) ===
         safe_prev_equity = max(prev_equity, 1e-8)
         returns = (self.state.equity - prev_equity) / safe_prev_equity
-        return_reward = returns * 100  # Scale to make returns meaningful
+
+        # FIX: Reduced from 100x to 10x scaling to prevent gradient explosion
+        # 10x still provides meaningful signal while avoiding numerical instability
+        return_reward = returns * 10.0
 
         # === Delta-Based Drawdown Penalty ===
         # Calculate current drawdown (resets to 0 when equity makes new high)
@@ -242,11 +249,11 @@ class BaseTradingEnvironment(gym.Env, ABC):
         recovery_bonus = 0.0
 
         if drawdown_delta > 0:
-            # Penalize increasing drawdown (entering deeper drawdown)
-            drawdown_penalty = -drawdown_delta * 50  # Scale factor for significance
+            # FIX: Reduced from 50x to 5x for stability
+            drawdown_penalty = -drawdown_delta * 5.0
         elif drawdown_delta < 0:
-            # Small bonus for recovering from drawdown
-            recovery_bonus = -drawdown_delta * 25  # Half the penalty scale
+            # FIX: Reduced from 25x to 2.5x for stability
+            recovery_bonus = -drawdown_delta * 2.5
 
         # Update previous drawdown for next step
         self._prev_drawdown = current_drawdown
@@ -257,6 +264,10 @@ class BaseTradingEnvironment(gym.Env, ABC):
 
         # === Combine Reward Components ===
         reward = return_reward + drawdown_penalty + recovery_bonus + holding_cost
+
+        # FIX: Clip reward to prevent extreme values from propagating
+        # Bounds chosen to keep advantages reasonable after normalization
+        reward = max(-10.0, min(10.0, reward))
 
         return float(reward)
 
