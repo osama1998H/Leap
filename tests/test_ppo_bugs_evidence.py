@@ -31,9 +31,12 @@ def create_mock_ppo_scenario(
     log_prob_diff_range: Tuple[float, float] = (-2, 2)
 ) -> Dict[str, torch.Tensor]:
     """Create mock PPO update scenario data."""
+    low, high = log_prob_diff_range
+    old_log_probs = torch.randn(n_samples)
+    log_diff = (high - low) * torch.rand(n_samples) + low
     return {
-        'old_log_probs': torch.randn(n_samples),
-        'new_log_probs': torch.randn(n_samples),
+        'old_log_probs': old_log_probs,
+        'new_log_probs': old_log_probs + log_diff,
         'advantages': torch.randn(n_samples),
         'values': torch.randn(n_samples),
         'returns': torch.randn(n_samples),
@@ -223,8 +226,7 @@ class TestRewardScaling:
         equity_changes = [0.05, 0.10, -0.08, 0.15, -0.12]  # 5%, 10%, -8%, etc.
 
         print("\nEquity changes (realistic trading):")
-        for i, change in enumerate(equity_changes):
-            new_equity = prev_equity * (1 + change)
+        for change in equity_changes:
             returns = change  # Decimal return
 
             # BUGGY: 100x scaling
@@ -349,7 +351,7 @@ class TestDtypeMismatch:
             try:
                 values_extended_gpu = torch.cat([values_gpu, torch.tensor([last_value]).cuda()])
                 print(f"GPU concatenated dtype: {values_extended_gpu.dtype}")
-            except Exception as e:
+            except (RuntimeError, TypeError) as e:
                 print(f"GPU error: {e}")
 
     def test_fix_explicit_dtype(self):
@@ -423,11 +425,11 @@ class TestOnlineLearningGAE:
             gae = delta + gamma * gae_lambda * (1 - dones[t]) * gae
             advantages_gae[t] = gae
 
-        print(f"\nAdvantages (1-step BUGGY):")
+        print("\nAdvantages (1-step BUGGY):")
         print(f"  Mean: {advantages_1step.mean():.4f}, Std: {advantages_1step.std():.4f}")
         print(f"  Values: {advantages_1step[:5].tolist()}")
 
-        print(f"\nAdvantages (GAE CORRECT):")
+        print("\nAdvantages (GAE CORRECT):")
         print(f"  Mean: {advantages_gae.mean():.4f}, Std: {advantages_gae.std():.4f}")
         print(f"  Values: {advantages_gae[:5].tolist()}")
 
@@ -475,9 +477,9 @@ class TestOnlineLearningGAE:
         values = torch.rand(n_steps) * 0.5 + 0.3
         dones = torch.zeros(n_steps)
 
-        returns_fixed, advantages_fixed = compute_gae_online(rewards, values, dones)
+        _returns_fixed, advantages_fixed = compute_gae_online(rewards, values, dones)
 
-        print(f"\nGAE advantages (FIXED):")
+        print("\nGAE advantages (FIXED):")
         print(f"  Mean: {advantages_fixed.mean():.4f}")
         print(f"  Std: {advantages_fixed.std():.4f}")
         print(f"  All finite: {torch.isfinite(advantages_fixed).all()}")
@@ -711,7 +713,7 @@ class TestAllFixesIntegration:
         # Total loss
         total_loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
 
-        print(f"\nWith all fixes applied:")
+        print("\nWith all fixes applied:")
         print(f"  Policy loss: {policy_loss.item():.4f} (finite: {torch.isfinite(policy_loss)})")
         print(f"  Value loss: {value_loss.item():.4f} (finite: {torch.isfinite(value_loss)})")
         print(f"  Approx KL: {approx_kl.item():.4f} (finite: {torch.isfinite(approx_kl)})")

@@ -7,6 +7,7 @@ Based on training diagnostics analysis from MLflow runs.
 ## Diagnostic Interpretation
 
 ### Healthy Training Signs
+
 | Metric | Expected Behavior |
 |--------|------------------|
 | `episode_reward` | Gradually increasing trend |

@@ -14,7 +14,7 @@
 |--------|----------|-------|-------------|----------|
 | Critical #1 | CRITICAL | Ratio overflow/underflow | Log ratio clamping | `ppo_agent.py:555-560` |
 | Critical #2 | CRITICAL | KL divergence NaN | Ratio clamping for log | `ppo_agent.py:588-590` |
-| Critical #3 | CRITICAL | Reward scaling instability | 10x scaling + clipping | `trading_env_base.py:234-270` |
+| Critical #3 | CRITICAL | Reward scaling instability | 50x scaling + ±5 clipping | `trading_env_base.py:234-273` |
 | Major #1 | MAJOR | Value bootstrap dtype | Explicit dtype | `ppo_agent.py:461-466` |
 | Major #2 | MAJOR | Online learning no GAE | Proper TD targets | `ppo_agent.py:828-927` |
 | Major #3 | MAJOR | Unbounded action logits | Tanh bounded output | `ppo_agent.py:65-67, 129-133` |
@@ -104,21 +104,21 @@ recovery_bonus = -drawdown_delta * 25  # 25x scaling
 - 5% equity change → reward = 5.0 (very large for PPO)
 - Large advantages → large policy updates → instability
 
-**AFTER (Fix):**
+**AFTER (Fix v2):**
 ```python
-return_reward = returns * 10.0  # Reduced from 100x to 10x
-drawdown_penalty = -drawdown_delta * 5.0  # Reduced from 50x to 5x
-recovery_bonus = -drawdown_delta * 2.5  # Reduced from 25x to 2.5x
-reward = max(-10.0, min(10.0, reward))  # Bounded output
+return_reward = returns * 50.0  # v2: increased from 10x to 50x
+drawdown_penalty = -drawdown_delta * 25.0  # v2: increased from 5x to 25x
+recovery_bonus = -drawdown_delta * 12.5  # v2: increased from 2.5x to 12.5x
+reward = max(-5.0, min(5.0, reward))  # v2: tighter bounds (±5)
 ```
 
 **Evidence:**
-| Equity Change | Before Reward | After Reward |
-|---------------|---------------|--------------|
-| +5% | +5.0 | +0.5 |
-| +10% | +10.0 | +1.0 |
-| -10% | -15.0 (with DD) | -1.5 |
-| +50% (extreme) | +50.0 | +5.0 (capped at 10) |
+| Equity Change | Before Reward (100x) | After Reward (v2: 50x, ±5 clip) |
+|---------------|----------------------|----------------------------------|
+| +5% | +5.0 | +2.5 |
+| +10% | +10.0 | +5.0 (at clip limit) |
+| -10% | -15.0 (with DD) | -5.0 (at clip limit) |
+| +50% (extreme) | +50.0 | +5.0 (capped at ±5) |
 
 ---
 
