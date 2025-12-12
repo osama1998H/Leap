@@ -232,6 +232,11 @@ class AutoTraderConfig:
     min_confidence: float = 0.6
     prediction_threshold: float = 0.001  # Min predicted return for entry
 
+    # Model environment dimensions (set from saved model metadata for compatibility)
+    model_window_size: int = 60  # Window size used during training
+    model_n_features: int = 0  # Number of additional features (excluding OHLCV)
+    model_n_account_features: int = 8  # Account features used during training
+
     # Online learning
     enable_online_learning: bool = True
     adaptation_frequency: int = 100  # Trades between adaptations

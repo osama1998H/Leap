@@ -404,7 +404,11 @@ class AutoTrader:
                 default_sl_pips=self.config.default_sl_pips,
                 default_tp_pips=self.config.default_tp_pips,
                 risk_per_trade=self.config.risk_per_trade,
-                paper_mode=self.config.paper_mode
+                paper_mode=self.config.paper_mode,
+                # Pass model dimensions for compatibility with trained models
+                window_size=self.config.model_window_size,
+                feature_dim=self.config.model_n_features,
+                match_training_obs=True  # Match training observation dimensions
             )
             env.reset()
             self.live_envs[symbol] = env
@@ -532,7 +536,7 @@ class AutoTrader:
         if env is None:
             return TradingSignal(signal_type=SignalType.HOLD, symbol=symbol)
 
-        # Get observation from environment
+        # Get observation from environment (flat 1D array)
         obs = env._get_observation()
 
         # Get prediction from Transformer (if available)
@@ -541,15 +545,27 @@ class AutoTrader:
 
         if self.predictor is not None:
             try:
-                # Reshape observation for predictor
-                # This assumes the predictor can handle the observation format
-                X = obs.reshape(1, -1)  # Adjust shape as needed
+                # Transformer expects 3D input: (batch, seq_len, features_per_step)
+                # Extract market data portion and reshape for transformer
+                window_size = self.config.model_window_size
+                n_price_features = 5  # OHLCV
+                n_additional = self.config.model_n_features
+                features_per_step = n_price_features + n_additional
 
-                prediction = self.predictor.predict(X)
-                predicted_return = prediction.get('prediction', np.array([[0.0]]))[0, 0]
-                # Clamp confidence to [0, 1] range
-                uncertainty = prediction.get('uncertainty', 0.5)
-                prediction_confidence = max(0.0, min(1.0, 1.0 - uncertainty))
+                # Market data is at the beginning of observation
+                market_size = window_size * features_per_step
+                if len(obs) >= market_size:
+                    market_obs = obs[:market_size]
+                    # Reshape to 3D: (1, window_size, features_per_step)
+                    X = market_obs.reshape(1, window_size, features_per_step)
+
+                    prediction = self.predictor.predict(X)
+                    predicted_return = prediction.get('prediction', np.array([[0.0]]))[0, 0]
+                    # Clamp confidence to [0, 1] range
+                    uncertainty = prediction.get('uncertainty', 0.5)
+                    prediction_confidence = max(0.0, min(1.0, 1.0 - uncertainty))
+                else:
+                    logger.warning(f"Observation too small for transformer: {len(obs)} < {market_size}")
             except Exception:
                 logger.exception("Prediction failed")
 
@@ -558,7 +574,7 @@ class AutoTrader:
 
         if self.agent is not None:
             try:
-                # select_action returns (action, log_prob, value) - we only need action
+                # select_action expects 1D observation matching state_dim
                 action, _, _ = self.agent.select_action(obs, deterministic=True)
                 agent_action = Action(action)
             except Exception:

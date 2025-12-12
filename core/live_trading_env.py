@@ -56,7 +56,8 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         risk_per_trade: float = 0.01,
         render_mode: Optional[str] = None,
         paper_mode: bool = True,
-        feature_dim: Optional[int] = None
+        feature_dim: Optional[int] = None,
+        match_training_obs: bool = False
     ):
         """
         Initialize live trading environment.
@@ -77,6 +78,9 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             paper_mode: If True, simulate trades; if False, execute real trades
             feature_dim: Number of additional features (from FeatureEngineer).
                          If None, attempts to infer from data_pipeline or uses default.
+            match_training_obs: If True, return observations with 8 account features
+                         (matching training environment) instead of 12. This ensures
+                         compatibility with models trained on TradingEnvironment.
         """
         # Initialize base class
         super().__init__(
@@ -95,6 +99,7 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         self.default_tp_pips = default_tp_pips
         self.risk_per_trade = risk_per_trade
         self.paper_mode = paper_mode
+        self.match_training_obs = match_training_obs
 
         # Initialize components
         self.position_sync = PositionSynchronizer(
@@ -130,12 +135,16 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         self.n_additional_features = self._resolve_feature_dim(feature_dim, data_pipeline)
 
         # Calculate observation dimension
-        # Account features = base class (8) + live-specific (4) = 12
-        n_account_features = self.N_BASE_ACCOUNT_FEATURES + self.N_LIVE_EXTRA_FEATURES
+        # When match_training_obs=True, use 8 account features (matching training env)
+        # Otherwise use 12 (8 base + 4 live-specific)
+        if self.match_training_obs:
+            self.n_account_features = self.N_BASE_ACCOUNT_FEATURES  # 8
+        else:
+            self.n_account_features = self.N_BASE_ACCOUNT_FEATURES + self.N_LIVE_EXTRA_FEATURES  # 12
 
         obs_dim = (
             window_size * (self.N_PRICE_FEATURES + self.n_additional_features) +
-            n_account_features
+            self.n_account_features
         )
 
         self.observation_space = spaces.Box(
@@ -786,8 +795,13 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         """Get current observation."""
         market_obs = self._get_market_observation()
 
-        # Get extended account observation (8 base + 4 live = 12 features)
-        account_obs = self._get_account_observation()
+        # Get account observation based on match_training_obs setting
+        if self.match_training_obs:
+            # Use only base class account observation (8 features) to match training env
+            account_obs = super()._get_account_observation()
+        else:
+            # Use extended account observation (8 base + 4 live = 12 features)
+            account_obs = self._get_account_observation()
 
         obs = np.concatenate([market_obs, account_obs]).astype(np.float32)
 
