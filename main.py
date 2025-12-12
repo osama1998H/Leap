@@ -123,6 +123,13 @@ class LeapTradingSystem:
         # Feature names used for model training (for inference compatibility)
         self._model_feature_names = None
 
+        # Environment dimensions from training (for live trading compatibility)
+        self._model_env_config = {
+            'window_size': self.config.data.lookback_window,
+            'n_additional_features': 0,
+            'n_account_features': 8
+        }
+
         logger.info("Leap Trading System initialized")
 
     @property
@@ -767,6 +774,14 @@ class LeapTradingSystem:
         # Save model metadata for proper reloading
         metadata = {}
 
+        # Store training environment dimensions for live trading compatibility
+        n_additional_features = len(self._model_feature_names) if self._model_feature_names else 0
+        metadata['environment'] = {
+            'window_size': self.config.data.lookback_window,
+            'n_additional_features': n_additional_features,
+            'n_account_features': 8  # Training env uses 8 account features
+        }
+
         if self._predictor:
             self._predictor.save(os.path.join(directory, 'predictor.pt'))
             metadata['predictor'] = {
@@ -815,6 +830,24 @@ class LeapTradingSystem:
 
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
+
+        # Load environment configuration for live trading compatibility
+        env_metadata = metadata.get('environment', {})
+        if env_metadata:
+            self._model_env_config = {
+                'window_size': env_metadata.get('window_size', self.config.data.lookback_window),
+                'n_additional_features': env_metadata.get('n_additional_features', 0),
+                'n_account_features': env_metadata.get('n_account_features', 8)
+            }
+            logger.info(f"Loaded environment config: window_size={self._model_env_config['window_size']}, "
+                       f"n_additional_features={self._model_env_config['n_additional_features']}")
+        else:
+            # Backward compatibility: infer from predictor metadata if available
+            predictor_meta = metadata.get('predictor', {})
+            feature_names = predictor_meta.get('feature_names', [])
+            if feature_names:
+                self._model_env_config['n_additional_features'] = len(feature_names)
+                logger.info(f"Inferred n_additional_features={len(feature_names)} from feature_names (backward compat)")
 
         # Load predictor if it exists
         predictor_path = os.path.join(directory, 'predictor.pt')
@@ -1282,7 +1315,7 @@ Examples:
             magic_number=config.auto_trader.magic_number
         )
 
-        # Create auto-trader config
+        # Create auto-trader config with model environment dimensions
         trader_config = AutoTraderConfig(
             symbols=symbols,
             timeframe=timeframe,
@@ -1291,7 +1324,11 @@ Examples:
             default_sl_pips=config.auto_trader.default_sl_pips,
             default_tp_pips=config.auto_trader.default_tp_pips,
             paper_mode=args.paper,
-            enable_online_learning=config.auto_trader.enable_online_learning
+            enable_online_learning=config.auto_trader.enable_online_learning,
+            # Pass model environment dimensions for live trading compatibility
+            model_window_size=system._model_env_config['window_size'],
+            model_n_features=system._model_env_config['n_additional_features'],
+            model_n_account_features=system._model_env_config['n_account_features']
         )
 
         # Handle online learning manager (may be None if not initialized)
