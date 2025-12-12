@@ -855,6 +855,8 @@ class LeapTradingSystem:
         if predictor_metadata.get('exists'):
             if os.path.exists(predictor_path):
                 input_dim = predictor_metadata['input_dim']
+                # Use loaded window_size from model metadata for compatibility
+                window_size = self._model_env_config.get('window_size', self.config.data.lookback_window)
                 # Build config dict matching initialize_models format
                 predictor_config = {
                     'd_model': self.config.transformer.d_model,
@@ -862,7 +864,7 @@ class LeapTradingSystem:
                     'n_encoder_layers': self.config.transformer.n_encoder_layers,
                     'd_ff': self.config.transformer.d_ff,
                     'dropout': self.config.transformer.dropout,
-                    'max_seq_length': self.config.data.lookback_window,
+                    'max_seq_length': window_size,
                     'learning_rate': self.config.transformer.learning_rate,
                     'online_learning_rate': self.config.transformer.online_learning_rate
                 }
