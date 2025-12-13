@@ -217,6 +217,11 @@ class ModelTrainer:
                 if "episode_length" in metrics:
                     mlflow_metrics["agent.episode_length"] = metrics["episode_length"]
 
+                # Log reward component metrics (for diagnosing reward signal issues)
+                for key, value in metrics.items():
+                    if key.startswith("reward.") or key.startswith("action."):
+                        mlflow_metrics[key] = value
+
                 if mlflow_metrics:
                     self.mlflow_tracker.log_metrics(mlflow_metrics, step=step)
 

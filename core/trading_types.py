@@ -131,6 +131,14 @@ class EnvConfig:
     max_drawdown_threshold: float = 0.5  # 50% max drawdown terminates episode
     max_episode_steps: int = 2000  # Max steps per episode (prevents extremely long episodes)
 
+    # === Reward Shaping Parameters ===
+    # These control the reward signal magnitude and balance
+    return_scale: float = 50.0  # Scaling factor for returns-based reward
+    drawdown_penalty_scale: float = 20.0  # Penalty scale for drawdown increases (was 25.0)
+    recovery_bonus_scale: float = 20.0  # Bonus scale for drawdown recovery (symmetric with penalty)
+    holding_cost: float = 0.0  # Per-position per-step holding cost (0 = disabled)
+    reward_clip: float = 5.0  # Clip reward to [-reward_clip, +reward_clip]
+
     @classmethod
     def from_params(
         cls,
@@ -144,7 +152,13 @@ class EnvConfig:
         take_profit_pct: Optional[float] = None,
         window_size: Optional[int] = None,
         max_drawdown_threshold: Optional[float] = None,
-        max_episode_steps: Optional[int] = None
+        max_episode_steps: Optional[int] = None,
+        # Reward shaping parameters
+        return_scale: Optional[float] = None,
+        drawdown_penalty_scale: Optional[float] = None,
+        recovery_bonus_scale: Optional[float] = None,
+        holding_cost: Optional[float] = None,
+        reward_clip: Optional[float] = None
     ) -> 'EnvConfig':
         """
         Factory method to create EnvConfig from individual parameters.
@@ -167,7 +181,12 @@ class EnvConfig:
             take_profit_pct=take_profit_pct if take_profit_pct is not None else defaults.take_profit_pct,
             window_size=window_size if window_size is not None else defaults.window_size,
             max_drawdown_threshold=max_drawdown_threshold if max_drawdown_threshold is not None else defaults.max_drawdown_threshold,
-            max_episode_steps=max_episode_steps if max_episode_steps is not None else defaults.max_episode_steps
+            max_episode_steps=max_episode_steps if max_episode_steps is not None else defaults.max_episode_steps,
+            return_scale=return_scale if return_scale is not None else defaults.return_scale,
+            drawdown_penalty_scale=drawdown_penalty_scale if drawdown_penalty_scale is not None else defaults.drawdown_penalty_scale,
+            recovery_bonus_scale=recovery_bonus_scale if recovery_bonus_scale is not None else defaults.recovery_bonus_scale,
+            holding_cost=holding_cost if holding_cost is not None else defaults.holding_cost,
+            reward_clip=reward_clip if reward_clip is not None else defaults.reward_clip
         )
 
 
