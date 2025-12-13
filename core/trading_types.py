@@ -136,8 +136,27 @@ class EnvConfig:
     return_scale: float = 50.0  # Scaling factor for returns-based reward
     drawdown_penalty_scale: float = 20.0  # Penalty scale for drawdown increases (was 25.0)
     recovery_bonus_scale: float = 20.0  # Bonus scale for drawdown recovery (symmetric with penalty)
-    holding_cost: float = 0.0  # Per-position per-step holding cost (0 = disabled)
+    holding_cost: float = 0.0  # Per-position per-step holding cost (must be >= 0, 0 = disabled)
     reward_clip: float = 5.0  # Clip reward to [-reward_clip, +reward_clip]
+
+    def __post_init__(self):
+        """Validate configuration parameters after initialization."""
+        # Ensure holding_cost is non-negative (it's a cost magnitude, applied as negative)
+        if self.holding_cost < 0:
+            raise ValueError(
+                f"holding_cost must be >= 0 (it's a cost magnitude), got {self.holding_cost}. "
+                f"The cost is applied as -holding_cost * n_positions internally."
+            )
+        # Ensure reward_clip is positive
+        if self.reward_clip <= 0:
+            raise ValueError(f"reward_clip must be > 0, got {self.reward_clip}")
+        # Ensure scaling factors are non-negative
+        if self.return_scale < 0:
+            raise ValueError(f"return_scale must be >= 0, got {self.return_scale}")
+        if self.drawdown_penalty_scale < 0:
+            raise ValueError(f"drawdown_penalty_scale must be >= 0, got {self.drawdown_penalty_scale}")
+        if self.recovery_bonus_scale < 0:
+            raise ValueError(f"recovery_bonus_scale must be >= 0, got {self.recovery_bonus_scale}")
 
     @classmethod
     def from_params(

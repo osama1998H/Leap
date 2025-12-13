@@ -10,10 +10,11 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 import numpy as np
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,30 +52,36 @@ def analyze_reward_components(
     Returns:
         Dictionary with analysis results
     """
-    logger.info(f"\n{'='*60}")
-    logger.info(f"REWARD COMPONENT ANALYSIS")
-    logger.info(f"{'='*60}")
+    logger.info("\n" + "=" * 60)
+    logger.info("REWARD COMPONENT ANALYSIS")
+    logger.info("=" * 60)
 
-    # Load data
+    # Load data using correct DataPipeline API
     logger.info(f"\nLoading {symbol} {timeframe} data ({n_bars} bars)...")
     pipeline = DataPipeline()
-    df = pipeline.get_historical_data(symbol, timeframe, n_bars)
+    market_data = pipeline.fetch_historical_data(symbol, timeframe, n_bars)
 
-    if df is None or len(df) == 0:
+    if market_data is None or len(market_data.close) == 0:
         logger.error("Failed to load data")
         return {}
 
-    logger.info(f"Loaded {len(df)} bars")
+    logger.info(f"Loaded {len(market_data.close)} bars")
 
-    # Engineer features
-    df = pipeline.engineer_features(df)
-    features = pipeline.get_feature_columns(df)
+    # Convert MarketData to arrays for TradingEnvironment
+    data = np.column_stack([
+        market_data.open,
+        market_data.high,
+        market_data.low,
+        market_data.close,
+        market_data.volume
+    ])
+    features = market_data.features  # Already numpy array or None
 
     # Create environment with custom or default config
     if env_config is None:
         env_config = EnvConfig()
 
-    logger.info(f"\nEnvironment Config:")
+    logger.info("\nEnvironment Config:")
     logger.info(f"  return_scale: {env_config.return_scale}")
     logger.info(f"  drawdown_penalty_scale: {env_config.drawdown_penalty_scale}")
     logger.info(f"  recovery_bonus_scale: {env_config.recovery_bonus_scale}")
@@ -82,49 +89,29 @@ def analyze_reward_components(
     logger.info(f"  reward_clip: {env_config.reward_clip}")
 
     env = TradingEnvironment(
-        data=df[['open', 'high', 'low', 'close', 'tick_volume']].values,
-        features=features.values if features is not None else None,
+        data=data,
+        features=features,
         config=env_config
     )
 
     # Load agent if model_dir provided
-    agent = None
-    if model_dir:
-        try:
-            from models.ppo_agent import PPOAgent
-            import json
-
-            metadata_path = os.path.join(model_dir, 'model_metadata.json')
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-
-                agent_metadata = metadata.get('agent', {})
-                if agent_metadata.get('exists'):
-                    state_dim = agent_metadata['state_dim']
-                    action_dim = agent_metadata['action_dim']
-                    agent = PPOAgent(state_dim=state_dim, action_dim=action_dim)
-                    agent.load(os.path.join(model_dir, 'agent.pt'))
-                    logger.info(f"\nLoaded trained agent from {model_dir}")
-        except Exception as e:
-            logger.warning(f"Could not load agent: {e}")
-            agent = None
+    agent = _load_agent(model_dir)
 
     # Run episodes and collect statistics
-    all_rewards = []
-    all_components = {
+    all_rewards: List[float] = []
+    all_components: Dict[str, List[float]] = {
         'return_reward': [],
         'drawdown_penalty': [],
         'recovery_bonus': [],
         'holding_cost': [],
         'raw_reward': []
     }
-    all_actions = []
-    episode_stats = []
+    all_actions: List[int] = []
+    episode_stats: List[Dict] = []
 
     for ep in range(episodes):
         state, _ = env.reset()
-        episode_reward = 0
+        episode_reward = 0.0
         steps = 0
 
         while steps < max_steps_per_episode:
@@ -134,7 +121,7 @@ def analyze_reward_components(
             else:
                 action = np.random.randint(0, 4)  # Random action
 
-            state, reward, terminated, truncated, info = env.step(action)
+            state, reward, terminated, truncated, _info = env.step(action)
             all_rewards.append(reward)
             all_actions.append(action)
             episode_reward += reward
@@ -159,18 +146,20 @@ def analyze_reward_components(
             'win_rate': ep_stats.get('win_rate', 0)
         })
 
-        # Collect component data
-        if reward_comp:
-            for key, stats in reward_comp.items():
-                if isinstance(stats, dict):
-                    all_components[key].extend([stats.get('mean', 0)] * steps)
+        # Collect per-step component series (true distributions, not repeated means)
+        rc_hist = env.history.get('reward_components', {})
+        for key in all_components.keys():
+            series = rc_hist.get(key, [])
+            if series:
+                all_components[key].extend(series)
 
         logger.info(f"\nEpisode {ep + 1}/{episodes}:")
         logger.info(f"  Steps: {steps}, Total Reward: {episode_reward:.4f}")
         logger.info(f"  Final Equity: ${ep_stats.get('final_equity', 0):.2f}")
         logger.info(f"  Total Return: {ep_stats.get('total_return', 0)*100:.2f}%")
         logger.info(f"  Max Drawdown: {ep_stats.get('max_drawdown', 0)*100:.2f}%")
-        logger.info(f"  Trades: {ep_stats.get('total_trades', 0)}, Win Rate: {ep_stats.get('win_rate', 0)*100:.1f}%")
+        logger.info(f"  Trades: {ep_stats.get('total_trades', 0)}, "
+                   f"Win Rate: {ep_stats.get('win_rate', 0)*100:.1f}%")
 
         if action_dist:
             logger.info(f"  Actions: HOLD={action_dist.get('HOLD', 0):.1f}%, "
@@ -179,7 +168,7 @@ def analyze_reward_components(
                        f"CLOSE={action_dist.get('CLOSE', 0):.1f}%")
 
         if reward_comp:
-            logger.info(f"  Reward Components (mean):")
+            logger.info("  Reward Components (mean):")
             for comp, stats in reward_comp.items():
                 if isinstance(stats, dict):
                     logger.info(f"    {comp}: mean={stats.get('mean', 0):.6f}, "
@@ -187,9 +176,9 @@ def analyze_reward_components(
                                f"nonzero={stats.get('nonzero_pct', 0):.1f}%")
 
     # Aggregate analysis
-    logger.info(f"\n{'='*60}")
+    logger.info("\n" + "=" * 60)
     logger.info("AGGREGATE ANALYSIS")
-    logger.info(f"{'='*60}")
+    logger.info("=" * 60)
 
     rewards_arr = np.array(all_rewards)
     logger.info(f"\nReward Distribution (n={len(rewards_arr)}):")
@@ -202,6 +191,16 @@ def analyze_reward_components(
     logger.info(f"  % Negative: {(rewards_arr < 0).sum() / len(rewards_arr) * 100:.1f}%")
     logger.info(f"  % Zero: {(rewards_arr == 0).sum() / len(rewards_arr) * 100:.1f}%")
 
+    # Per-component analysis (using actual per-step values)
+    logger.info("\nPer-Component Distributions:")
+    for comp_name, comp_values in all_components.items():
+        if comp_values:
+            arr = np.array(comp_values)
+            logger.info(f"  {comp_name}:")
+            logger.info(f"    mean={np.mean(arr):.6f}, std={np.std(arr):.6f}")
+            logger.info(f"    min={np.min(arr):.6f}, max={np.max(arr):.6f}")
+            logger.info(f"    nonzero={np.count_nonzero(arr)/len(arr)*100:.1f}%")
+
     # Action distribution
     actions_arr = np.array(all_actions)
     logger.info(f"\nAction Distribution (n={len(actions_arr)}):")
@@ -210,10 +209,90 @@ def analyze_reward_components(
         logger.info(f"  {action_type.name}: {pct:.1f}%")
 
     # Diagnose issues
-    logger.info(f"\n{'='*60}")
+    logger.info("\n" + "=" * 60)
     logger.info("DIAGNOSTIC SUMMARY")
-    logger.info(f"{'='*60}")
+    logger.info("=" * 60)
 
+    issues = _diagnose_issues(rewards_arr, episode_stats, env_config)
+
+    if issues:
+        logger.info("\nPotential Issues Found:")
+        for i, issue in enumerate(issues, 1):
+            logger.info(f"  {i}. {issue}")
+    else:
+        logger.info("\nNo major issues detected.")
+
+    # Recommendations
+    logger.info("\n" + "=" * 60)
+    logger.info("RECOMMENDATIONS")
+    logger.info("=" * 60)
+
+    mean_reward = np.mean(rewards_arr)
+    if mean_reward < -0.01:
+        logger.info("\n1. Consider reducing transaction costs or position sizing")
+        logger.info("   - Current: commission=0.0001, spread=0.0002, slippage=0.0001")
+
+    if episode_stats and np.mean([s['total_trades'] for s in episode_stats]) < 5:
+        logger.info("\n2. Agent may be too passive. Consider:")
+        logger.info("   - Reducing holding_cost (currently 0 by default)")
+        logger.info("   - Adding small incentive for taking positions")
+
+    return {
+        'rewards': rewards_arr,
+        'actions': actions_arr,
+        'components': all_components,
+        'episode_stats': episode_stats,
+        'mean_reward': mean_reward,
+        'issues': issues
+    }
+
+
+def _load_agent(model_dir: Optional[str]):
+    """Load trained agent from model directory with proper error handling."""
+    if not model_dir:
+        return None
+
+    try:
+        from models.ppo_agent import PPOAgent
+
+        metadata_path = os.path.join(model_dir, 'model_metadata.json')
+        if not os.path.exists(metadata_path):
+            logger.warning(f"No model metadata found at {metadata_path}")
+            return None
+
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+
+        agent_metadata = metadata.get('agent', {})
+        if not agent_metadata.get('exists'):
+            logger.warning("Agent metadata indicates no agent exists")
+            return None
+
+        state_dim = agent_metadata['state_dim']
+        action_dim = agent_metadata['action_dim']
+        agent = PPOAgent(state_dim=state_dim, action_dim=action_dim)
+        agent.load(os.path.join(model_dir, 'agent.pt'))
+        logger.info(f"\nLoaded trained agent from {model_dir}")
+        return agent
+
+    except FileNotFoundError as e:
+        logger.warning(f"Agent file not found: {e}")
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid model metadata JSON: {e}")
+    except KeyError as e:
+        logger.warning(f"Missing required metadata field: {e}")
+    except (OSError, ValueError) as e:
+        logger.exception("Error loading agent: %s", e)
+
+    return None
+
+
+def _diagnose_issues(
+    rewards_arr: np.ndarray,
+    episode_stats: List[Dict],
+    env_config: EnvConfig
+) -> List[str]:
+    """Diagnose potential issues with reward signal."""
     issues = []
 
     # Check for negative bias
@@ -242,34 +321,7 @@ def analyze_reward_components(
     if clipped_pct > 10:
         issues.append(f"CLIPPING: {clipped_pct:.1f}% of rewards hit clip bounds")
 
-    if issues:
-        logger.info("\nPotential Issues Found:")
-        for i, issue in enumerate(issues, 1):
-            logger.info(f"  {i}. {issue}")
-    else:
-        logger.info("\nNo major issues detected.")
-
-    # Recommendations
-    logger.info(f"\n{'='*60}")
-    logger.info("RECOMMENDATIONS")
-    logger.info(f"{'='*60}")
-
-    if mean_reward < -0.01:
-        logger.info("\n1. Consider reducing transaction costs or position sizing")
-        logger.info("   - Current: commission=0.0001, spread=0.0002, slippage=0.0001")
-
-    if np.mean([s['total_trades'] for s in episode_stats]) < 5:
-        logger.info("\n2. Agent may be too passive. Consider:")
-        logger.info("   - Reducing holding_cost (currently 0 by default)")
-        logger.info("   - Adding small incentive for taking positions")
-
-    return {
-        'rewards': rewards_arr,
-        'actions': actions_arr,
-        'episode_stats': episode_stats,
-        'mean_reward': mean_reward,
-        'issues': issues
-    }
+    return issues
 
 
 def compare_configs(
@@ -306,9 +358,9 @@ def compare_configs(
         )
     }
 
-    logger.info(f"\n{'='*60}")
+    logger.info("\n" + "=" * 60)
     logger.info("CONFIG COMPARISON")
-    logger.info(f"{'='*60}")
+    logger.info("=" * 60)
 
     results = {}
     for name, config in configs.items():
@@ -323,15 +375,16 @@ def compare_configs(
         results[name] = res
 
     # Summary comparison
-    logger.info(f"\n\n{'='*60}")
+    logger.info("\n\n" + "=" * 60)
     logger.info("COMPARISON SUMMARY")
-    logger.info(f"{'='*60}")
+    logger.info("=" * 60)
     logger.info(f"\n{'Config':<20} {'Mean Reward':>12} {'Std':>10} {'Issues':>8}")
     logger.info("-" * 52)
 
     for name, res in results.items():
         mean_r = res.get('mean_reward', 0)
-        std_r = np.std(res.get('rewards', [0]))
+        rewards = res.get('rewards', np.array([0]))
+        std_r = np.std(rewards) if len(rewards) > 0 else 0
         n_issues = len(res.get('issues', []))
         logger.info(f"{name:<20} {mean_r:>12.6f} {std_r:>10.6f} {n_issues:>8}")
 
