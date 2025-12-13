@@ -417,6 +417,12 @@ class AutoTrader:
     def _trading_loop(self):
         """Main trading loop."""
         logger.info("Trading loop started")
+        logger.info(f"  Bar interval: {self.config.bar_interval}s ({self.config.bar_interval // 60}m)")
+        logger.info(f"  Loop interval: {self.config.loop_interval}s")
+        logger.info(f"  Trading hours (UTC): {self.config.trading_start_hour}:00 - {self.config.trading_end_hour}:00")
+        logger.info(f"  Trading days: {self.config.trading_days}")
+
+        _last_trading_time_log = None  # Track when we last logged non-trading time
 
         while not self._stop_event.is_set():
             try:
@@ -431,6 +437,11 @@ class AutoTrader:
                     continue
 
                 if not self._is_trading_time():
+                    # Log once per hour that we're outside trading hours
+                    now = datetime.now(timezone.utc)
+                    if _last_trading_time_log is None or (now - _last_trading_time_log).total_seconds() >= 3600:
+                        logger.info(f"Outside trading hours (UTC {now.strftime('%H:%M')}). Waiting...")
+                        _last_trading_time_log = now
                     time.sleep(self.config.loop_interval)
                     continue
 
@@ -489,6 +500,7 @@ class AutoTrader:
         # Get environment
         env = self.live_envs.get(symbol)
         if env is None:
+            logger.warning(f"[{symbol}] No live environment found - skipping")
             return
 
         # Generate trading signal
@@ -496,6 +508,15 @@ class AutoTrader:
 
         if self.session:
             self.session.signals_generated += 1
+
+        # Log signal details
+        pred_return = signal.metadata.get('predicted_return', 0.0) if signal.metadata else 0.0
+        agent_action = signal.metadata.get('agent_action', 'N/A') if signal.metadata else 'N/A'
+        logger.info(
+            f"[{symbol}] Signal: {signal.signal_type.value} | "
+            f"Predicted return: {pred_return:.4f} | Agent: {agent_action} | "
+            f"Confidence: {signal.confidence:.2f}"
+        )
 
         self._fire_callback('on_signal', {'symbol': symbol, 'signal': signal})
 
@@ -660,12 +681,20 @@ class AutoTrader:
         last_bar = self._last_bar_time.get(symbol)
         if last_bar is None:
             self._last_bar_time[symbol] = now
+            logger.info(f"[{symbol}] First bar check - starting trading cycle")
             return True
 
         elapsed = (now - last_bar).total_seconds()
         if elapsed >= self.config.bar_interval:
             self._last_bar_time[symbol] = now
+            logger.info(f"[{symbol}] New bar detected - running signal generation")
             return True
+
+        # Log waiting status periodically (every 5 minutes to avoid spam)
+        remaining = self.config.bar_interval - elapsed
+        if int(elapsed) % 300 == 0 and int(elapsed) > 0:  # Every 5 minutes
+            minutes_remaining = int(remaining / 60)
+            logger.debug(f"[{symbol}] Waiting for new bar: {minutes_remaining}m remaining")
 
         return False
 

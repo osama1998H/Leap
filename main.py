@@ -1309,6 +1309,18 @@ Examples:
             logger.error("Models not loaded. Please train models first.")
             sys.exit(1)
 
+        # Initialize OnlineLearningManager if online learning is enabled
+        if config.auto_trader.enable_online_learning:
+            try:
+                system._online_manager = OnlineLearningManager(
+                    predictor=system._predictor,
+                    agent=system._agent
+                )
+                logger.info("OnlineLearningManager initialized for adaptive learning")
+            except Exception as e:
+                logger.warning(f"Failed to initialize OnlineLearningManager: {e}. Online learning will be disabled.")
+                system._online_manager = None
+
         # For autotrade, use config.auto_trader settings as defaults (not config.data)
         # CLI args still take priority: --symbol/--symbols > config.auto_trader > config.data
         if args.symbols:
@@ -1329,6 +1341,13 @@ Examples:
             server=config.auto_trader.mt5_server,
             magic_number=config.auto_trader.magic_number
         )
+
+        # Connect data pipeline to MT5 for real market data
+        # This is critical - without this, the system uses synthetic data!
+        if not system.data_pipeline.connect():
+            logger.warning("DataPipeline failed to connect to MT5. Will use broker connection for data.")
+        else:
+            logger.info("DataPipeline connected to MT5 for market data")
 
         # Create auto-trader config with model environment dimensions
         trader_config = AutoTraderConfig(
