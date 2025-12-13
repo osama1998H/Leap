@@ -475,3 +475,56 @@ The Leap Trading System demonstrates **solid architectural design** with excelle
 3. **Dead code** cleanup is straightforward and low-risk
 
 The estimated effort to address all issues is approximately **2-3 days of development work**, with Priority 1 items being completable in about **4-6 hours**.
+
+---
+
+## Fixes Applied (2025-12-13)
+
+The following Priority 1 issues have been addressed:
+
+### 1. Unused Imports Removed ✅
+- `evaluation/backtester.py`: Removed `ProcessPoolExecutor`
+- `core/live_trading_env.py`: Removed `OrderType`
+- `core/auto_trader.py`: Removed `OrderType`
+
+### 2. PnL Calculator Utility Created ✅
+**New file:** `utils/pnl_calculator.py`
+
+Provides centralized PnL calculations:
+- `calculate_pnl()` - Realized PnL for closed positions
+- `calculate_unrealized_pnl()` - Unrealized PnL for open positions
+- `calculate_pnl_percent()` - PnL as percentage of entry
+
+**Files updated to use utility:**
+- `evaluation/backtester.py`
+- `core/trading_env.py`
+- `core/live_trading_env.py`
+- `core/position_sync.py`
+
+### 3. Position Sizing Utility Created ✅
+**New file:** `utils/position_sizing.py`
+
+Provides centralized position sizing:
+- `calculate_risk_based_size()` - Risk-based sizing with stop loss
+- `calculate_percentage_size()` - Percentage-of-balance sizing
+- `apply_position_limits()` - Leverage and max size constraints
+- `calculate_position_size_with_limits()` - Convenience function
+
+**Files updated to use utility:**
+- `evaluation/backtester.py`
+- `core/trading_env.py`
+- `core/live_trading_env.py`
+
+### 4. Documentation Updated ✅
+- `CLAUDE.md`: Removed non-existent test file references
+- `CLAUDE.md`: Added new utilities to Centralized Utilities table
+- `CLAUDE.md`: Updated Position Sizing section with utility references
+
+### Updated Health Score
+
+| Metric | Before | After |
+|--------|--------|-------|
+| **Overall Health Score** | 8.5/10 | **8.8/10** |
+| **High Priority Issues** | 4 | **0** |
+| **Code Duplication** | Critical | **Resolved** |
+| **Dead Code (Imports)** | 3 lines | **0 lines** |

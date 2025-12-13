@@ -10,9 +10,11 @@ from gymnasium import spaces
 
 from core.trading_types import Action, EnvConfig, Position, TradingState, LiveTradingState
 from core.trading_env_base import BaseTradingEnvironment
-from core.mt5_broker import MT5BrokerGateway, OrderType, MT5Position
+from core.mt5_broker import MT5BrokerGateway, MT5Position
 from core.position_sync import PositionSynchronizer, PositionEvent, PositionChange
 from core.order_manager import OrderManager, TradingSignal, SignalType
+from utils.pnl_calculator import calculate_pnl, calculate_unrealized_pnl
+from utils.position_sizing import calculate_risk_based_size
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -510,8 +512,7 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
                 logger.debug("Position size is zero or negative, skipping paper trade")
                 return
         else:
-            # Fallback: inline position sizing based on risk
-            risk_amount = self._paper_balance * self.risk_per_trade
+            # Fallback: use centralized position sizing utility with symbol-specific pip value
             try:
                 pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
             except (AttributeError, ZeroDivisionError, TypeError) as e:
@@ -525,7 +526,9 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
                 logger.error(f"Invalid pip_value {pip_value} for {self.symbol}, using fallback 10.0")
                 pip_value = 10.0
 
-            volume = risk_amount / (self.default_sl_pips * pip_value)
+            volume = calculate_risk_based_size(
+                self._paper_balance, self.risk_per_trade, self.default_sl_pips, pip_value
+            )
 
         volume = max(0.01, min(volume, 10.0))
 
@@ -554,12 +557,10 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         contract_size = symbol_info.trade_contract_size if symbol_info else 100000
 
         for position in list(self._paper_positions):
-            if position.type == 'long':
-                exit_price = tick.bid
-                pnl = (exit_price - position.entry_price) * position.size * contract_size
-            else:
-                exit_price = tick.ask
-                pnl = (position.entry_price - exit_price) * position.size * contract_size
+            exit_price = tick.bid if position.type == 'long' else tick.ask
+            pnl = calculate_pnl(
+                position.entry_price, exit_price, position.size, position.type, contract_size
+            )
 
             self._paper_balance += pnl
             self.state.total_pnl += pnl
@@ -579,10 +580,9 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         symbol_info = self.broker.get_symbol_info(self.symbol)
         contract_size = symbol_info.trade_contract_size if symbol_info else 100000
 
-        if position.type == 'long':
-            pnl = (exit_price - position.entry_price) * position.size * contract_size
-        else:
-            pnl = (position.entry_price - exit_price) * position.size * contract_size
+        pnl = calculate_pnl(
+            position.entry_price, exit_price, position.size, position.type, contract_size
+        )
 
         self._paper_balance += pnl
         self.state.total_pnl += pnl
@@ -625,14 +625,16 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         symbol_info = self.broker.get_symbol_info(self.symbol)
         contract_size = symbol_info.trade_contract_size if symbol_info else 100000
 
-        unrealized = 0.0
-        for position in self._paper_positions:
-            if position.type == 'long':
-                unrealized += (tick.bid - position.entry_price) * position.size * contract_size
-            else:
-                unrealized += (position.entry_price - tick.ask) * position.size * contract_size
-
-        return unrealized
+        return sum(
+            calculate_unrealized_pnl(
+                position.entry_price,
+                tick.bid if position.type == 'long' else tick.ask,
+                position.size,
+                position.type,
+                contract_size
+            )
+            for position in self._paper_positions
+        )
 
     # -------------------------------------------------------------------------
     # Broker sync methods

@@ -10,6 +10,8 @@ import logging
 
 from core.trading_types import Action, EnvConfig, Position, TradingState
 from core.trading_env_base import BaseTradingEnvironment
+from utils.pnl_calculator import calculate_pnl, calculate_unrealized_pnl
+from utils.position_sizing import calculate_percentage_size
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -290,10 +292,10 @@ class TradingEnvironment(BaseTradingEnvironment):
                 logger.debug("Position size is zero or negative, skipping trade")
                 return
         else:
-            # Fallback: inline position sizing based on max_position_size
-            # Use entry_price (not raw price) for consistent sizing
-            position_value = self.state.balance * self.max_position_size
-            size = position_value / entry_price
+            # Fallback: use centralized position sizing utility
+            size = calculate_percentage_size(
+                self.state.balance, self.max_position_size, entry_price
+            )
 
         # Check margin requirement before opening position
         position_value = size * entry_price
@@ -335,10 +337,10 @@ class TradingEnvironment(BaseTradingEnvironment):
         # Apply spread and slippage for market close
         if position.type == 'long':
             exit_price = price * (1 - self.spread / 2 - self.slippage)
-            pnl = (exit_price - position.entry_price) * position.size
         else:
             exit_price = price * (1 + self.spread / 2 + self.slippage)
-            pnl = (position.entry_price - exit_price) * position.size
+
+        pnl = calculate_pnl(position.entry_price, exit_price, position.size, position.type)
 
         # Commission
         position_value = position.size * exit_price
@@ -354,10 +356,7 @@ class TradingEnvironment(BaseTradingEnvironment):
         SL/TP prices already account for where the order will fill.
         Only commission is applied, not spread/slippage.
         """
-        if position.type == 'long':
-            pnl = (fill_price - position.entry_price) * position.size
-        else:
-            pnl = (position.entry_price - fill_price) * position.size
+        pnl = calculate_pnl(position.entry_price, fill_price, position.size, position.type)
 
         # Commission only (no spread/slippage for limit orders)
         position_value = position.size * fill_price
@@ -402,13 +401,10 @@ class TradingEnvironment(BaseTradingEnvironment):
 
     def _get_unrealized_pnl(self, price: float) -> float:
         """Calculate unrealized PnL at current price."""
-        unrealized_pnl = 0.0
-        for position in self.state.positions:
-            if position.type == 'long':
-                unrealized_pnl += (price - position.entry_price) * position.size
-            else:
-                unrealized_pnl += (position.entry_price - price) * position.size
-        return unrealized_pnl
+        return sum(
+            calculate_unrealized_pnl(position.entry_price, price, position.size, position.type)
+            for position in self.state.positions
+        )
 
     def _get_used_margin(self) -> float:
         """Calculate total margin used by open positions."""

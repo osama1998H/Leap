@@ -8,13 +8,15 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import json
 import os
 from tqdm import tqdm
 
 from core.trading_types import Trade, TradingError  # Consolidated Trade dataclass
+from utils.pnl_calculator import calculate_pnl, calculate_unrealized_pnl
+from utils.position_sizing import calculate_risk_based_size, apply_position_limits
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -137,7 +139,7 @@ class Backtester:
         stop_loss_pips: float
     ) -> float:
         """
-        Calculate position size using RiskManager if available, otherwise inline calculation.
+        Calculate position size using RiskManager if available, otherwise utility fallback.
 
         This method centralizes position sizing logic to avoid duplication.
         When a RiskManager is provided, it delegates to RiskManager.calculate_position_size()
@@ -146,7 +148,7 @@ class Backtester:
         Args:
             entry_price: Trade entry price
             stop_loss_price: Stop loss price level
-            stop_loss_pips: Stop loss distance in pips (used for inline fallback)
+            stop_loss_pips: Stop loss distance in pips (used for utility fallback)
 
         Returns:
             Calculated position size
@@ -158,19 +160,15 @@ class Backtester:
                 stop_loss_price=stop_loss_price
             )
         else:
-            # Fallback: inline position sizing based on risk
-            risk_amount = self.balance * self.risk_per_trade
-            size = risk_amount / (stop_loss_pips * self.pip_value * entry_price)
+            # Fallback: use centralized position sizing utility
+            size = calculate_risk_based_size(
+                self.balance, self.risk_per_trade, stop_loss_pips, self.pip_value, entry_price
+            )
 
-        # Apply leverage limit
-        max_size = (self.balance * self.leverage) / entry_price
-        size = min(size, max_size)
-
-        # Apply max position size cap (realistic constraint)
-        if self.max_position_size is not None:
-            size = min(size, self.max_position_size)
-
-        return size
+        # Apply leverage and position size limits using centralized utility
+        return apply_position_limits(
+            size, self.balance, self.leverage, entry_price, self.max_position_size
+        )
 
     def reset(self):
         """Reset backtester state."""
@@ -398,10 +396,10 @@ class Backtester:
 
         if position.direction == 'long':
             actual_exit = exit_price * (1 - self.spread_pips * self.pip_value / 2 - slippage)
-            pnl = (actual_exit - position.entry_price) * position.size
         else:
             actual_exit = exit_price * (1 + self.spread_pips * self.pip_value / 2 + slippage)
-            pnl = (position.entry_price - actual_exit) * position.size
+
+        pnl = calculate_pnl(position.entry_price, actual_exit, position.size, position.direction)
 
         # Commission
         commission = position.size * actual_exit * self.commission_rate
@@ -477,14 +475,12 @@ class Backtester:
 
     def _update_equity(self, current_price: float):
         """Update equity with unrealized PnL."""
-        unrealized_pnl = 0.0
-
-        for position in self.positions:
-            if position.direction == 'long':
-                unrealized_pnl += (current_price - position.entry_price) * position.size
-            else:
-                unrealized_pnl += (position.entry_price - current_price) * position.size
-
+        unrealized_pnl = sum(
+            calculate_unrealized_pnl(
+                position.entry_price, current_price, position.size, position.direction
+            )
+            for position in self.positions
+        )
         self.equity = self.balance + unrealized_pnl
 
     def _calculate_results(self) -> BacktestResult:
