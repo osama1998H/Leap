@@ -57,17 +57,22 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 |---------|----------|-------|
 | Device management | `utils/device.py` | Use `resolve_device(device)` for PyTorch device handling |
 | Model checkpoints | `utils/checkpoint.py` | Use `save_checkpoint()` / `load_checkpoint()` for consistent model persistence |
+| PnL calculations | `utils/pnl_calculator.py` | Use `calculate_pnl()` / `calculate_unrealized_pnl()` for consistent PnL |
+| Position sizing | `utils/position_sizing.py` | Use `calculate_risk_based_size()` / `calculate_percentage_size()` for fallback sizing |
 | Trade types | `core/trading_types.py` | Use `Trade`, `TradeStatistics` dataclasses |
 | Trading exceptions | `core/trading_types.py` | Use `TradingError` hierarchy for trading-related errors |
 | Environment config | `core/trading_types.py` | Use `EnvConfig` or `EnvConfig.from_params()` factory |
 | Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
-| Position sizing | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` |
+| Risk management | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` when available |
 
 ### Position Sizing
 
 When calculating position sizes:
 1. Use `RiskManager.calculate_position_size()` when a RiskManager is available
-2. Fall back to inline calculation only when no RiskManager is configured
+2. Fall back to utilities in `utils/position_sizing.py` when no RiskManager is configured:
+   - `calculate_risk_based_size()` for risk-based sizing with stop loss
+   - `calculate_percentage_size()` for simple percentage-of-balance sizing
+   - `apply_position_limits()` for applying leverage and max size constraints
 3. See `evaluation/backtester.py:_calculate_position_size()` for the pattern
 
 ### Risk Validation
@@ -115,12 +120,7 @@ env = TradingEnvironment(data=data, config=config)
 - `test_cli.py` - CLI and system integration
 - `test_integration.py` - End-to-end pipeline
 - `test_feature_engineering.py` - Feature computation
-- `test_transformer.py` - Transformer model
-- `test_ppo_agent.py` - PPO agent
-- `test_trading_env.py` - Trading environments
-- `test_trainer.py` - Training pipeline
 - `test_risk_manager.py` - Risk management
-- `test_auto_trader.py` - Auto-trader
 
 **Testing patterns:**
 - Mock classes for external dependencies (MT5, data sources)

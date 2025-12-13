@@ -11,6 +11,7 @@ from enum import Enum
 from threading import Lock
 
 from core.mt5_broker import MT5BrokerGateway, MT5Position
+from utils.pnl_calculator import calculate_unrealized_pnl
 
 logger = logging.getLogger(__name__)
 
@@ -457,10 +458,10 @@ class PositionTracker:
         pos = self._positions[ticket]
 
         # Update unrealized PnL using stored contract size
-        if pos.is_long:
-            pos.unrealized_pnl = (current_price - pos.entry_price) * pos.volume * pos.contract_size
-        else:
-            pos.unrealized_pnl = (pos.entry_price - current_price) * pos.volume * pos.contract_size
+        direction = 'long' if pos.is_long else 'short'
+        pos.unrealized_pnl = calculate_unrealized_pnl(
+            pos.entry_price, current_price, pos.volume, direction, pos.contract_size
+        )
 
         # Update SL/TP if provided
         if sl is not None:

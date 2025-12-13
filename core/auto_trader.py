@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import numpy as np
 
-from core.mt5_broker import MT5BrokerGateway, OrderType
+from core.mt5_broker import MT5BrokerGateway
 from core.order_manager import OrderManager, TradingSignal, SignalType, OrderExecution
 from core.position_sync import PositionSynchronizer, PositionEvent, PositionChange
 from core.live_trading_env import LiveTradingEnvironment
