@@ -887,6 +887,652 @@ class MLflowTracker:
         return dict(items)
 
 
+    # =========================================================================
+    # Walk-Forward Optimization Tracking
+    # =========================================================================
+
+    def log_walkforward_params(
+        self,
+        train_window: int,
+        test_window: int,
+        step_size: int,
+        n_splits: Optional[int] = None
+    ) -> None:
+        """Log walk-forward optimization parameters.
+
+        Args:
+            train_window: Training window size in days
+            test_window: Test window size in days
+            step_size: Step size in days
+            n_splits: Number of splits (if specified)
+        """
+        if not self.is_enabled:
+            return
+
+        params = {
+            "walkforward.train_window_days": train_window,
+            "walkforward.test_window_days": test_window,
+            "walkforward.step_size_days": step_size,
+        }
+        if n_splits is not None:
+            params["walkforward.n_splits"] = n_splits
+
+        self.log_params(params)
+
+    def log_walkforward_fold(
+        self,
+        fold_idx: int,
+        metrics: Dict[str, float],
+        train_start: Optional[str] = None,
+        train_end: Optional[str] = None,
+        test_start: Optional[str] = None,
+        test_end: Optional[str] = None
+    ) -> None:
+        """Log metrics for a single walk-forward fold.
+
+        Args:
+            fold_idx: Fold index (0-based)
+            metrics: Dictionary of metric names and values
+            train_start: Training period start date
+            train_end: Training period end date
+            test_start: Test period start date
+            test_end: Test period end date
+        """
+        if not self.is_enabled:
+            return
+
+        # Prefix metrics with fold index
+        fold_metrics = {
+            f"walkforward.fold_{fold_idx}.{k}": v
+            for k, v in metrics.items()
+            if isinstance(v, (int, float)) and not np.isnan(v)
+        }
+        self.log_metrics(fold_metrics)
+
+        # Log fold period as params (only works if not already logged)
+        try:
+            fold_params = {}
+            if train_start:
+                fold_params[f"walkforward.fold_{fold_idx}.train_start"] = str(train_start)
+            if train_end:
+                fold_params[f"walkforward.fold_{fold_idx}.train_end"] = str(train_end)
+            if test_start:
+                fold_params[f"walkforward.fold_{fold_idx}.test_start"] = str(test_start)
+            if test_end:
+                fold_params[f"walkforward.fold_{fold_idx}.test_end"] = str(test_end)
+            if fold_params:
+                self.log_params(fold_params)
+        except Exception as e:
+            logger.debug(f"Could not log fold params (may already exist): {e}")
+
+    def log_walkforward_summary(self, results: Dict[str, Any]) -> None:
+        """Log aggregated walk-forward optimization results.
+
+        Args:
+            results: Dictionary with aggregated results from WalkForwardOptimizer
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {}
+
+        # Number of folds
+        metrics["walkforward.n_folds"] = results.get("n_folds", 0)
+
+        # Aggregate metrics
+        agg = results.get("aggregate", {})
+        for metric_name, stats in agg.items():
+            if isinstance(stats, dict):
+                for stat_name, value in stats.items():
+                    if isinstance(value, (int, float)) and not np.isnan(value):
+                        metrics[f"walkforward.{metric_name}_{stat_name}"] = value
+
+        # Consistency metrics
+        consistency = results.get("consistency", {})
+        metrics["walkforward.profitable_folds"] = consistency.get("profitable_folds", 0)
+        metrics["walkforward.profitable_ratio"] = consistency.get("profitable_ratio", 0)
+
+        self.log_metrics(metrics)
+
+    # =========================================================================
+    # Auto-Trader / Live Trading Tracking
+    # =========================================================================
+
+    def log_autotrader_params(self, config: Dict[str, Any]) -> None:
+        """Log auto-trader configuration parameters.
+
+        Args:
+            config: Auto-trader configuration dictionary
+        """
+        if not self.is_enabled:
+            return
+
+        params = {
+            "autotrader.paper_mode": config.get("paper_mode", True),
+            "autotrader.symbols": ",".join(config.get("symbols", [])),
+            "autotrader.risk_per_trade": config.get("risk_per_trade", 0.02),
+            "autotrader.max_positions": config.get("max_positions", 5),
+            "autotrader.default_sl_pips": config.get("default_sl_pips", 50),
+            "autotrader.default_tp_pips": config.get("default_tp_pips", 100),
+            "autotrader.min_confidence": config.get("min_confidence", 0.6),
+            "autotrader.prediction_threshold": config.get("prediction_threshold", 0.001),
+            "autotrader.enable_online_learning": config.get("enable_online_learning", False),
+        }
+        self.log_params(params)
+
+    def log_autotrader_trade(
+        self,
+        trade_data: Dict[str, Any],
+        step: Optional[int] = None
+    ) -> None:
+        """Log a single auto-trader trade execution.
+
+        Args:
+            trade_data: Dictionary containing trade information
+            step: Optional step/trade number
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {}
+
+        # Core trade metrics
+        if "pnl" in trade_data:
+            metrics["autotrader.trade_pnl"] = trade_data["pnl"]
+        if "direction" in trade_data:
+            metrics["autotrader.trade_direction"] = 1 if trade_data["direction"] == "long" else -1
+        if "confidence" in trade_data:
+            metrics["autotrader.trade_confidence"] = trade_data["confidence"]
+        if "predicted_return" in trade_data:
+            metrics["autotrader.trade_predicted_return"] = trade_data["predicted_return"]
+        if "actual_return" in trade_data:
+            metrics["autotrader.trade_actual_return"] = trade_data["actual_return"]
+        if "slippage" in trade_data:
+            metrics["autotrader.trade_slippage"] = trade_data["slippage"]
+
+        if metrics:
+            self.log_metrics(metrics, step=step)
+
+    def log_autotrader_session(
+        self,
+        session_stats: Dict[str, Any],
+        step: Optional[int] = None
+    ) -> None:
+        """Log auto-trader session statistics.
+
+        Args:
+            session_stats: Dictionary containing session statistics
+            step: Optional step number (e.g., heartbeat count)
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {
+            "autotrader.session_total_trades": session_stats.get("total_trades", 0),
+            "autotrader.session_winning_trades": session_stats.get("winning_trades", 0),
+            "autotrader.session_losing_trades": session_stats.get("losing_trades", 0),
+            "autotrader.session_total_pnl": session_stats.get("total_pnl", 0),
+            "autotrader.session_win_rate": session_stats.get("win_rate", 0),
+            "autotrader.session_max_drawdown": session_stats.get("max_drawdown", 0),
+            "autotrader.session_signals_generated": session_stats.get("signals_generated", 0),
+            "autotrader.session_signals_executed": session_stats.get("signals_executed", 0),
+            "autotrader.session_signals_rejected": session_stats.get("signals_rejected", 0),
+            "autotrader.session_online_adaptations": session_stats.get("online_adaptations", 0),
+        }
+
+        # Filter out None values and NaN
+        metrics = {
+            k: v for k, v in metrics.items()
+            if v is not None and (not isinstance(v, float) or not np.isnan(v))
+        }
+
+        self.log_metrics(metrics, step=step)
+
+    def log_autotrader_heartbeat(
+        self,
+        balance: float,
+        equity: float,
+        positions: int,
+        step: Optional[int] = None
+    ) -> None:
+        """Log auto-trader heartbeat metrics.
+
+        Args:
+            balance: Current account balance
+            equity: Current account equity
+            positions: Number of open positions
+            step: Optional step/heartbeat number
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {
+            "autotrader.balance": balance,
+            "autotrader.equity": equity,
+            "autotrader.positions": positions,
+            "autotrader.floating_pnl": equity - balance,
+        }
+        self.log_metrics(metrics, step=step)
+
+    # =========================================================================
+    # Online Learning Tracking
+    # =========================================================================
+
+    def log_online_learning_params(self, config: Dict[str, Any]) -> None:
+        """Log online learning configuration parameters.
+
+        Args:
+            config: AdaptationConfig as dictionary
+        """
+        if not self.is_enabled:
+            return
+
+        params = {
+            "online_learning.error_threshold": config.get("error_threshold", 0.05),
+            "online_learning.drawdown_threshold": config.get("drawdown_threshold", 0.1),
+            "online_learning.performance_window": config.get("performance_window", 100),
+            "online_learning.adaptation_frequency": config.get("adaptation_frequency", 100),
+            "online_learning.min_samples_for_adaptation": config.get("min_samples_for_adaptation", 50),
+            "online_learning.learning_rate_decay": config.get("learning_rate_decay", 0.95),
+            "online_learning.max_adaptations_per_day": config.get("max_adaptations_per_day", 10),
+            "online_learning.regime_detection_enabled": config.get("regime_detection_enabled", True),
+        }
+        self.log_params(params)
+
+    def log_online_learning_step(
+        self,
+        metrics: Dict[str, Any],
+        step: int
+    ) -> None:
+        """Log online learning step metrics.
+
+        Args:
+            metrics: Dictionary containing step metrics
+            step: Current step number
+        """
+        if not self.is_enabled:
+            return
+
+        log_metrics = {}
+
+        if "prediction_error" in metrics:
+            log_metrics["online_learning.prediction_error"] = metrics["prediction_error"]
+        if "trading_reward" in metrics:
+            log_metrics["online_learning.trading_reward"] = metrics["trading_reward"]
+        if "sharpe_ratio" in metrics:
+            log_metrics["online_learning.sharpe_ratio"] = metrics["sharpe_ratio"]
+        if "win_rate" in metrics:
+            log_metrics["online_learning.win_rate"] = metrics["win_rate"]
+        if "profit_factor" in metrics:
+            log_metrics["online_learning.profit_factor"] = metrics["profit_factor"]
+
+        if log_metrics:
+            self.log_metrics(log_metrics, step=step)
+
+    def log_online_adaptation(
+        self,
+        adaptation_result: Dict[str, Any],
+        step: int
+    ) -> None:
+        """Log online learning adaptation event.
+
+        Args:
+            adaptation_result: Dictionary containing adaptation results
+            step: Current step number
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {
+            "online_learning.adaptation_triggered": 1,
+            "online_learning.predictor_updated": int(adaptation_result.get("predictor_updated", False)),
+            "online_learning.agent_updated": int(adaptation_result.get("agent_updated", False)),
+        }
+
+        if adaptation_result.get("predictor_loss") is not None:
+            metrics["online_learning.predictor_adaptation_loss"] = adaptation_result["predictor_loss"]
+        if adaptation_result.get("agent_loss") is not None:
+            metrics["online_learning.agent_adaptation_loss"] = adaptation_result["agent_loss"]
+
+        # Log regime as a metric (encode as integer)
+        regime_map = {
+            "unknown": 0, "trending_up": 1, "trending_down": 2,
+            "ranging": 3, "high_volatility": 4, "low_volatility": 5
+        }
+        regime = adaptation_result.get("regime", "unknown")
+        metrics["online_learning.regime"] = regime_map.get(regime, 0)
+
+        self.log_metrics(metrics, step=step)
+
+    def log_online_learning_report(self, report: Dict[str, Any]) -> None:
+        """Log online learning performance report.
+
+        Args:
+            report: Performance report from OnlineLearningManager
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {
+            "online_learning.total_steps": report.get("total_steps", 0),
+            "online_learning.total_adaptations": report.get("total_adaptations", 0),
+            "online_learning.avg_prediction_error": report.get("avg_prediction_error", 0),
+            "online_learning.total_pnl": report.get("total_pnl", 0),
+            "online_learning.avg_sharpe": report.get("avg_sharpe", 0),
+            "online_learning.avg_win_rate": report.get("avg_win_rate", 0),
+        }
+
+        # Log regime distribution
+        regime_dist = report.get("regime_distribution", {})
+        for regime, pct in regime_dist.items():
+            metrics[f"online_learning.regime_pct_{regime}"] = pct
+
+        self.log_metrics(metrics)
+
+    # =========================================================================
+    # Feature Engineering Tracking
+    # =========================================================================
+
+    def log_feature_engineering_params(
+        self,
+        n_features: int,
+        feature_names: Optional[List[str]] = None,
+        multi_timeframe_enabled: bool = False,
+        additional_timeframes: Optional[List[str]] = None
+    ) -> None:
+        """Log feature engineering configuration.
+
+        Args:
+            n_features: Total number of features
+            feature_names: List of feature names
+            multi_timeframe_enabled: Whether multi-timeframe features are used
+            additional_timeframes: List of additional timeframes
+        """
+        if not self.is_enabled:
+            return
+
+        params = {
+            "features.n_features": n_features,
+            "features.multi_timeframe_enabled": multi_timeframe_enabled,
+        }
+
+        if additional_timeframes:
+            params["features.additional_timeframes"] = ",".join(additional_timeframes)
+            params["features.n_timeframes"] = len(additional_timeframes) + 1
+
+        # Log feature categories count
+        if feature_names:
+            feature_categories = self._categorize_features(feature_names)
+            for category, count in feature_categories.items():
+                params[f"features.n_{category}"] = count
+
+        self.log_params(params)
+
+    def log_feature_statistics(
+        self,
+        feature_stats: Dict[str, Dict[str, float]],
+        prefix: str = "features"
+    ) -> None:
+        """Log feature statistics (mean, std, min, max, etc.).
+
+        Args:
+            feature_stats: Dictionary mapping feature names to their statistics
+            prefix: Prefix for metric names
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {}
+
+        # Aggregate statistics across features
+        means = []
+        stds = []
+        missing_rates = []
+
+        for feat_name, stats in feature_stats.items():
+            if "mean" in stats:
+                means.append(stats["mean"])
+            if "std" in stats:
+                stds.append(stats["std"])
+            if "missing_rate" in stats:
+                missing_rates.append(stats["missing_rate"])
+
+        if means:
+            metrics[f"{prefix}.avg_feature_mean"] = np.mean(means)
+        if stds:
+            metrics[f"{prefix}.avg_feature_std"] = np.mean(stds)
+        if missing_rates:
+            metrics[f"{prefix}.avg_missing_rate"] = np.mean(missing_rates)
+            metrics[f"{prefix}.max_missing_rate"] = np.max(missing_rates)
+
+        self.log_metrics(metrics)
+
+    def _categorize_features(self, feature_names: List[str]) -> Dict[str, int]:
+        """Categorize features by type for reporting."""
+        categories = {
+            "momentum": 0,
+            "volatility": 0,
+            "trend": 0,
+            "volume": 0,
+            "price": 0,
+            "time": 0,
+            "candlestick": 0,
+            "other": 0
+        }
+
+        momentum_keywords = ["rsi", "macd", "stoch", "momentum", "roc", "williams"]
+        volatility_keywords = ["atr", "bb_", "keltner", "volatility", "tr"]
+        trend_keywords = ["sma", "ema", "adx", "trend", "di_"]
+        volume_keywords = ["volume", "obv", "vpt", "mfi", "ad"]
+        price_keywords = ["returns", "ratio", "gap", "close", "open", "high", "low"]
+        time_keywords = ["hour", "day", "month", "sin", "cos"]
+        candlestick_keywords = ["doji", "hammer", "engulfing", "body", "shadow", "bullish", "bearish"]
+
+        for feat in feature_names:
+            feat_lower = feat.lower()
+            if any(kw in feat_lower for kw in momentum_keywords):
+                categories["momentum"] += 1
+            elif any(kw in feat_lower for kw in volatility_keywords):
+                categories["volatility"] += 1
+            elif any(kw in feat_lower for kw in trend_keywords):
+                categories["trend"] += 1
+            elif any(kw in feat_lower for kw in volume_keywords):
+                categories["volume"] += 1
+            elif any(kw in feat_lower for kw in price_keywords):
+                categories["price"] += 1
+            elif any(kw in feat_lower for kw in time_keywords):
+                categories["time"] += 1
+            elif any(kw in feat_lower for kw in candlestick_keywords):
+                categories["candlestick"] += 1
+            else:
+                categories["other"] += 1
+
+        return categories
+
+    # =========================================================================
+    # Monte Carlo Analysis Tracking
+    # =========================================================================
+
+    def log_monte_carlo_params(
+        self,
+        n_simulations: int,
+        confidence_level: float
+    ) -> None:
+        """Log Monte Carlo simulation parameters.
+
+        Args:
+            n_simulations: Number of simulations
+            confidence_level: Confidence level for statistics
+        """
+        if not self.is_enabled:
+            return
+
+        self.log_params({
+            "monte_carlo.n_simulations": n_simulations,
+            "monte_carlo.confidence_level": confidence_level,
+        })
+
+    def log_monte_carlo_results(self, results: Dict[str, Any]) -> None:
+        """Log Monte Carlo simulation results.
+
+        Args:
+            results: Dictionary with Monte Carlo simulation results
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {}
+
+        # Final equity statistics
+        final_eq = results.get("final_equity", {})
+        metrics["monte_carlo.final_equity_mean"] = final_eq.get("mean", 0)
+        metrics["monte_carlo.final_equity_std"] = final_eq.get("std", 0)
+        metrics["monte_carlo.final_equity_median"] = final_eq.get("median", 0)
+        metrics["monte_carlo.final_equity_p5"] = final_eq.get("percentile_5", 0)
+        metrics["monte_carlo.final_equity_p95"] = final_eq.get("percentile_95", 0)
+
+        # Max drawdown statistics
+        max_dd = results.get("max_drawdown", {})
+        metrics["monte_carlo.max_drawdown_mean"] = max_dd.get("mean", 0)
+        metrics["monte_carlo.max_drawdown_std"] = max_dd.get("std", 0)
+        metrics["monte_carlo.max_drawdown_p95"] = max_dd.get("percentile_95", 0)
+
+        # Probability metrics
+        metrics["monte_carlo.probability_of_profit"] = results.get("probability_of_profit", 0)
+        metrics["monte_carlo.probability_of_ruin"] = results.get("probability_of_ruin", 0)
+
+        # Filter out None values
+        metrics = {k: v for k, v in metrics.items() if v is not None}
+
+        self.log_metrics(metrics)
+
+    # =========================================================================
+    # Extended Backtest Metrics
+    # =========================================================================
+
+    def log_extended_backtest_results(
+        self,
+        results: Dict[str, Any],
+        prefix: str = "backtest"
+    ) -> None:
+        """Log extended backtest results with all available metrics.
+
+        Args:
+            results: Dictionary of backtest results (from BacktestResult or dict)
+            prefix: Prefix for metric names
+        """
+        if not self.is_enabled:
+            return
+
+        metrics = {}
+
+        # Return metrics
+        for key in ["total_return", "annualized_return", "cagr"]:
+            if key in results:
+                metrics[f"{prefix}.{key}"] = results[key]
+
+        # Risk metrics
+        for key in ["volatility", "downside_volatility", "max_drawdown",
+                    "max_drawdown_duration", "var_95", "cvar_95"]:
+            if key in results:
+                metrics[f"{prefix}.{key}"] = results[key]
+
+        # Risk-adjusted metrics
+        for key in ["sharpe_ratio", "sortino_ratio", "calmar_ratio",
+                    "omega_ratio", "information_ratio"]:
+            if key in results:
+                val = results[key]
+                if val is not None and not (isinstance(val, float) and np.isinf(val)):
+                    metrics[f"{prefix}.{key}"] = val
+
+        # Distribution metrics
+        for key in ["skewness", "kurtosis"]:
+            if key in results:
+                metrics[f"{prefix}.{key}"] = results[key]
+
+        # Trade statistics
+        for key in ["total_trades", "winning_trades", "losing_trades",
+                    "win_rate", "profit_factor", "avg_trade_return",
+                    "avg_winner", "avg_loser", "largest_winner", "largest_loser",
+                    "avg_trade_duration", "payoff_ratio", "expectancy",
+                    "consecutive_winners", "consecutive_losers"]:
+            if key in results:
+                val = results[key]
+                if val is not None and not (isinstance(val, float) and np.isinf(val)):
+                    metrics[f"{prefix}.{key}"] = val
+
+        # Tail risk metrics
+        for key in ["tail_ratio", "gain_to_pain_ratio"]:
+            if key in results:
+                val = results[key]
+                if val is not None and not (isinstance(val, float) and np.isinf(val)):
+                    metrics[f"{prefix}.{key}"] = val
+
+        self.log_metrics(metrics)
+
+    # =========================================================================
+    # Risk Management Tracking
+    # =========================================================================
+
+    def log_risk_management_params(self, config: Dict[str, Any]) -> None:
+        """Log risk management configuration.
+
+        Args:
+            config: Risk management configuration dictionary
+        """
+        if not self.is_enabled:
+            return
+
+        params = {
+            "risk.max_position_size_pct": config.get("max_position_size_pct", 0.1),
+            "risk.max_portfolio_risk_pct": config.get("max_portfolio_risk_pct", 0.2),
+            "risk.max_correlated_positions": config.get("max_correlated_positions", 3),
+            "risk.max_sector_exposure_pct": config.get("max_sector_exposure_pct", 0.3),
+            "risk.daily_loss_limit_pct": config.get("daily_loss_limit_pct", 0.05),
+            "risk.trailing_stop_enabled": config.get("trailing_stop_enabled", False),
+        }
+        self.log_params(params)
+
+    def log_risk_event(
+        self,
+        event_type: str,
+        details: Dict[str, Any],
+        step: Optional[int] = None
+    ) -> None:
+        """Log a risk management event.
+
+        Args:
+            event_type: Type of risk event (e.g., "position_rejected", "daily_limit_hit")
+            details: Event details
+            step: Optional step number
+        """
+        if not self.is_enabled:
+            return
+
+        # Map event types to numeric codes for tracking
+        event_codes = {
+            "position_rejected": 1,
+            "daily_limit_hit": 2,
+            "drawdown_limit_hit": 3,
+            "correlation_limit_hit": 4,
+            "position_reduced": 5,
+            "stop_loss_triggered": 6,
+            "take_profit_triggered": 7,
+        }
+
+        metrics = {
+            f"risk.event_{event_type}": 1,
+            "risk.event_code": event_codes.get(event_type, 0),
+        }
+
+        # Add numeric details
+        for key, value in details.items():
+            if isinstance(value, (int, float)) and not np.isnan(value):
+                metrics[f"risk.{event_type}_{key}"] = value
+
+        self.log_metrics(metrics, step=step)
+
+
 def create_tracker(config: SystemConfig) -> MLflowTracker:
     """Factory function to create MLflow tracker from system config.
 

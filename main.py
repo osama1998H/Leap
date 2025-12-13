@@ -591,11 +591,12 @@ class LeapTradingSystem:
             for i, name in enumerate(feature_names):
                 df[name] = market_data.features[:, i]
 
-        # Create walk-forward optimizer
+        # Create walk-forward optimizer with MLflow tracker
         optimizer = WalkForwardOptimizer(
             train_window=self.config.backtest.train_window_days,
             test_window=self.config.backtest.test_window_days,
-            step_size=self.config.backtest.test_window_days
+            step_size=self.config.backtest.test_window_days,
+            mlflow_tracker=self.mlflow_tracker
         )
 
         # Configuration for walk-forward training
@@ -1233,16 +1234,28 @@ Examples:
                 }
             ):
                 # Log parameters
-                tracker.log_params({
+                params = {
                     "symbol": primary_symbol,
                     "timeframe": timeframe,
                     "n_bars": n_bars,
                     "realistic_mode": args.realistic,
-                    "monte_carlo": args.monte_carlo
-                })
+                    "monte_carlo": args.monte_carlo,
+                    "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+                }
+                if additional_timeframes:
+                    params["additional_timeframes"] = ",".join(additional_timeframes)
+                    params["n_additional_timeframes"] = len(additional_timeframes)
+                tracker.log_params(params)
 
-                # Log backtest metrics
+                # Log backtest metrics (basic)
                 tracker.log_backtest_results(analysis)
+
+                # Log extended backtest metrics (comprehensive)
+                tracker.log_extended_backtest_results(analysis)
+
+                # Log Monte Carlo results if available
+                if 'monte_carlo' in analysis and 'warning' not in analysis['monte_carlo']:
+                    tracker.log_monte_carlo_results(analysis['monte_carlo'])
 
                 # Log results file as artifact
                 tracker.log_artifact(results_file)
@@ -1262,7 +1275,42 @@ Examples:
         if market_data is None:
             sys.exit(1)
 
-        results = system.walk_forward_test(market_data)
+        # Start MLflow run for walk-forward analysis
+        tracker = system.mlflow_tracker
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        if tracker and tracker.is_enabled:
+            run_name = f"walkforward-{primary_symbol}-{timeframe}-{timestamp}"
+            with tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": primary_symbol,
+                    "timeframe": timeframe,
+                    "command": "walkforward"
+                }
+            ):
+                # Log base parameters
+                params = {
+                    "symbol": primary_symbol,
+                    "timeframe": timeframe,
+                    "n_bars": n_bars,
+                    "train_window_days": config.backtest.train_window_days,
+                    "test_window_days": config.backtest.test_window_days,
+                    "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+                }
+                if additional_timeframes:
+                    params["additional_timeframes"] = ",".join(additional_timeframes)
+                    params["n_additional_timeframes"] = len(additional_timeframes)
+                tracker.log_params(params)
+
+                # Run walk-forward test (MLflow tracking handled inside)
+                results = system.walk_forward_test(market_data)
+
+                logger.info(f"Walk-forward results logged to MLflow: {run_name}")
+        else:
+            # Run without MLflow
+            results = system.walk_forward_test(market_data)
+
         print(json.dumps(results, indent=2, default=str))
 
     elif args.command == 'evaluate':
@@ -1372,7 +1420,7 @@ Examples:
                          "Online learning will be disabled.")
             trader_config.enable_online_learning = False
 
-        # Create auto-trader
+        # Create auto-trader with MLflow tracker
         auto_trader = AutoTrader(
             broker=broker,
             predictor=system._predictor,
@@ -1380,8 +1428,40 @@ Examples:
             risk_manager=system.risk_manager,
             online_manager=online_manager,
             data_pipeline=system.data_pipeline,
-            config=trader_config
+            config=trader_config,
+            mlflow_tracker=system.mlflow_tracker
         )
+
+        # Start MLflow run for auto-trading session
+        tracker = system.mlflow_tracker
+        run_context = None
+        if tracker and tracker.is_enabled:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            run_name = f"autotrade-{primary_symbol}-{timestamp}"
+            run_context = tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": primary_symbol,
+                    "timeframe": timeframe,
+                    "command": "autotrade",
+                    "paper_mode": str(args.paper)
+                }
+            )
+            run_context.__enter__()
+
+            # Log autotrade parameters including multi-timeframe
+            params = {
+                "symbol": primary_symbol,
+                "timeframe": timeframe,
+                "paper_mode": args.paper,
+                "risk_per_trade": trader_config.risk_per_trade,
+                "max_positions": trader_config.max_positions,
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
 
         # Start trading
         mode = "PAPER" if args.paper else "LIVE"
@@ -1410,6 +1490,10 @@ Examples:
         except KeyboardInterrupt:
             print("\nStopping auto-trader...")
             auto_trader.stop()
+        finally:
+            # End MLflow run
+            if run_context is not None:
+                run_context.__exit__(None, None, None)
 
         # Print final statistics
         stats = auto_trader.get_statistics()
