@@ -438,44 +438,6 @@ class TestTraining:
 
 
 # ============================================================================
-# Backtest Tests
-# ============================================================================
-
-class TestBacktest:
-    """Tests for backtesting functionality."""
-
-    def test_backtest_basic(self, trading_system):
-        """Test basic backtesting."""
-        market_data = MockMarketData(n_bars=500)
-
-        with patch('main.Backtester') as mock_backtester_cls:
-            mock_backtester = Mock()
-            mock_result = Mock()
-            mock_result.total_return = 0.05
-            mock_result.sharpe_ratio = 1.2
-            mock_result.max_drawdown = 0.08
-            mock_result.total_trades = 10
-            mock_result.win_rate = 0.6
-            mock_result.trades = []
-            mock_backtester.run.return_value = mock_result
-            mock_backtester_cls.return_value = mock_backtester
-
-            with patch('main.PerformanceAnalyzer') as mock_analyzer_cls:
-                mock_analyzer = Mock()
-                mock_analyzer.analyze.return_value = {
-                    'total_return': 0.05,
-                    'sharpe_ratio': 1.2
-                }
-                mock_analyzer.generate_report.return_value = "Test report"
-                mock_analyzer_cls.return_value = mock_analyzer
-
-                result, analysis = trading_system.backtest(market_data)
-
-                assert result is not None
-                assert analysis is not None
-
-
-# ============================================================================
 # CLI Argument Parsing Tests
 # ============================================================================
 
@@ -488,7 +450,7 @@ class TestCLIArgumentParsing:
 
         with patch.object(sys, 'argv', ['main.py'] + test_args):
             parser = argparse.ArgumentParser()
-            parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
+            parser.add_argument('command', choices=['train', 'evaluate', 'walkforward', 'autotrade'])
             parser.add_argument('--symbol', '-s', default='EURUSD')
             parser.add_argument('--epochs', '-e', type=int, default=100)
 
@@ -498,28 +460,12 @@ class TestCLIArgumentParsing:
             assert args.symbol == 'GBPUSD'
             assert args.epochs == 50
 
-    def test_backtest_command_args(self):
-        """Test backtest command argument parsing."""
-        test_args = ['backtest', '--symbol', 'EURUSD', '--bars', '10000', '--realistic']
-
-        parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
-        parser.add_argument('--symbol', '-s', default='EURUSD')
-        parser.add_argument('--bars', '-b', type=int, default=50000)
-        parser.add_argument('--realistic', action='store_true')
-
-        args = parser.parse_args(test_args)
-
-        assert args.command == 'backtest'
-        assert args.bars == 10000
-        assert args.realistic is True
-
     def test_autotrade_command_args(self):
         """Test autotrade command argument parsing."""
         test_args = ['autotrade', '--paper']
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
+        parser.add_argument('command', choices=['train', 'evaluate', 'walkforward', 'autotrade'])
         parser.add_argument('--paper', action='store_true')
 
         args = parser.parse_args(test_args)
@@ -532,7 +478,7 @@ class TestCLIArgumentParsing:
         test_args = ['train', '--no-mlflow', '--mlflow-experiment', 'test_exp']
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
+        parser.add_argument('command', choices=['train', 'evaluate', 'walkforward', 'autotrade'])
         parser.add_argument('--no-mlflow', action='store_true')
         parser.add_argument('--mlflow-experiment', default=None)
 
@@ -626,43 +572,6 @@ class TestMainFunction:
                         except SystemExit as e:
                             # May exit with 0 on success
                             assert e.code in [0, None]
-
-    def test_main_backtest_command(self, temp_dir):
-        """Test main() with backtest command."""
-        test_args = [
-            'backtest',
-            '--symbol', 'EURUSD',
-            '--bars', '500',
-            '--model-dir', os.path.join(temp_dir, 'models'),
-            '--no-mlflow'
-        ]
-
-        with patch.object(sys, 'argv', ['main.py'] + test_args):
-            with patch('main.LeapTradingSystem') as mock_system_cls:
-                mock_system = Mock()
-                mock_system.load_data.return_value = MockMarketData(500)
-                mock_result = Mock()
-                mock_result.trades = []
-                mock_system.backtest.return_value = (mock_result, {
-                    'total_return': 0.05,
-                    'sharpe_ratio': 1.2
-                })
-                mock_system.load_models = Mock()
-                mock_system.mlflow_tracker = None
-                mock_system_cls.return_value = mock_system
-
-                with patch('main.get_config') as mock_get_config:
-                    config = get_config()
-                    config.base_dir = temp_dir
-                    config.mlflow.enabled = False
-                    mock_get_config.return_value = config
-
-                    with patch('main.initialize_logging'):
-                        try:
-                            main()
-                        except SystemExit as e:
-                            assert e.code in [0, None]
-
 
 # ============================================================================
 # Edge Cases and Error Handling Tests

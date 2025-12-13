@@ -8,7 +8,7 @@ An advanced AI-powered forex trading system with online learning and adaptation 
 - **PPO Reinforcement Learning**: Proximal Policy Optimization agent for optimal trading decisions
 - **Online Learning**: Continuous model adaptation to changing market conditions
 - **Market Regime Detection**: Automatic detection of market states (trending, ranging, high volatility)
-- **Comprehensive Backtesting**: Walk-forward optimization and Monte Carlo simulation
+- **Walk-Forward Validation**: Rolling window train/test validation and Monte Carlo simulation
 - **Risk Management**: Dynamic position sizing, stop-loss/take-profit, and drawdown limits
 - **Multi-timeframe Analysis**: Feature engineering across multiple timeframes
 
@@ -81,7 +81,7 @@ For detailed technical architecture documentation including:
 - **Model Architecture**: Transformer Predictor and PPO Agent internals
 - **Data Flow**: Complete data pipeline and feature engineering details
 - **Online Learning**: Adaptation triggers and learning loops
-- **Walk-Forward Optimization**: Backtesting methodology
+- **Walk-Forward Optimization**: Validation methodology for strategy robustness
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for comprehensive diagrams and technical details.
 
@@ -181,20 +181,15 @@ python main.py train --symbols EURUSD GBPUSD --multi-timeframe
 
 > **Note:** Multi-timeframe training adds indicators from higher/lower timeframes as features (e.g., 1h training with 15m/4h/1d features). See [CLI.md](CLI.md) for detailed options.
 
-### Backtesting
+### Validation (Walk-Forward)
 
 ```bash
-# Run backtest on historical data
-python main.py backtest --symbol EURUSD --bars 50000
-
-# Backtest with realistic constraints (limited trades, capped position size)
-python main.py backtest --symbol EURUSD --realistic
-
-# Backtest with Monte Carlo risk analysis
-python main.py backtest --symbol EURUSD --monte-carlo
-
-# Walk-forward optimization
+# Walk-forward optimization (validates strategy robustness)
+# Trains fresh models per fold and tests on unseen data
 python main.py walkforward --symbol EURUSD
+
+# Walk-forward with more historical data (more folds)
+python main.py walkforward --symbol EURUSD --bars 100000
 ```
 
 ### Evaluation
