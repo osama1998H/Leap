@@ -143,6 +143,9 @@ class TradingEnvironment(BaseTradingEnvironment):
             peak_equity=self.initial_balance
         )
 
+        # Track trade durations for average calculation
+        self._trade_durations: List[int] = []
+
         self._reset_history()
 
         obs = self._get_observation()
@@ -367,17 +370,15 @@ class TradingEnvironment(BaseTradingEnvironment):
 
     def _finalize_position_close(self, position: Position, pnl: float):
         """Common logic for finalizing a position close."""
-        # Update state
-        self.state.balance += pnl
-        self.state.total_pnl += pnl
+        # Track trade duration (in steps)
+        duration = self.current_step - position.entry_time
+        self._trade_durations.append(duration)
 
-        # Track gross profit and gross loss for profit factor calculation
-        if pnl > 0:
-            self.state.winning_trades += 1
-            self.state.gross_profit += pnl
-        else:
-            self.state.losing_trades += 1
-            self.state.gross_loss += abs(pnl)
+        # Update balance
+        self.state.balance += pnl
+
+        # Update trade statistics using centralized method
+        self.state.update_with_trade_result(pnl)
 
         self.state.positions.remove(position)
 
@@ -518,9 +519,10 @@ class TradingEnvironment(BaseTradingEnvironment):
         return stats
 
     def _calculate_avg_trade_duration(self) -> float:
-        """Calculate average trade duration."""
-        # This would be tracked properly in production
-        return 0.0
+        """Calculate average trade duration in steps."""
+        if not self._trade_durations:
+            return 0.0
+        return sum(self._trade_durations) / len(self._trade_durations)
 
 
 class MultiSymbolTradingEnv:
