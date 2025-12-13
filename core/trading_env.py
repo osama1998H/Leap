@@ -173,11 +173,13 @@ class TradingEnvironment(BaseTradingEnvironment):
         self.current_step += 1
         self._episode_step += 1
 
-        # Check if we've reached the end of data
-        if self.current_step >= len(self.data):
+        # Check if we've reached the last available bar (end of data)
+        # Settlement must happen at len(data)-1, not after, because step()
+        # won't be called again after terminated=True (Gym convention)
+        last_step = len(self.data) - 1
+        if self.current_step >= last_step:
             # At end of data: settle at last available bar and terminate
             # Keep current_step in bounds for _get_observation()
-            last_step = len(self.data) - 1
             self.current_step = last_step
             last_price = float(self.data[last_step, 3])  # Close price of last bar
 
@@ -191,7 +193,10 @@ class TradingEnvironment(BaseTradingEnvironment):
             self._record_history(action, reward, last_price)
             obs = self._get_observation()
             info = self._get_info()
-            return obs, reward, True, False, info
+
+            # Check truncation as well (episode could be both terminated and truncated)
+            truncated = self._episode_step >= self.max_episode_steps
+            return obs, reward, True, truncated, info
 
         # Get NEXT price for mark-to-market (price at t+1)
         next_price = self._get_current_price()
@@ -204,11 +209,9 @@ class TradingEnvironment(BaseTradingEnvironment):
         reward = self._calculate_reward(prev_equity)
 
         # Check if episode is done
-        # Terminated: natural end conditions (bankruptcy, max drawdown, end of data)
-        terminated = (
-            self.current_step >= len(self.data) - 1 or
-            self._check_termination()
-        )
+        # Terminated: natural end conditions (bankruptcy, max drawdown)
+        # Note: end-of-data is handled by the settlement branch above
+        terminated = self._check_termination()
         # Truncated: artificial limit to keep episodes manageable for learning
         truncated = self._episode_step >= self.max_episode_steps
 
