@@ -87,6 +87,13 @@ class BaseTradingEnvironment(gym.Env, ABC):
         self.slippage = config.slippage
         self.leverage = config.leverage
         self.max_position_size = config.max_position_size
+
+        # Validate leverage to prevent division by zero in margin calculations
+        if self.leverage <= 0:
+            raise ValueError(
+                f"leverage must be > 0, got {self.leverage}. "
+                f"Leverage is used for margin calculations and cannot be zero or negative."
+            )
         self.stop_loss_pct = config.stop_loss_pct
         self.take_profit_pct = config.take_profit_pct
         self.window_size = config.window_size

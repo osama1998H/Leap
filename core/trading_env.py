@@ -149,35 +149,74 @@ class TradingEnvironment(BaseTradingEnvironment):
         return obs, info
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]:
-        """Execute one step in the environment."""
-        # Get current price
-        current_price = self._get_current_price()
+        """
+        Execute one step in the environment.
+
+        Timing convention (critical for correct RL learning):
+        - At time t, agent observes state based on data up to t
+        - Agent chooses action, which executes at price[t]
+        - Time advances to t+1
+        - Positions are marked-to-market at price[t+1]
+        - Reward reflects equity change from price movement t -> t+1
+        - Agent receives observation from t+1
+
+        This ensures reward captures actual price movement, not just transaction costs.
+        """
+        # Get current price for action execution (entry at time t)
+        entry_price = self._get_current_price()
         prev_equity = self.state.equity
 
-        # Execute action
-        self._execute_action(action, current_price)
+        # Execute action at current price (trade fills at t)
+        self._execute_action(action, entry_price)
 
-        # Update positions and calculate PnL
-        self._update_positions(current_price)
-
-        # Calculate reward
-        reward = self._calculate_reward(prev_equity)
-
-        # Move to next step
+        # Advance to next step BEFORE mark-to-market
         self.current_step += 1
         self._episode_step += 1
 
+        # Check if we've reached the last available bar (end of data)
+        # Settlement must happen at len(data)-1, not after, because step()
+        # won't be called again after terminated=True (Gym convention)
+        last_step = len(self.data) - 1
+        if self.current_step >= last_step:
+            # At end of data: settle at last available bar and terminate
+            # Keep current_step in bounds for _get_observation()
+            self.current_step = last_step
+            last_price = float(self.data[last_step, 3])  # Close price of last bar
+
+            # Close all open positions at final price (forced settlement)
+            self._close_all_positions(last_price)
+
+            # Update equity after settlement (all positions now closed)
+            self._update_positions(last_price)
+
+            reward = self._calculate_reward(prev_equity)
+            self._record_history(action, reward, last_price)
+            obs = self._get_observation()
+            info = self._get_info()
+
+            # Check truncation as well (episode could be both terminated and truncated)
+            truncated = self._episode_step >= self.max_episode_steps
+            return obs, reward, True, truncated, info
+
+        # Get NEXT price for mark-to-market (price at t+1)
+        next_price = self._get_current_price()
+
+        # Update positions at NEXT price (mark-to-market at t+1)
+        # This is where the actual price movement affects equity
+        self._update_positions(next_price)
+
+        # Calculate reward (now reflects actual price movement t -> t+1)
+        reward = self._calculate_reward(prev_equity)
+
         # Check if episode is done
-        # Terminated: natural end conditions (bankruptcy, max drawdown, end of data)
-        terminated = (
-            self.current_step >= len(self.data) - 1 or
-            self._check_termination()
-        )
+        # Terminated: natural end conditions (bankruptcy, max drawdown)
+        # Note: end-of-data is handled by the settlement branch above
+        terminated = self._check_termination()
         # Truncated: artificial limit to keep episodes manageable for learning
         truncated = self._episode_step >= self.max_episode_steps
 
-        # Record history
-        self._record_history(action, reward, current_price)
+        # Record history with next price (consistent with mark-to-market)
+        self._record_history(action, reward, next_price)
 
         obs = self._get_observation()
         info = self._get_info()
@@ -252,11 +291,20 @@ class TradingEnvironment(BaseTradingEnvironment):
                 return
         else:
             # Fallback: inline position sizing based on max_position_size
+            # Use entry_price (not raw price) for consistent sizing
             position_value = self.state.balance * self.max_position_size
-            size = position_value / price
+            size = position_value / entry_price
+
+        # Check margin requirement before opening position
+        position_value = size * entry_price
+        if not self._check_margin_requirement(position_value):
+            logger.debug(
+                f"Insufficient margin for position. Required: {position_value / self.leverage:.2f}, "
+                f"Free: {self._get_free_margin():.2f}"
+            )
+            return
 
         # Commission
-        position_value = size * entry_price
         commission_cost = position_value * self.commission
         self.state.balance -= commission_cost
 
@@ -278,8 +326,13 @@ class TradingEnvironment(BaseTradingEnvironment):
             self.risk_manager.on_position_opened(notional)
 
     def _close_position(self, position: Position, price: float):
-        """Close a specific position."""
-        # Apply spread and slippage
+        """
+        Close a specific position with spread/slippage applied.
+
+        Use this for manual closes (CLOSE action) where market order costs apply.
+        For SL/TP triggered closes, use _close_position_at_sl_tp instead.
+        """
+        # Apply spread and slippage for market close
         if position.type == 'long':
             exit_price = price * (1 - self.spread / 2 - self.slippage)
             pnl = (exit_price - position.entry_price) * position.size
@@ -292,6 +345,29 @@ class TradingEnvironment(BaseTradingEnvironment):
         commission_cost = position_value * self.commission
         pnl -= commission_cost
 
+        self._finalize_position_close(position, pnl)
+
+    def _close_position_at_sl_tp(self, position: Position, fill_price: float):
+        """
+        Close position at exact SL/TP price without additional spread/slippage.
+
+        SL/TP prices already account for where the order will fill.
+        Only commission is applied, not spread/slippage.
+        """
+        if position.type == 'long':
+            pnl = (fill_price - position.entry_price) * position.size
+        else:
+            pnl = (position.entry_price - fill_price) * position.size
+
+        # Commission only (no spread/slippage for limit orders)
+        position_value = position.size * fill_price
+        commission_cost = position_value * self.commission
+        pnl -= commission_cost
+
+        self._finalize_position_close(position, pnl)
+
+    def _finalize_position_close(self, position: Position, pnl: float):
+        """Common logic for finalizing a position close."""
         # Update state
         self.state.balance += pnl
         self.state.total_pnl += pnl
@@ -334,31 +410,78 @@ class TradingEnvironment(BaseTradingEnvironment):
                 unrealized_pnl += (position.entry_price - price) * position.size
         return unrealized_pnl
 
+    def _get_used_margin(self) -> float:
+        """Calculate total margin used by open positions."""
+        total_margin = 0.0
+        for position in self.state.positions:
+            notional = position.size * position.entry_price
+            total_margin += notional / self.leverage
+        return total_margin
+
+    def _get_free_margin(self) -> float:
+        """Calculate available margin for new positions."""
+        return self.state.equity - self._get_used_margin()
+
+    def _check_margin_requirement(self, position_value: float) -> bool:
+        """
+        Check if sufficient margin is available for a new position.
+
+        Args:
+            position_value: Notional value of the proposed position
+
+        Returns:
+            True if margin is sufficient, False otherwise
+        """
+        required_margin = position_value / self.leverage
+        free_margin = self._get_free_margin()
+        return free_margin >= required_margin
+
     # -------------------------------------------------------------------------
     # Environment-specific methods
     # -------------------------------------------------------------------------
 
     def _update_positions(self, current_price: float):
-        """Update positions, check stop loss/take profit."""
+        """
+        Update positions, check stop loss/take profit using OHLC data.
+
+        Uses High/Low prices for realistic SL/TP trigger detection:
+        - Long SL: triggered if Low <= stop_loss
+        - Long TP: triggered if High >= take_profit
+        - Short SL: triggered if High >= stop_loss
+        - Short TP: triggered if Low <= take_profit
+
+        Falls back to close price if OHLC data is not available.
+        """
+        # Get OHLC data for current step (more realistic SL/TP detection)
+        # Data format: [Open, High, Low, Close, Volume, ...]
+        if self.current_step < len(self.data):
+            bar = self.data[self.current_step]
+            high_price = bar[1] if len(bar) > 1 else current_price
+            low_price = bar[2] if len(bar) > 2 else current_price
+            close_price = bar[3] if len(bar) > 3 else current_price
+        else:
+            high_price = low_price = close_price = current_price
+
         for position in list(self.state.positions):
-            # Check stop loss
             if position.type == 'long':
-                if current_price <= position.stop_loss:
-                    self._close_position(position, position.stop_loss)
+                # Long: SL hit if LOW went below stop, TP hit if HIGH went above TP
+                if position.stop_loss and low_price <= position.stop_loss:
+                    self._close_position_at_sl_tp(position, position.stop_loss)
                     continue
-                elif current_price >= position.take_profit:
-                    self._close_position(position, position.take_profit)
+                elif position.take_profit and high_price >= position.take_profit:
+                    self._close_position_at_sl_tp(position, position.take_profit)
                     continue
             else:
-                if current_price >= position.stop_loss:
-                    self._close_position(position, position.stop_loss)
+                # Short: SL hit if HIGH went above stop, TP hit if LOW went below TP
+                if position.stop_loss and high_price >= position.stop_loss:
+                    self._close_position_at_sl_tp(position, position.stop_loss)
                     continue
-                elif current_price <= position.take_profit:
-                    self._close_position(position, position.take_profit)
+                elif position.take_profit and low_price <= position.take_profit:
+                    self._close_position_at_sl_tp(position, position.take_profit)
                     continue
 
-        # Calculate unrealized PnL and equity
-        unrealized_pnl = self._get_unrealized_pnl(current_price)
+        # Calculate unrealized PnL and equity using close price
+        unrealized_pnl = self._get_unrealized_pnl(close_price)
         self.state.equity = self.state.balance + unrealized_pnl
 
         # Update peak equity and drawdown
