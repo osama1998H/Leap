@@ -563,14 +563,7 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             )
 
             self._paper_balance += pnl
-            self.state.total_pnl += pnl
-
-            if pnl > 0:
-                self.state.winning_trades += 1
-                self.state.gross_profit += pnl
-            else:
-                self.state.losing_trades += 1
-                self.state.gross_loss += abs(pnl)
+            self.state.update_with_trade_result(pnl)
 
             self._paper_positions.remove(position)
             logger.info(f"Paper position closed: PnL = {pnl:.2f}")
@@ -585,14 +578,7 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         )
 
         self._paper_balance += pnl
-        self.state.total_pnl += pnl
-
-        if pnl > 0:
-            self.state.winning_trades += 1
-            self.state.gross_profit += pnl
-        else:
-            self.state.losing_trades += 1
-            self.state.gross_loss += abs(pnl)
+        self.state.update_with_trade_result(pnl)
 
         self._paper_positions.remove(position)
 

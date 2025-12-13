@@ -96,6 +96,28 @@ class TradingSession:
             max_drawdown=self.max_drawdown
         )
 
+    def update_with_trade_result(self, pnl: float) -> None:
+        """
+        Update session statistics after a trade closes.
+
+        This method centralizes the trade statistics update logic.
+        Note: max_drawdown is not updated here as it requires account balance info.
+
+        Args:
+            pnl: The profit/loss from the closed trade
+        """
+        self.total_trades += 1
+        self.total_pnl += pnl
+
+        if pnl > 0:
+            self.winning_trades += 1
+            self.gross_profit += pnl
+        elif pnl < 0:
+            self.losing_trades += 1
+            self.gross_loss += abs(pnl)
+        else:
+            self.breakeven_trades += 1
+
 
 # Note: AutoTraderConfig is imported from config.settings to maintain single source of truth
 
@@ -834,15 +856,7 @@ class AutoTrader:
         ticket = change.ticket
 
         if self.session:
-            self.session.total_pnl += profit
-            if profit > 0:
-                self.session.winning_trades += 1
-                self.session.gross_profit += profit
-            elif profit < 0:
-                self.session.losing_trades += 1
-                self.session.gross_loss += abs(profit)
-            else:
-                self.session.breakeven_trades += 1
+            self.session.update_with_trade_result(profit)
 
             # Update drawdown
             account = self.broker.get_account_info()
