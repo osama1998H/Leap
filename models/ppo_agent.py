@@ -703,6 +703,13 @@ class PPOAgent:
                 if done:
                     episode_rewards.append(current_episode_reward)
                     episode_lengths.append(current_episode_length)
+
+                    # Capture reward component statistics before reset
+                    if hasattr(env, 'get_reward_component_stats'):
+                        self._last_reward_component_stats = env.get_reward_component_stats()
+                    if hasattr(env, 'get_action_distribution'):
+                        self._last_action_distribution = env.get_action_distribution()
+
                     current_episode_reward = 0.0
                     current_episode_length = 0
                     n_episodes += 1
@@ -753,6 +760,19 @@ class PPOAgent:
                 if len(episode_rewards) > 0:
                     callback_metrics["episode_reward"] = episode_rewards[-1]
                     callback_metrics["avg_reward_10ep"] = np.mean(episode_rewards[-10:])
+
+                # Add reward component statistics if available
+                if hasattr(self, '_last_reward_component_stats') and self._last_reward_component_stats:
+                    for comp_name, comp_stats in self._last_reward_component_stats.items():
+                        if isinstance(comp_stats, dict):
+                            callback_metrics[f"reward.{comp_name}.mean"] = comp_stats.get('mean', 0)
+                            callback_metrics[f"reward.{comp_name}.sum"] = comp_stats.get('sum', 0)
+
+                # Add action distribution if available
+                if hasattr(self, '_last_action_distribution') and self._last_action_distribution:
+                    for action_name, pct in self._last_action_distribution.items():
+                        callback_metrics[f"action.{action_name}_pct"] = pct
+
                 mlflow_callback(callback_metrics, timestep)
 
             # Evaluation and early stopping

@@ -100,6 +100,13 @@ class BaseTradingEnvironment(gym.Env, ABC):
         self.max_drawdown_threshold = config.max_drawdown_threshold
         self.max_episode_steps = config.max_episode_steps
 
+        # Reward shaping parameters (configurable for tuning)
+        self.return_scale = config.return_scale
+        self.drawdown_penalty_scale = config.drawdown_penalty_scale
+        self.recovery_bonus_scale = config.recovery_bonus_scale
+        self.holding_cost_per_position = config.holding_cost
+        self.reward_clip = config.reward_clip
+
         self.render_mode = render_mode
         self.risk_manager = risk_manager
 
@@ -133,7 +140,15 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'actions': [],
             'rewards': [],
             'positions': [],
-            'prices': []
+            'prices': [],
+            # Reward component tracking for diagnostics
+            'reward_components': {
+                'return_reward': [],
+                'drawdown_penalty': [],
+                'recovery_bonus': [],
+                'holding_cost': [],
+                'raw_reward': [],  # Before clipping
+            }
         }
 
     def _reset_history(self):
@@ -144,7 +159,15 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'actions': [],
             'rewards': [],
             'positions': [],
-            'prices': []
+            'prices': [],
+            # Reward component tracking for diagnostics
+            'reward_components': {
+                'return_reward': [],
+                'drawdown_penalty': [],
+                'recovery_bonus': [],
+                'holding_cost': [],
+                'raw_reward': [],  # Before clipping
+            }
         }
         # Reset drawdown tracking for new episode
         self._prev_drawdown = 0.0
@@ -218,31 +241,26 @@ class BaseTradingEnvironment(gym.Env, ABC):
         Calculate reward using multiple components:
         - Returns-based reward (primary signal)
         - Delta-based drawdown penalty (only penalize INCREASES in drawdown)
-        - Small recovery bonus (incentivize reducing drawdown)
-        - Position holding cost
+        - Recovery bonus (incentivize reducing drawdown)
+        - Position holding cost (configurable, default 0)
 
         The key insight is that max_drawdown is monotonically increasing within
         an episode, so using it directly as a penalty makes ALL rewards negative
         over time. Instead, we use the CHANGE in drawdown (delta) to only
         penalize when risk increases, while rewarding recovery.
 
-        FIX Critical #3 (v2): Balanced scaling factors for numerical stability
-        while maintaining sufficient learning signal.
-        - Original: 100x (caused gradient explosion)
-        - v1 fix: 10x (too weak, agent didn't learn)
-        - v2 fix: 50x with ±5 clipping (balanced)
+        All scaling factors are now configurable via EnvConfig for tuning.
+        Default: symmetric penalty/bonus (20x each), no holding cost.
         """
         # Guard against zero or negative prev_equity (account wiped out)
         if prev_equity <= 0:
+            self._record_reward_components(0.0, 0.0, 0.0, 0.0, -1.0)
             return -1.0
 
         # === Return Component (primary reward signal) ===
         safe_prev_equity = max(prev_equity, 1e-8)
         returns = (self.state.equity - prev_equity) / safe_prev_equity
-
-        # FIX v2: Increased from 10x to 50x for stronger learning signal
-        # 50x provides meaningful gradients while staying bounded
-        return_reward = returns * 50.0
+        return_reward = returns * self.return_scale
 
         # === Delta-Based Drawdown Penalty ===
         # Calculate current drawdown (resets to 0 when equity makes new high)
@@ -258,27 +276,47 @@ class BaseTradingEnvironment(gym.Env, ABC):
         recovery_bonus = 0.0
 
         if drawdown_delta > 0:
-            # FIX v2: Increased from 5x to 25x for stronger signal
-            drawdown_penalty = -drawdown_delta * 25.0
+            # Penalize drawdown increases (now configurable and symmetric by default)
+            drawdown_penalty = -drawdown_delta * self.drawdown_penalty_scale
         elif drawdown_delta < 0:
-            # FIX v2: Increased from 2.5x to 12.5x
-            recovery_bonus = -drawdown_delta * 12.5
+            # Reward drawdown recovery (now symmetric with penalty by default)
+            recovery_bonus = -drawdown_delta * self.recovery_bonus_scale
 
         # Update previous drawdown for next step
         self._prev_drawdown = current_drawdown
 
         # === Position Holding Cost ===
-        # Small cost to encourage decisive actions (not holding forever)
-        holding_cost = -len(self._get_open_positions()) * 0.001
+        # Configurable cost per position per step (default 0 = disabled)
+        holding_cost = -len(self._get_open_positions()) * self.holding_cost_per_position
 
         # === Combine Reward Components ===
-        reward = return_reward + drawdown_penalty + recovery_bonus + holding_cost
+        raw_reward = return_reward + drawdown_penalty + recovery_bonus + holding_cost
 
-        # FIX v2: Clip at ±5 instead of ±10 for tighter bounds
-        # Combined with 50x scaling, this gives good signal with stability
-        reward = max(-5.0, min(5.0, reward))
+        # Clip reward for numerical stability
+        reward = max(-self.reward_clip, min(self.reward_clip, raw_reward))
+
+        # Track components for diagnostics
+        self._record_reward_components(
+            return_reward, drawdown_penalty, recovery_bonus, holding_cost, raw_reward
+        )
 
         return float(reward)
+
+    def _record_reward_components(
+        self,
+        return_reward: float,
+        drawdown_penalty: float,
+        recovery_bonus: float,
+        holding_cost: float,
+        raw_reward: float
+    ):
+        """Record reward components for analysis."""
+        if 'reward_components' in self.history:
+            self.history['reward_components']['return_reward'].append(return_reward)
+            self.history['reward_components']['drawdown_penalty'].append(drawdown_penalty)
+            self.history['reward_components']['recovery_bonus'].append(recovery_bonus)
+            self.history['reward_components']['holding_cost'].append(holding_cost)
+            self.history['reward_components']['raw_reward'].append(raw_reward)
 
     def _update_drawdown(self):
         """Update peak equity and max drawdown."""
@@ -387,4 +425,69 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'final_equity': self.state.equity
         }
 
+        # Add reward component statistics if available
+        reward_stats = self.get_reward_component_stats()
+        if reward_stats:
+            stats['reward_components'] = reward_stats
+
         return stats
+
+    def get_reward_component_stats(self) -> Optional[Dict[str, Any]]:
+        """
+        Get statistics for reward components to diagnose reward signal issues.
+
+        Returns mean, std, min, max for each reward component to identify
+        which components dominate the reward signal.
+        """
+        if 'reward_components' not in self.history:
+            return None
+
+        components = self.history['reward_components']
+        stats = {}
+
+        for name, values in components.items():
+            if len(values) == 0:
+                continue
+
+            arr = np.array(values)
+            stats[name] = {
+                'mean': float(np.mean(arr)),
+                'std': float(np.std(arr)),
+                'min': float(np.min(arr)),
+                'max': float(np.max(arr)),
+                'sum': float(np.sum(arr)),
+                'nonzero_pct': float(np.count_nonzero(arr) / len(arr) * 100)
+            }
+
+        return stats if stats else None
+
+    def get_action_distribution(self) -> Dict[str, float]:
+        """
+        Get distribution of actions taken during the episode.
+
+        Returns percentage of each action type for debugging policy behavior.
+        """
+        actions = self.history.get('actions', [])
+        if not actions:
+            return {}
+
+        total = len(actions)
+        action_counts = {
+            'HOLD': 0,
+            'BUY': 0,
+            'SELL': 0,
+            'CLOSE': 0
+        }
+
+        for action in actions:
+            if action == Action.HOLD:
+                action_counts['HOLD'] += 1
+            elif action == Action.BUY:
+                action_counts['BUY'] += 1
+            elif action == Action.SELL:
+                action_counts['SELL'] += 1
+            elif action == Action.CLOSE:
+                action_counts['CLOSE'] += 1
+
+        # Convert to percentages
+        return {k: (v / total * 100) for k, v in action_counts.items()}
