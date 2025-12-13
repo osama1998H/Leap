@@ -175,10 +175,20 @@ class TradingEnvironment(BaseTradingEnvironment):
 
         # Check if we've reached the end of data
         if self.current_step >= len(self.data):
-            # At end of data: close all positions at last known price and terminate
-            self._update_positions(entry_price)
+            # At end of data: settle at last available bar and terminate
+            # Keep current_step in bounds for _get_observation()
+            last_step = len(self.data) - 1
+            self.current_step = last_step
+            last_price = float(self.data[last_step, 3])  # Close price of last bar
+
+            # Close all open positions at final price (forced settlement)
+            self._close_all_positions(last_price)
+
+            # Update equity after settlement (all positions now closed)
+            self._update_positions(last_price)
+
             reward = self._calculate_reward(prev_equity)
-            self._record_history(action, reward, entry_price)
+            self._record_history(action, reward, last_price)
             obs = self._get_observation()
             info = self._get_info()
             return obs, reward, True, False, info
