@@ -121,6 +121,9 @@ def analyze_reward_components(
             else:
                 action = np.random.randint(0, 4)  # Random action
 
+            # Cast to int to handle numpy scalars/tensors from agent
+            action = int(action)
+
             state, reward, terminated, truncated, _info = env.step(action)
             all_rewards.append(reward)
             all_actions.append(action)
@@ -181,6 +184,21 @@ def analyze_reward_components(
     logger.info("=" * 60)
 
     rewards_arr = np.array(all_rewards)
+    actions_arr = np.array(all_actions)
+
+    # Guard against empty arrays (no steps collected)
+    if rewards_arr.size == 0:
+        logger.error("No rewards collected; cannot compute statistics.")
+        logger.error("Check: episodes > 0, max_steps > 0, data window size sufficient")
+        return {
+            'rewards': rewards_arr,
+            'actions': actions_arr,
+            'components': all_components,
+            'episode_stats': episode_stats,
+            'mean_reward': float('nan'),
+            'issues': ['NO_DATA: No steps were collected; check episodes/max_steps/data window size.']
+        }
+
     logger.info(f"\nReward Distribution (n={len(rewards_arr)}):")
     logger.info(f"  Mean: {np.mean(rewards_arr):.6f}")
     logger.info(f"  Std:  {np.std(rewards_arr):.6f}")
@@ -196,16 +214,17 @@ def analyze_reward_components(
     for comp_name, comp_values in all_components.items():
         if comp_values:
             arr = np.array(comp_values)
+            n_values = len(arr)
             logger.info(f"  {comp_name}:")
             logger.info(f"    mean={np.mean(arr):.6f}, std={np.std(arr):.6f}")
             logger.info(f"    min={np.min(arr):.6f}, max={np.max(arr):.6f}")
-            logger.info(f"    nonzero={np.count_nonzero(arr)/len(arr)*100:.1f}%")
+            logger.info(f"    nonzero={np.count_nonzero(arr) / max(1, n_values) * 100:.1f}%")
 
     # Action distribution
-    actions_arr = np.array(all_actions)
     logger.info(f"\nAction Distribution (n={len(actions_arr)}):")
+    n_actions = max(1, len(actions_arr))  # Avoid division by zero
     for action_type in [Action.HOLD, Action.BUY, Action.SELL, Action.CLOSE]:
-        pct = (actions_arr == action_type).sum() / len(actions_arr) * 100
+        pct = (actions_arr == action_type).sum() / n_actions * 100
         logger.info(f"  {action_type.name}: {pct:.1f}%")
 
     # Diagnose issues
@@ -227,7 +246,7 @@ def analyze_reward_components(
     logger.info("RECOMMENDATIONS")
     logger.info("=" * 60)
 
-    mean_reward = np.mean(rewards_arr)
+    mean_reward = float(np.mean(rewards_arr))
     if mean_reward < -0.01:
         logger.info("\n1. Consider reducing transaction costs or position sizing")
         logger.info("   - Current: commission=0.0001, spread=0.0002, slippage=0.0001")
@@ -295,6 +314,10 @@ def _diagnose_issues(
     """Diagnose potential issues with reward signal."""
     issues = []
 
+    # Guard against empty array
+    if rewards_arr.size == 0:
+        return ['NO_DATA: rewards_arr is empty']
+
     # Check for negative bias
     mean_reward = np.mean(rewards_arr)
     if mean_reward < -0.01:
@@ -317,7 +340,8 @@ def _diagnose_issues(
 
     # Check for clipping saturation
     clip_val = env_config.reward_clip
-    clipped_pct = ((rewards_arr >= clip_val) | (rewards_arr <= -clip_val)).sum() / len(rewards_arr) * 100
+    n_rewards = max(1, len(rewards_arr))  # Avoid division by zero
+    clipped_pct = ((rewards_arr >= clip_val) | (rewards_arr <= -clip_val)).sum() / n_rewards * 100
     if clipped_pct > 10:
         issues.append(f"CLIPPING: {clipped_pct:.1f}% of rewards hit clip bounds")
 
