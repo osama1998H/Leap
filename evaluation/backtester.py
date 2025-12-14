@@ -63,6 +63,7 @@ class BacktestResult:
     drawdown_curve: np.ndarray = field(default_factory=lambda: np.array([]))
     returns: np.ndarray = field(default_factory=lambda: np.array([]))
     trades: List[Trade] = field(default_factory=list)
+    timestamps: List[datetime] = field(default_factory=list)
 
     # Metadata
     start_date: Optional[datetime] = None
@@ -491,8 +492,11 @@ class Backtester:
         equity = np.array(self.equity_curve)
         returns = np.diff(equity) / equity[:-1] if len(equity) > 1 else np.array([])
 
+        # Infer observation frequency from timestamps for accurate annualization
+        periods_per_year = MetricsCalculator.infer_periods_per_year(self.timestamps)
+
         # Use MetricsCalculator for consistent metrics calculation across the system
-        metrics_calc = MetricsCalculator()
+        metrics_calc = MetricsCalculator(periods_per_year=periods_per_year)
 
         # Return metrics (using MetricsCalculator)
         total_return = metrics_calc.total_return(equity)
@@ -577,6 +581,7 @@ class Backtester:
             drawdown_curve=drawdown,
             returns=returns,
             trades=self.closed_trades,
+            timestamps=self.timestamps,
             start_date=self.timestamps[0] if self.timestamps else None,
             end_date=self.timestamps[-1] if self.timestamps else None,
             initial_balance=self.initial_balance
