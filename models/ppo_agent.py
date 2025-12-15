@@ -40,6 +40,102 @@ MIN_ADV_STD = 1e-8
 LOGIT_SCALE = 10.0
 
 
+# =============================================================================
+# Reward Normalizer (Running Mean/Std Normalization)
+# =============================================================================
+
+class RewardNormalizer:
+    """
+    Running reward normalizer using Welford's online algorithm.
+
+    Normalizes rewards using running mean and std: r_norm = (r - mean) / (std + eps)
+    This helps PPO learn more stably by keeping rewards in a consistent range.
+
+    Based on Stable-Baselines3 VecNormalize implementation.
+    """
+
+    def __init__(self, clip: float = 10.0, epsilon: float = 1e-8):
+        """
+        Args:
+            clip: Clip normalized rewards to [-clip, +clip]
+            epsilon: Small constant for numerical stability
+        """
+        self.clip = clip
+        self.epsilon = epsilon
+
+        # Running statistics (Welford's algorithm)
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = 0
+
+    def normalize(self, reward: float, update: bool = True) -> float:
+        """
+        Normalize a single reward value.
+
+        Args:
+            reward: Raw reward value
+            update: Whether to update running statistics
+
+        Returns:
+            Normalized reward
+        """
+        if update:
+            self._update(reward)
+
+        # Normalize using running stats
+        std = np.sqrt(self.var + self.epsilon)
+        normalized = (reward - self.mean) / std
+
+        # Clip to prevent extreme values
+        return np.clip(normalized, -self.clip, self.clip)
+
+    def normalize_batch(self, rewards: np.ndarray, update: bool = True) -> np.ndarray:
+        """
+        Normalize a batch of rewards.
+
+        Args:
+            rewards: Array of raw rewards
+            update: Whether to update running statistics
+
+        Returns:
+            Array of normalized rewards
+        """
+        if update:
+            for r in rewards:
+                self._update(r)
+
+        std = np.sqrt(self.var + self.epsilon)
+        normalized = (rewards - self.mean) / std
+        return np.clip(normalized, -self.clip, self.clip)
+
+    def _update(self, value: float):
+        """Update running mean and variance using Welford's algorithm."""
+        self.count += 1
+        delta = value - self.mean
+        self.mean += delta / self.count
+        delta2 = value - self.mean
+        # Running variance (unbiased estimator)
+        if self.count > 1:
+            self.var = self.var * (self.count - 2) / (self.count - 1) + delta * delta2 / self.count
+        else:
+            self.var = 0.0
+
+    def reset(self):
+        """Reset running statistics."""
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = 0
+
+    def get_stats(self) -> Dict[str, float]:
+        """Get current running statistics."""
+        return {
+            'mean': self.mean,
+            'std': np.sqrt(self.var + self.epsilon),
+            'var': self.var,
+            'count': self.count
+        }
+
+
 class ActorCritic(nn.Module):
     """
     Combined Actor-Critic network for PPO.
@@ -395,6 +491,12 @@ class PPOAgent:
         # Experience replay for online learning
         self.experience_buffer = deque(maxlen=self.config.get('experience_buffer_size', 50000))
 
+        # Reward normalizer (v2 reward system)
+        # Enabled by default for better PPO stability with log-return rewards
+        self.normalize_rewards = self.config.get('normalize_rewards', True)
+        reward_clip = self.config.get('reward_normalizer_clip', 10.0)
+        self.reward_normalizer = RewardNormalizer(clip=reward_clip) if self.normalize_rewards else None
+
     def select_action(
         self,
         state: np.ndarray,
@@ -434,14 +536,20 @@ class PPOAgent:
         log_prob: float,
         value: float
     ):
-        """Store transition in buffer."""
-        self.buffer.add(state, action, reward, done, log_prob, value)
+        """Store transition in buffer with optional reward normalization."""
+        # Apply reward normalization if enabled (v2 reward system)
+        normalized_reward = reward
+        if self.reward_normalizer is not None:
+            normalized_reward = self.reward_normalizer.normalize(reward, update=True)
 
-        # Also store in experience buffer for online learning
+        self.buffer.add(state, action, normalized_reward, done, log_prob, value)
+
+        # Also store in experience buffer for online learning (with raw reward for analysis)
         self.experience_buffer.append({
             'state': state,
             'action': action,
-            'reward': reward,
+            'reward': reward,  # Store raw reward for analysis
+            'normalized_reward': normalized_reward,  # Store normalized for reference
             'done': done,
             'log_prob': log_prob,
             'value': value
@@ -772,6 +880,13 @@ class PPOAgent:
                 if hasattr(self, '_last_action_distribution') and self._last_action_distribution:
                     for action_name, pct in self._last_action_distribution.items():
                         callback_metrics[f"action.{action_name}_pct"] = pct
+
+                # Add reward normalizer statistics (v2 reward system)
+                if self.reward_normalizer is not None:
+                    norm_stats = self.reward_normalizer.get_stats()
+                    callback_metrics["reward_norm.mean"] = norm_stats['mean']
+                    callback_metrics["reward_norm.std"] = norm_stats['std']
+                    callback_metrics["reward_norm.count"] = norm_stats['count']
 
                 mlflow_callback(callback_metrics, timestep)
 

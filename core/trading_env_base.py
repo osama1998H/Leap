@@ -100,12 +100,20 @@ class BaseTradingEnvironment(gym.Env, ABC):
         self.max_drawdown_threshold = config.max_drawdown_threshold
         self.max_episode_steps = config.max_episode_steps
 
-        # Reward shaping parameters (configurable for tuning)
+        # === New v2 Reward Shaping Parameters ===
+        self.tc_penalty_scale = config.tc_penalty_scale
+        self.dd_threshold = config.dd_threshold
+        self.dd_penalty_scale = config.dd_penalty_scale
+        self.vol_penalty_scale = config.vol_penalty_scale
+        self.vol_window = config.vol_window
+        self.reward_clip = config.reward_clip
+        self.normalize_reward = config.normalize_reward
+
+        # Legacy parameters (kept for backward compatibility)
         self.return_scale = config.return_scale
         self.drawdown_penalty_scale = config.drawdown_penalty_scale
         self.recovery_bonus_scale = config.recovery_bonus_scale
         self.holding_cost_per_position = config.holding_cost
-        self.reward_clip = config.reward_clip
 
         self.render_mode = render_mode
         self.risk_manager = risk_manager
@@ -129,6 +137,12 @@ class BaseTradingEnvironment(gym.Env, ABC):
         # This enables penalizing drawdown INCREASES rather than cumulative drawdown
         self._prev_drawdown = 0.0
 
+        # === New v2 tracking variables ===
+        # Track previous position weight for transaction cost penalty
+        self._prev_position_weight = 0.0
+        # Rolling buffer for return volatility calculation
+        self._return_history: List[float] = []
+
         # History tracking
         self.history = self._create_empty_history()
 
@@ -141,13 +155,18 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'rewards': [],
             'positions': [],
             'prices': [],
-            # Reward component tracking for diagnostics
+            # Reward component tracking for diagnostics (v2)
             'reward_components': {
+                'log_return': [],           # Log-return PnL component
+                'tc_penalty': [],           # Transaction cost penalty
+                'dd_penalty': [],           # Drawdown penalty (threshold-based)
+                'vol_penalty': [],          # Volatility penalty
+                'raw_reward': [],           # Before clipping
+                # Legacy components (for backward compatibility analysis)
                 'return_reward': [],
                 'drawdown_penalty': [],
                 'recovery_bonus': [],
                 'holding_cost': [],
-                'raw_reward': [],  # Before clipping
             }
         }
 
@@ -160,17 +179,25 @@ class BaseTradingEnvironment(gym.Env, ABC):
             'rewards': [],
             'positions': [],
             'prices': [],
-            # Reward component tracking for diagnostics
+            # Reward component tracking for diagnostics (v2)
             'reward_components': {
+                'log_return': [],
+                'tc_penalty': [],
+                'dd_penalty': [],
+                'vol_penalty': [],
+                'raw_reward': [],
+                # Legacy components
                 'return_reward': [],
                 'drawdown_penalty': [],
                 'recovery_bonus': [],
                 'holding_cost': [],
-                'raw_reward': [],  # Before clipping
             }
         }
         # Reset drawdown tracking for new episode
         self._prev_drawdown = 0.0
+        # Reset v2 tracking variables
+        self._prev_position_weight = 0.0
+        self._return_history = []
 
     # -------------------------------------------------------------------------
     # Abstract methods - must be implemented by subclasses
@@ -238,85 +265,132 @@ class BaseTradingEnvironment(gym.Env, ABC):
 
     def _calculate_reward(self, prev_equity: float) -> float:
         """
-        Calculate reward using multiple components:
-        - Returns-based reward (primary signal)
-        - Delta-based drawdown penalty (only penalize INCREASES in drawdown)
-        - Recovery bonus (incentivize reducing drawdown)
-        - Position holding cost (configurable, default 0)
+        Calculate reward using the v2 log-return based formula:
 
-        The key insight is that max_drawdown is monotonically increasing within
-        an episode, so using it directly as a penalty makes ALL rewards negative
-        over time. Instead, we use the CHANGE in drawdown (delta) to only
-        penalize when risk increases, while rewarding recovery.
+        r_t = log(E_t / E_{t-1})                    # Log-return (scale-stable, additive)
+            - c_tc * |Δw_t|                         # Transaction cost penalty
+            - λ_dd * max(0, DD_t - DD_threshold)    # Threshold-based drawdown penalty
+            - λ_vol * σ̂_t²                          # Optional volatility penalty
 
-        All scaling factors are now configurable via EnvConfig for tuning.
-        Default: symmetric penalty/bonus (20x each), no holding cost.
+        Key improvements over v1:
+        1. Log-returns are scale-stable and additive over time (better for PPO)
+        2. Transaction cost penalty discourages overtrading (position churn)
+        3. Threshold-based drawdown only penalizes when exceeding tolerance
+        4. Optional volatility penalty discourages high-variance strategies
+
+        All parameters are configurable via EnvConfig for tuning.
         """
         # Guard against zero or negative prev_equity (account wiped out)
         if prev_equity <= 0:
-            self._record_reward_components(0.0, 0.0, 0.0, 0.0, -1.0)
+            self._record_reward_components_v2(0.0, 0.0, 0.0, 0.0, -1.0)
             return -1.0
 
-        # === Return Component (primary reward signal) ===
+        # === 1. Log-Return Component (primary reward signal) ===
+        # Log-returns are scale-stable and additive: log(E_T/E_0) = Σ log(E_t/E_{t-1})
         safe_prev_equity = max(prev_equity, 1e-8)
-        returns = (self.state.equity - prev_equity) / safe_prev_equity
-        return_reward = returns * self.return_scale
+        safe_curr_equity = max(self.state.equity, 1e-8)
+        log_return = np.log(safe_curr_equity / safe_prev_equity)
 
-        # === Delta-Based Drawdown Penalty ===
-        # Calculate current drawdown (resets to 0 when equity makes new high)
+        # Clip extreme log-returns (e.g., from news gaps) before scaling
+        log_return = np.clip(log_return, -0.5, 0.5)  # ±50% max per step
+
+        # Track for volatility calculation
+        self._return_history.append(log_return)
+        if len(self._return_history) > self.vol_window:
+            self._return_history.pop(0)
+
+        # === 2. Transaction Cost Penalty ===
+        # Penalize position changes to discourage overtrading
+        # Position weight: w = signed_exposure / equity
+        current_position_weight = self._get_position_weight()
+        position_change = abs(current_position_weight - self._prev_position_weight)
+        tc_penalty = -self.tc_penalty_scale * position_change
+
+        # Update for next step
+        self._prev_position_weight = current_position_weight
+
+        # === 3. Threshold-Based Drawdown Penalty ===
+        # Only penalize when drawdown exceeds tolerance threshold
         current_drawdown = 0.0
         if self.state.peak_equity > 0:
             current_drawdown = (self.state.peak_equity - self.state.equity) / self.state.peak_equity
-            current_drawdown = max(0.0, current_drawdown)  # Ensure non-negative
+            current_drawdown = max(0.0, current_drawdown)
 
-        # Only penalize when drawdown INCREASES (delta > 0)
-        # This avoids the cumulative penalty problem
-        drawdown_delta = current_drawdown - self._prev_drawdown
-        drawdown_penalty = 0.0
-        recovery_bonus = 0.0
+        excess_drawdown = max(0.0, current_drawdown - self.dd_threshold)
+        dd_penalty = -self.dd_penalty_scale * excess_drawdown
 
-        if drawdown_delta > 0:
-            # Penalize drawdown increases (now configurable and symmetric by default)
-            drawdown_penalty = -drawdown_delta * self.drawdown_penalty_scale
-        elif drawdown_delta < 0:
-            # Reward drawdown recovery (now symmetric with penalty by default)
-            recovery_bonus = -drawdown_delta * self.recovery_bonus_scale
-
-        # Update previous drawdown for next step
+        # Update previous drawdown for tracking (used by some metrics)
         self._prev_drawdown = current_drawdown
 
-        # === Position Holding Cost ===
-        # Configurable cost per position per step (default 0 = disabled)
-        holding_cost = -len(self._get_open_positions()) * self.holding_cost_per_position
+        # === 4. Optional Volatility Penalty ===
+        # Penalize high-variance strategies (disabled by default)
+        vol_penalty = 0.0
+        if self.vol_penalty_scale > 0 and len(self._return_history) >= 2:
+            return_variance = np.var(self._return_history)
+            vol_penalty = -self.vol_penalty_scale * return_variance
 
         # === Combine Reward Components ===
-        raw_reward = return_reward + drawdown_penalty + recovery_bonus + holding_cost
+        raw_reward = log_return + tc_penalty + dd_penalty + vol_penalty
 
         # Clip reward for numerical stability
-        reward = max(-self.reward_clip, min(self.reward_clip, raw_reward))
+        reward = np.clip(raw_reward, -self.reward_clip, self.reward_clip)
 
         # Track components for diagnostics
-        self._record_reward_components(
-            return_reward, drawdown_penalty, recovery_bonus, holding_cost, raw_reward
+        self._record_reward_components_v2(
+            log_return, tc_penalty, dd_penalty, vol_penalty, raw_reward
         )
 
         return float(reward)
 
-    def _record_reward_components(
+    def _get_position_weight(self) -> float:
+        """
+        Calculate current position weight (exposure ratio).
+
+        Returns:
+            w in [-1, 1]: -1 = full short, 0 = flat, +1 = full long
+            Scaled by position value relative to equity.
+        """
+        positions = self._get_open_positions()
+        if not positions or self.state.equity <= 0:
+            return 0.0
+
+        # Calculate net signed exposure
+        net_exposure = 0.0
+        for pos in positions:
+            # Position value = size * entry_price (approximate current value)
+            pos_value = pos.size * pos.entry_price
+            if pos.type == 'long':
+                net_exposure += pos_value
+            else:  # short
+                net_exposure -= pos_value
+
+        # Normalize by equity to get weight in [-1, 1] range
+        # Cap at ±1 even with leverage
+        weight = net_exposure / self.state.equity
+        return np.clip(weight, -1.0, 1.0)
+
+    def _record_reward_components_v2(
         self,
-        return_reward: float,
-        drawdown_penalty: float,
-        recovery_bonus: float,
-        holding_cost: float,
+        log_return: float,
+        tc_penalty: float,
+        dd_penalty: float,
+        vol_penalty: float,
         raw_reward: float
     ):
-        """Record reward components for analysis."""
+        """Record v2 reward components for analysis."""
         if 'reward_components' in self.history:
-            self.history['reward_components']['return_reward'].append(return_reward)
-            self.history['reward_components']['drawdown_penalty'].append(drawdown_penalty)
-            self.history['reward_components']['recovery_bonus'].append(recovery_bonus)
-            self.history['reward_components']['holding_cost'].append(holding_cost)
+            # New v2 components
+            self.history['reward_components']['log_return'].append(log_return)
+            self.history['reward_components']['tc_penalty'].append(tc_penalty)
+            self.history['reward_components']['dd_penalty'].append(dd_penalty)
+            self.history['reward_components']['vol_penalty'].append(vol_penalty)
             self.history['reward_components']['raw_reward'].append(raw_reward)
+
+            # Legacy components (zeros for backward compatibility with analysis tools)
+            self.history['reward_components']['return_reward'].append(log_return)
+            self.history['reward_components']['drawdown_penalty'].append(dd_penalty)
+            self.history['reward_components']['recovery_bonus'].append(0.0)
+            self.history['reward_components']['holding_cost'].append(tc_penalty)
 
     def _update_drawdown(self):
         """Update peak equity and max drawdown."""
