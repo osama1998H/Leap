@@ -81,12 +81,14 @@ def analyze_reward_components(
     if env_config is None:
         env_config = EnvConfig()
 
-    logger.info("\nEnvironment Config:")
-    logger.info(f"  return_scale: {env_config.return_scale}")
-    logger.info(f"  drawdown_penalty_scale: {env_config.drawdown_penalty_scale}")
-    logger.info(f"  recovery_bonus_scale: {env_config.recovery_bonus_scale}")
-    logger.info(f"  holding_cost: {env_config.holding_cost}")
+    logger.info("\nEnvironment Config (v2 Reward System):")
+    logger.info(f"  tc_penalty_scale: {env_config.tc_penalty_scale}")
+    logger.info(f"  dd_threshold: {env_config.dd_threshold}")
+    logger.info(f"  dd_penalty_scale: {env_config.dd_penalty_scale}")
+    logger.info(f"  vol_penalty_scale: {env_config.vol_penalty_scale}")
+    logger.info(f"  vol_window: {env_config.vol_window}")
     logger.info(f"  reward_clip: {env_config.reward_clip}")
+    logger.info(f"  normalize_reward: {env_config.normalize_reward}")
 
     env = TradingEnvironment(
         data=data,
@@ -99,12 +101,19 @@ def analyze_reward_components(
 
     # Run episodes and collect statistics
     all_rewards: List[float] = []
+    # v2 reward components (plus legacy for backward compatibility)
     all_components: Dict[str, List[float]] = {
+        # New v2 components
+        'log_return': [],
+        'tc_penalty': [],
+        'dd_penalty': [],
+        'vol_penalty': [],
+        'raw_reward': [],
+        # Legacy components (for backward compatibility)
         'return_reward': [],
         'drawdown_penalty': [],
         'recovery_bonus': [],
         'holding_cost': [],
-        'raw_reward': []
     }
     all_actions: List[int] = []
     episode_stats: List[Dict] = []

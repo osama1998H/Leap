@@ -131,26 +131,55 @@ class EnvConfig:
     max_drawdown_threshold: float = 0.5  # 50% max drawdown terminates episode
     max_episode_steps: int = 2000  # Max steps per episode (prevents extremely long episodes)
 
-    # === Reward Shaping Parameters ===
-    # These control the reward signal magnitude and balance
-    return_scale: float = 50.0  # Scaling factor for returns-based reward
-    drawdown_penalty_scale: float = 20.0  # Penalty scale for drawdown increases (was 25.0)
-    recovery_bonus_scale: float = 20.0  # Bonus scale for drawdown recovery (symmetric with penalty)
-    holding_cost: float = 0.0  # Per-position per-step holding cost (must be >= 0, 0 = disabled)
-    reward_clip: float = 5.0  # Clip reward to [-reward_clip, +reward_clip]
+    # === Reward Shaping Parameters (v2 - Log-Return Based) ===
+    # New reward formula: r = log(E_t/E_{t-1}) - c_tc*|Δw| - λ_dd*max(0, DD-DD_max) - λ_vol*σ²
+
+    # Transaction cost penalty: penalizes position changes to discourage overtrading
+    # |Δw| = absolute change in position weight (exposure ratio)
+    tc_penalty_scale: float = 1.0  # Multiplier for transaction cost penalty
+
+    # Threshold-based drawdown penalty: only penalizes when DD exceeds threshold
+    dd_threshold: float = 0.05  # 5% drawdown tolerance before penalty kicks in
+    dd_penalty_scale: float = 10.0  # Penalty strength for excess drawdown
+
+    # Optional volatility penalty: discourages high-variance strategies
+    vol_penalty_scale: float = 0.0  # Disabled by default (set > 0 to enable)
+    vol_window: int = 20  # Rolling window for return volatility estimation
+
+    # Reward clipping for numerical stability (wider range for log-returns)
+    reward_clip: float = 10.0  # Clip reward to [-reward_clip, +reward_clip]
+
+    # Reward normalization: use running mean/std normalization in PPO
+    normalize_reward: bool = True  # Enable running reward normalization
+
+    # === Legacy Parameters (kept for backward compatibility) ===
+    return_scale: float = 1.0  # Not used in v2, log-returns are scale-stable
+    drawdown_penalty_scale: float = 20.0  # Legacy: use dd_penalty_scale instead
+    recovery_bonus_scale: float = 20.0  # Legacy: not used in v2
+    holding_cost: float = 0.0  # Legacy: use tc_penalty_scale instead
 
     def __post_init__(self):
         """Validate configuration parameters after initialization."""
-        # Ensure holding_cost is non-negative (it's a cost magnitude, applied as negative)
+        # === New v2 reward parameter validation ===
+        if self.tc_penalty_scale < 0:
+            raise ValueError(f"tc_penalty_scale must be >= 0, got {self.tc_penalty_scale}")
+        if self.dd_threshold < 0 or self.dd_threshold > 1:
+            raise ValueError(f"dd_threshold must be in [0, 1], got {self.dd_threshold}")
+        if self.dd_penalty_scale < 0:
+            raise ValueError(f"dd_penalty_scale must be >= 0, got {self.dd_penalty_scale}")
+        if self.vol_penalty_scale < 0:
+            raise ValueError(f"vol_penalty_scale must be >= 0, got {self.vol_penalty_scale}")
+        if self.vol_window < 2:
+            raise ValueError(f"vol_window must be >= 2, got {self.vol_window}")
+        if self.reward_clip <= 0:
+            raise ValueError(f"reward_clip must be > 0, got {self.reward_clip}")
+
+        # === Legacy parameter validation (backward compatibility) ===
         if self.holding_cost < 0:
             raise ValueError(
                 f"holding_cost must be >= 0 (it's a cost magnitude), got {self.holding_cost}. "
                 f"The cost is applied as -holding_cost * n_positions internally."
             )
-        # Ensure reward_clip is positive
-        if self.reward_clip <= 0:
-            raise ValueError(f"reward_clip must be > 0, got {self.reward_clip}")
-        # Ensure scaling factors are non-negative
         if self.return_scale < 0:
             raise ValueError(f"return_scale must be >= 0, got {self.return_scale}")
         if self.drawdown_penalty_scale < 0:
@@ -172,12 +201,19 @@ class EnvConfig:
         window_size: Optional[int] = None,
         max_drawdown_threshold: Optional[float] = None,
         max_episode_steps: Optional[int] = None,
-        # Reward shaping parameters
+        # New v2 reward shaping parameters
+        tc_penalty_scale: Optional[float] = None,
+        dd_threshold: Optional[float] = None,
+        dd_penalty_scale: Optional[float] = None,
+        vol_penalty_scale: Optional[float] = None,
+        vol_window: Optional[int] = None,
+        reward_clip: Optional[float] = None,
+        normalize_reward: Optional[bool] = None,
+        # Legacy reward parameters (backward compatibility)
         return_scale: Optional[float] = None,
         drawdown_penalty_scale: Optional[float] = None,
         recovery_bonus_scale: Optional[float] = None,
-        holding_cost: Optional[float] = None,
-        reward_clip: Optional[float] = None
+        holding_cost: Optional[float] = None
     ) -> 'EnvConfig':
         """
         Factory method to create EnvConfig from individual parameters.
@@ -201,11 +237,19 @@ class EnvConfig:
             window_size=window_size if window_size is not None else defaults.window_size,
             max_drawdown_threshold=max_drawdown_threshold if max_drawdown_threshold is not None else defaults.max_drawdown_threshold,
             max_episode_steps=max_episode_steps if max_episode_steps is not None else defaults.max_episode_steps,
+            # New v2 reward parameters
+            tc_penalty_scale=tc_penalty_scale if tc_penalty_scale is not None else defaults.tc_penalty_scale,
+            dd_threshold=dd_threshold if dd_threshold is not None else defaults.dd_threshold,
+            dd_penalty_scale=dd_penalty_scale if dd_penalty_scale is not None else defaults.dd_penalty_scale,
+            vol_penalty_scale=vol_penalty_scale if vol_penalty_scale is not None else defaults.vol_penalty_scale,
+            vol_window=vol_window if vol_window is not None else defaults.vol_window,
+            reward_clip=reward_clip if reward_clip is not None else defaults.reward_clip,
+            normalize_reward=normalize_reward if normalize_reward is not None else defaults.normalize_reward,
+            # Legacy parameters
             return_scale=return_scale if return_scale is not None else defaults.return_scale,
             drawdown_penalty_scale=drawdown_penalty_scale if drawdown_penalty_scale is not None else defaults.drawdown_penalty_scale,
             recovery_bonus_scale=recovery_bonus_scale if recovery_bonus_scale is not None else defaults.recovery_bonus_scale,
-            holding_cost=holding_cost if holding_cost is not None else defaults.holding_cost,
-            reward_clip=reward_clip if reward_clip is not None else defaults.reward_clip
+            holding_cost=holding_cost if holding_cost is not None else defaults.holding_cost
         )
 
 
