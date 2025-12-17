@@ -278,10 +278,6 @@ class SystemConfig:
     use_mixed_precision: bool = True
     num_workers: int = 4
 
-    # Monitoring
-    tensorboard_enabled: bool = True
-    wandb_enabled: bool = False
-    wandb_project: str = "leap-trading"
 
     # Sub-configs
     data: DataConfig = field(default_factory=DataConfig)
@@ -343,8 +339,7 @@ class SystemConfig:
         # Set top-level attributes
         for key in ['base_dir', 'models_dir', 'logs_dir', 'data_dir',
                     'checkpoints_dir', 'results_dir', 'trading_mode',
-                    'device', 'seed', 'use_mixed_precision', 'num_workers',
-                    'tensorboard_enabled', 'wandb_enabled', 'wandb_project']:
+                    'device', 'seed', 'use_mixed_precision', 'num_workers']:
             if key in data:
                 setattr(config, key, data[key])
 
