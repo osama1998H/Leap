@@ -207,6 +207,7 @@ cython_debug/
 data/
 checkpoints/
 saved_models/
+results/
 mlruns/
 mlflow.db
 mlflow.db-shm

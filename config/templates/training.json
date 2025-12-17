@@ -30,7 +30,7 @@
     "n_steps": 2048,
     "n_epochs": 10,
     "batch_size": 64,
-    "total_timesteps": 1000000,
+    "total_timesteps": 10000,
     "patience": 15,
     "online_update_frequency": 500,
     "experience_buffer_size": 50000

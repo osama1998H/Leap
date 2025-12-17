@@ -1,9 +1,9 @@
 {
   "initial_balance": 10000.0,
-  "commission_per_lot": 7.0,
+  "commission_per_lot": 5.0,
   "slippage_pips": 1.0,
   "spread_pips": 1.5,
-  "leverage": 100,
+  "leverage": 400,
   "train_window_days": 180,
   "test_window_days": 30,
   "walk_forward_steps": 12,

@@ -24,7 +24,7 @@ seaborn>=0.12.0
 
 # Experiment Tracking
 # MLflow 3.x provides LoggedModel entity for enhanced model tracking
-mlflow>=3.0.0
+mlflow>=3.7.0
 
 # Configuration
 dataclasses-json>=0.6.0

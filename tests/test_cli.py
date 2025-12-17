@@ -178,7 +178,7 @@ class TestLeapTradingSystemInitialization:
 
     def test_initialization_default_config(self, temp_dir):
         """Test initialization with default config."""
-        with patch('main.get_config') as mock_get_config:
+        with patch('cli.parser.get_config') as mock_get_config:
             config = get_config()
             config.base_dir = temp_dir
             config.mlflow.enabled = False
@@ -770,7 +770,7 @@ class TestMainFunction:
                 mock_system.save_models = Mock()
                 mock_system_cls.return_value = mock_system
 
-                with patch('main.get_config') as mock_get_config:
+                with patch('cli.parser.get_config') as mock_get_config:
                     config = get_config()
                     config.base_dir = temp_dir
                     config.mlflow.enabled = False
@@ -808,7 +808,7 @@ class TestMainFunction:
                 mock_system.mlflow_tracker = None
                 mock_system_cls.return_value = mock_system
 
-                with patch('main.get_config') as mock_get_config:
+                with patch('cli.parser.get_config') as mock_get_config:
                     config = get_config()
                     config.base_dir = temp_dir
                     config.mlflow.enabled = False
