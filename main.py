@@ -822,9 +822,11 @@ class LeapTradingSystem:
                         f"  python main.py train --symbol {market_data.symbol}"
                     )
 
-        # Configuration for signal combination (matching AutoTrader defaults)
-        prediction_threshold = 0.001
-        min_confidence = 0.3
+        # Configuration for signal combination (from AutoTrader config for consistency)
+        prediction_threshold = getattr(self.config.auto_trader, 'prediction_threshold', 0.001)
+        min_confidence = getattr(self.config.auto_trader, 'min_confidence', 0.6)
+        sl_pips = getattr(self.config.auto_trader, 'default_sl_pips', 50)
+        tp_pips = getattr(self.config.auto_trader, 'default_tp_pips', 100)
 
         # Helper function: Build observation for PPO agent
         def _build_agent_observation(data, bt, feature_names):
@@ -890,9 +892,9 @@ class LeapTradingSystem:
         def _signal_to_action_dict(signal):
             """Convert signal string to backtester action dict."""
             if signal == 'buy':
-                return {'action': 'buy', 'stop_loss_pips': 50, 'take_profit_pips': 100}
+                return {'action': 'buy', 'stop_loss_pips': sl_pips, 'take_profit_pips': tp_pips}
             elif signal == 'sell':
-                return {'action': 'sell', 'stop_loss_pips': 50, 'take_profit_pips': 100}
+                return {'action': 'sell', 'stop_loss_pips': sl_pips, 'take_profit_pips': tp_pips}
             elif signal == 'close':
                 return {'action': 'close'}
             return {'action': 'hold'}
@@ -928,10 +930,13 @@ class LeapTradingSystem:
                         prediction = predictor.predict(X)
                         predicted_return = prediction['prediction'][0, 0]
                         # Confidence from uncertainty (clamp to [0, 1])
+                        # Note: TransformerPredictor returns uncertainty as array (q_high - q_low)
                         uncertainty = prediction.get('uncertainty', 0.5)
+                        if isinstance(uncertainty, np.ndarray):
+                            uncertainty = float(np.mean(uncertainty))
                         prediction_confidence = max(0.0, min(1.0, 1.0 - uncertainty))
                 except Exception as e:
-                    logger.debug(f"Prediction failed: {e}")
+                    logger.debug(f"Prediction failed ({type(e).__name__}): {e}")
 
             # 2. Get PPO agent action
             agent_action = Action.HOLD
@@ -942,7 +947,7 @@ class LeapTradingSystem:
                     action_idx, _, _ = agent.select_action(obs, deterministic=True)
                     agent_action = Action(action_idx)
                 except Exception as e:
-                    logger.debug(f"Agent action failed: {e}")
+                    logger.debug(f"Agent action failed ({type(e).__name__}): {e}")
 
             # 3. Combine signals (same logic as AutoTrader)
             signal = _combine_signals(predicted_return, agent_action, prediction_confidence)

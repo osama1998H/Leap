@@ -74,6 +74,6 @@ The observation structure matches `TradingEnvironment`:
 
 ## Code References
 
-- `main.py:backtest()` - Strategy function with signal combination (lines 825-964)
-- `core/auto_trader.py:_combine_signals()` - Reference implementation (lines 626-674)
-- `core/trading_env_base.py:_get_account_observation()` - Account observation format (lines 414-428)
+- `main.py:backtest()` - Strategy function with signal combination
+- `core/auto_trader.py:_combine_signals()` - Reference implementation
+- `core/trading_env_base.py:_get_account_observation()` - Account observation format
