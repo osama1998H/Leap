@@ -5,14 +5,12 @@ Comprehensive metrics calculation and performance reporting.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 import hashlib
 import logging
-
-from .backtester import MonteCarloSimulator
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +28,70 @@ class MetricsCalculator:
     The _CachedResult helper stores intermediate results during a single calculate_all() call.
     """
 
+    DEFAULT_PERIODS_PER_YEAR = 252 * 24  # Hourly data
+
     def __init__(
         self,
         risk_free_rate: float = 0.02,
-        periods_per_year: int = 252 * 24  # Hourly data
+        periods_per_year: Optional[float] = None
     ):
         self.risk_free_rate = risk_free_rate
         self.periods_per_year = periods_per_year
 
+    @classmethod
+    def infer_periods_per_year(
+        cls,
+        timestamps: Optional[Union[pd.DatetimeIndex, List[datetime]]],
+        trading_days_per_year: float = 252.0
+    ) -> Optional[float]:
+        """Infer observation frequency from timestamps and convert to periods/year."""
+        if timestamps is None:
+            return None
+
+        index = pd.DatetimeIndex(timestamps)
+        if len(index) < 2:
+            return None
+
+        deltas = index.to_series().diff().dropna()
+        median_delta = deltas.median()
+
+        if pd.isna(median_delta) or median_delta <= pd.Timedelta(0):
+            return None
+
+        periods_per_day = pd.Timedelta(days=1) / median_delta
+        return float(trading_days_per_year * periods_per_day)
+
+    def _resolve_periods_per_year(
+        self,
+        timestamps: Optional[Union[pd.DatetimeIndex, List[datetime]]] = None,
+        override: Optional[float] = None
+    ) -> float:
+        """Resolve periods/year using override, configured value, inference, or default."""
+        if override is not None:
+            return override
+
+        if self.periods_per_year is not None:
+            return self.periods_per_year
+
+        inferred = self.infer_periods_per_year(timestamps)
+        if inferred is not None:
+            return inferred
+
+        return float(self.DEFAULT_PERIODS_PER_YEAR)
+
     def calculate_all(
         self,
         equity_curve: np.ndarray,
+        timestamps: Optional[Union[pd.DatetimeIndex, List[datetime]]] = None,
+        periods_per_year: Optional[float] = None,
         trades: Optional[List] = None,
         benchmark: Optional[np.ndarray] = None
     ) -> Dict:
         """Calculate all metrics with optimized intermediate result caching."""
+        # Resolve the observation frequency for this calculation
+        ppy = self._resolve_periods_per_year(timestamps, periods_per_year)
+        self.periods_per_year = ppy
+
         # Pre-compute shared values once
         returns = self._calculate_returns(equity_curve)
         total_ret = self.total_return(equity_curve)
@@ -63,20 +110,20 @@ class MetricsCalculator:
         metrics = {
             # Return metrics
             'total_return': total_ret,
-            'annualized_return': self._annualized_return_from_total(total_ret, len(equity_curve)),
-            'cagr': self._annualized_return_from_total(total_ret, len(equity_curve)),
+            'annualized_return': self._annualized_return_from_total(total_ret, len(equity_curve), ppy),
+            'cagr': self._annualized_return_from_total(total_ret, len(equity_curve), ppy),
 
             # Risk metrics - use pre-computed values
-            'volatility': returns_std * np.sqrt(self.periods_per_year) if returns_std > 0 else 0.0,
-            'downside_volatility': self._downside_vol_from_returns(downside_returns),
+            'volatility': returns_std * np.sqrt(ppy) if returns_std > 0 else 0.0,
+            'downside_volatility': self._downside_vol_from_returns(downside_returns, ppy),
             'max_drawdown': max_dd,
             'avg_drawdown': float(np.mean(dd_series)) if len(dd_series) > 0 else 0.0,
             'max_drawdown_duration': self._max_dd_duration_from_series(dd_series),
 
             # Risk-adjusted returns - use pre-computed values
-            'sharpe_ratio': self._sharpe_from_stats(returns_mean, returns_std),
-            'sortino_ratio': self._sortino_from_returns(returns_mean, downside_returns),
-            'calmar_ratio': self._calmar_from_values(total_ret, max_dd, len(equity_curve)),
+            'sharpe_ratio': self._sharpe_from_stats(returns_mean, returns_std, ppy),
+            'sortino_ratio': self._sortino_from_returns(returns_mean, downside_returns, ppy),
+            'calmar_ratio': self._calmar_from_values(total_ret, max_dd, len(equity_curve), ppy),
             'omega_ratio': self.omega_ratio(returns),
             'information_ratio': self.information_ratio(returns, benchmark) if benchmark is not None else None,
 
@@ -111,41 +158,41 @@ class MetricsCalculator:
         peak = np.maximum.accumulate(equity_curve)
         return (peak - equity_curve) / (peak + 1e-10)
 
-    def _annualized_return_from_total(self, total_return: float, n_periods: int) -> float:
+    def _annualized_return_from_total(self, total_return: float, n_periods: int, periods_per_year: float) -> float:
         """Calculate annualized return from pre-computed total return."""
         if n_periods < 2:
             return 0.0
-        return (1 + total_return) ** (self.periods_per_year / n_periods) - 1
+        return (1 + total_return) ** (periods_per_year / n_periods) - 1
 
-    def _downside_vol_from_returns(self, downside_returns: np.ndarray) -> float:
+    def _downside_vol_from_returns(self, downside_returns: np.ndarray, periods_per_year: float) -> float:
         """Calculate downside volatility from pre-computed downside returns."""
         if len(downside_returns) == 0:
             return 0.0
-        return float(np.std(downside_returns) * np.sqrt(self.periods_per_year))
+        return float(np.std(downside_returns) * np.sqrt(periods_per_year))
 
-    def _sharpe_from_stats(self, returns_mean: float, returns_std: float) -> float:
+    def _sharpe_from_stats(self, returns_mean: float, returns_std: float, periods_per_year: float) -> float:
         """Calculate Sharpe ratio from pre-computed statistics."""
         if returns_std == 0:
             return 0.0
-        excess_return = returns_mean * self.periods_per_year - self.risk_free_rate
-        annualized_std = returns_std * np.sqrt(self.periods_per_year)
+        excess_return = returns_mean * periods_per_year - self.risk_free_rate
+        annualized_std = returns_std * np.sqrt(periods_per_year)
         return excess_return / annualized_std
 
-    def _sortino_from_returns(self, returns_mean: float, downside_returns: np.ndarray) -> float:
+    def _sortino_from_returns(self, returns_mean: float, downside_returns: np.ndarray, periods_per_year: float) -> float:
         """Calculate Sortino ratio from pre-computed values."""
         if len(downside_returns) == 0:
             return 0.0 if returns_mean <= 0 else float('inf')
-        downside_std = np.std(downside_returns) * np.sqrt(self.periods_per_year)
+        downside_std = np.std(downside_returns) * np.sqrt(periods_per_year)
         if downside_std == 0:
             return 0.0
-        excess_return = returns_mean * self.periods_per_year - self.risk_free_rate
+        excess_return = returns_mean * periods_per_year - self.risk_free_rate
         return excess_return / downside_std
 
-    def _calmar_from_values(self, total_return: float, max_dd: float, n_periods: int) -> float:
+    def _calmar_from_values(self, total_return: float, max_dd: float, n_periods: int, periods_per_year: float) -> float:
         """Calculate Calmar ratio from pre-computed values."""
         if max_dd == 0 or n_periods < 2:
             return 0.0
-        ann_return = self._annualized_return_from_total(total_return, n_periods)
+        ann_return = self._annualized_return_from_total(total_return, n_periods, periods_per_year)
         return ann_return / max_dd
 
     def _max_dd_duration_from_series(self, dd_series: np.ndarray) -> int:
@@ -175,7 +222,8 @@ class MetricsCalculator:
         n_periods = len(equity_curve)
         if n_periods < 2:
             return 0.0
-        return (1 + total) ** (self.periods_per_year / n_periods) - 1
+        periods_per_year = self._resolve_periods_per_year()
+        return (1 + total) ** (periods_per_year / n_periods) - 1
 
     def cagr(self, equity_curve: np.ndarray) -> float:
         """Calculate Compound Annual Growth Rate."""
@@ -186,14 +234,14 @@ class MetricsCalculator:
         """Calculate annualized volatility."""
         if len(returns) < 2:
             return 0.0
-        return np.std(returns) * np.sqrt(self.periods_per_year)
+        return np.std(returns) * np.sqrt(self._resolve_periods_per_year())
 
     def downside_volatility(self, returns: np.ndarray, target: float = 0.0) -> float:
         """Calculate downside volatility (semi-deviation)."""
         downside = returns[returns < target]
         if len(downside) < 2:
             return 0.0
-        return np.std(downside) * np.sqrt(self.periods_per_year)
+        return np.std(downside) * np.sqrt(self._resolve_periods_per_year())
 
     def max_drawdown(self, equity_curve: np.ndarray) -> float:
         """Calculate maximum drawdown."""
@@ -236,26 +284,28 @@ class MetricsCalculator:
         if len(returns) < 2:
             return 0.0
 
-        excess_returns = returns - self.risk_free_rate / self.periods_per_year
+        periods_per_year = self._resolve_periods_per_year()
+        excess_returns = returns - self.risk_free_rate / periods_per_year
         vol = np.std(returns)
 
         if vol == 0:
             return 0.0
 
-        return np.mean(excess_returns) / vol * np.sqrt(self.periods_per_year)
+        return np.mean(excess_returns) / vol * np.sqrt(periods_per_year)
 
     def sortino_ratio(self, returns: np.ndarray, target: float = 0.0) -> float:
         """Calculate Sortino ratio."""
         if len(returns) < 2:
             return 0.0
 
-        excess_returns = returns - self.risk_free_rate / self.periods_per_year
-        downside_vol = self.downside_volatility(returns, target) / np.sqrt(self.periods_per_year)
+        periods_per_year = self._resolve_periods_per_year()
+        excess_returns = returns - self.risk_free_rate / periods_per_year
+        downside_vol = self.downside_volatility(returns, target) / np.sqrt(periods_per_year)
 
         if downside_vol == 0:
             return 0.0
 
-        return np.mean(excess_returns) * np.sqrt(self.periods_per_year) / (downside_vol * np.sqrt(self.periods_per_year))
+        return np.mean(excess_returns) * np.sqrt(periods_per_year) / (downside_vol * np.sqrt(periods_per_year))
 
     def calmar_ratio(self, equity_curve: np.ndarray) -> float:
         """Calculate Calmar ratio (annualized return / max drawdown)."""
@@ -287,12 +337,13 @@ class MetricsCalculator:
             return 0.0
 
         active_returns = returns - benchmark_returns
-        tracking_error = np.std(active_returns) * np.sqrt(self.periods_per_year)
+        periods_per_year = self._resolve_periods_per_year()
+        tracking_error = np.std(active_returns) * np.sqrt(periods_per_year)
 
         if tracking_error == 0:
             return 0.0
 
-        return np.mean(active_returns) * self.periods_per_year / tracking_error
+        return np.mean(active_returns) * periods_per_year / tracking_error
 
     # Distribution Metrics
     def skewness(self, returns: np.ndarray) -> float:
@@ -438,7 +489,7 @@ class PerformanceAnalyzer:
         self.config = config or {}
         self.metrics_calculator = MetricsCalculator(
             risk_free_rate=self.config.get('risk_free_rate', 0.02),
-            periods_per_year=self.config.get('periods_per_year', 252 * 24)
+            periods_per_year=self.config.get('periods_per_year')
         )
         # Monte Carlo configuration
         self.enable_monte_carlo = self.config.get('enable_monte_carlo', False)
@@ -459,6 +510,7 @@ class PerformanceAnalyzer:
         # Calculate all metrics
         metrics = self.metrics_calculator.calculate_all(
             equity_curve=equity,
+            timestamps=getattr(backtest_result, 'timestamps', None),
             trades=trades,
             benchmark=benchmark_data
         )
@@ -480,6 +532,8 @@ class PerformanceAnalyzer:
 
     def _run_monte_carlo(self, trades: List) -> Dict:
         """Run Monte Carlo simulation on trades."""
+        from evaluation.backtester import MonteCarloSimulator
+
         simulator = MonteCarloSimulator(
             n_simulations=self.n_simulations,
             confidence_level=self.confidence_level
