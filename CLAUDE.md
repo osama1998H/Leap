@@ -64,6 +64,7 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | Environment config | `core/trading_types.py` | Use `EnvConfig` or `EnvConfig.from_params()` factory |
 | Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
 | Risk management | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` when available |
+| Config loaders | `config/settings.py` | Use `load_training_config()`, `load_data_config()`, etc. for modular config loading |
 
 ### Position Sizing
 
@@ -113,6 +114,29 @@ config = EnvConfig(initial_balance=50000.0, leverage=50)
 # Or use factory: EnvConfig.from_params(initial_balance=50000.0)
 env = TradingEnvironment(data=data, config=config)
 ```
+
+### Modular Configuration
+
+The CLI uses modular config files instead of a single monolithic config. Use standalone loaders:
+
+```python
+from config import (
+    load_training_config,  # Returns (TransformerConfig, PPOConfig, device, seed)
+    load_data_config,      # Returns DataConfig
+    load_backtest_config,  # Returns BacktestConfig
+    load_risk_config,      # Returns RiskConfig
+    load_auto_trader_config,  # Returns AutoTraderConfig
+    load_logging_config,   # Returns LoggingConfig
+)
+
+# Load standalone training config
+transformer_cfg, ppo_cfg, device, seed = load_training_config('config/training.json')
+
+# Load standalone data config
+data_cfg = load_data_config('config/data.json')
+```
+
+See [ADR-0007](docs/decisions/0007-modular-config-system.md) for the architectural decision.
 
 ## Testing
 

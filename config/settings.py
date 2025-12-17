@@ -356,3 +356,135 @@ class SystemConfig:
 def get_config() -> SystemConfig:
     """Get default system configuration."""
     return SystemConfig()
+
+
+# Standalone config loaders for modular configuration
+def load_training_config(path: str) -> tuple:
+    """Load standalone training configuration.
+
+    Training config includes device, seed, transformer, and ppo settings.
+
+    Args:
+        path: Path to training config JSON file
+
+    Returns:
+        Tuple of (TransformerConfig, PPOConfig, device: str, seed: int)
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is invalid JSON
+    """
+    with open(path, 'r') as f:
+        data = json.load(f)
+
+    transformer_config = TransformerConfig(**data.get('transformer', {}))
+    ppo_config = PPOConfig(**data.get('ppo', {}))
+    device = data.get('device', 'auto')
+    seed = data.get('seed', 42)
+
+    return transformer_config, ppo_config, device, seed
+
+
+def load_data_config(path: str) -> DataConfig:
+    """Load standalone data configuration.
+
+    Data config includes symbols, timeframes, and feature engineering settings.
+
+    Args:
+        path: Path to data config JSON file
+
+    Returns:
+        DataConfig instance
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is invalid JSON
+    """
+    with open(path, 'r') as f:
+        data = json.load(f)
+
+    return DataConfig(**data)
+
+
+def load_backtest_config(path: str) -> BacktestConfig:
+    """Load standalone backtest configuration.
+
+    Backtest config includes simulation parameters like balance, leverage, etc.
+
+    Args:
+        path: Path to backtest config JSON file
+
+    Returns:
+        BacktestConfig instance
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is invalid JSON
+    """
+    with open(path, 'r') as f:
+        data = json.load(f)
+
+    return BacktestConfig(**data)
+
+
+def load_risk_config(path: str) -> RiskConfig:
+    """Load standalone risk configuration.
+
+    Risk config includes position sizing, stop loss, and drawdown limits.
+
+    Args:
+        path: Path to risk config JSON file
+
+    Returns:
+        RiskConfig instance
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is invalid JSON
+    """
+    with open(path, 'r') as f:
+        data = json.load(f)
+
+    return RiskConfig(**data)
+
+
+def load_auto_trader_config(path: str) -> AutoTraderConfig:
+    """Load standalone auto-trader configuration.
+
+    Auto-trader config includes trading settings, MT5 connection, and online learning.
+
+    Args:
+        path: Path to auto-trader config JSON file
+
+    Returns:
+        AutoTraderConfig instance
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is invalid JSON
+    """
+    with open(path, 'r') as f:
+        data = json.load(f)
+
+    return AutoTraderConfig(**data)
+
+
+def load_logging_config(path: str) -> LoggingConfig:
+    """Load standalone logging configuration.
+
+    Logging config includes log level, rotation, and format settings.
+
+    Args:
+        path: Path to logging config JSON file
+
+    Returns:
+        LoggingConfig instance
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        json.JSONDecodeError: If config file is invalid JSON
+    """
+    with open(path, 'r') as f:
+        data = json.load(f)
+
+    return LoggingConfig(**data)

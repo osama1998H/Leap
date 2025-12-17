@@ -15,7 +15,16 @@ import argparse
 
 # Import components to test
 from main import LeapTradingSystem, main, initialize_logging
-from config import SystemConfig, get_config
+from config import (
+    SystemConfig,
+    get_config,
+    load_training_config,
+    load_data_config,
+    load_backtest_config,
+    load_risk_config,
+    load_auto_trader_config,
+    load_logging_config,
+)
 
 
 # ============================================================================
@@ -856,6 +865,174 @@ class TestEdgeCases:
 
         assert metadata['predictor']['exists'] is True
         assert 'agent' not in metadata or not metadata.get('agent', {}).get('exists', False)
+
+
+# ============================================================================
+# Modular Config Loader Tests
+# ============================================================================
+
+class TestModularConfigLoaders:
+    """Tests for modular config loading functions."""
+
+    def test_load_training_config(self, temp_dir):
+        """Test loading standalone training config."""
+        config_data = {
+            "device": "cpu",
+            "seed": 123,
+            "transformer": {
+                "d_model": 64,
+                "n_heads": 4,
+                "learning_rate": 1e-5,
+                "epochs": 50
+            },
+            "ppo": {
+                "learning_rate": 1e-4,
+                "gamma": 0.95,
+                "total_timesteps": 500000
+            }
+        }
+        config_path = os.path.join(temp_dir, 'training.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        transformer_cfg, ppo_cfg, device, seed = load_training_config(config_path)
+
+        assert device == "cpu"
+        assert seed == 123
+        assert transformer_cfg.d_model == 64
+        assert transformer_cfg.n_heads == 4
+        assert transformer_cfg.learning_rate == 1e-5
+        assert transformer_cfg.epochs == 50
+        assert ppo_cfg.learning_rate == 1e-4
+        assert ppo_cfg.gamma == 0.95
+        assert ppo_cfg.total_timesteps == 500000
+
+    def test_load_training_config_defaults(self, temp_dir):
+        """Test training config uses defaults for missing fields."""
+        config_data = {
+            "transformer": {
+                "d_model": 256
+            },
+            "ppo": {
+                "gamma": 0.98
+            }
+        }
+        config_path = os.path.join(temp_dir, 'training.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        transformer_cfg, ppo_cfg, device, seed = load_training_config(config_path)
+
+        # Check that defaults are used for missing fields
+        assert device == "auto"  # default
+        assert seed == 42  # default
+        assert transformer_cfg.d_model == 256  # from config
+        assert transformer_cfg.n_heads == 8  # default
+        assert ppo_cfg.gamma == 0.98  # from config
+        assert ppo_cfg.learning_rate == 3e-4  # default
+
+    def test_load_data_config(self, temp_dir):
+        """Test loading standalone data config."""
+        config_data = {
+            "symbols": ["GBPUSD", "USDJPY"],
+            "primary_timeframe": "4h",
+            "lookback_window": 100,
+            "use_technical_indicators": False
+        }
+        config_path = os.path.join(temp_dir, 'data.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        data_cfg = load_data_config(config_path)
+
+        assert data_cfg.symbols == ["GBPUSD", "USDJPY"]
+        assert data_cfg.primary_timeframe == "4h"
+        assert data_cfg.lookback_window == 100
+        assert data_cfg.use_technical_indicators is False
+
+    def test_load_backtest_config(self, temp_dir):
+        """Test loading standalone backtest config."""
+        config_data = {
+            "initial_balance": 50000.0,
+            "leverage": 50,
+            "commission_per_lot": 5.0
+        }
+        config_path = os.path.join(temp_dir, 'backtest.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        backtest_cfg = load_backtest_config(config_path)
+
+        assert backtest_cfg.initial_balance == 50000.0
+        assert backtest_cfg.leverage == 50
+        assert backtest_cfg.commission_per_lot == 5.0
+
+    def test_load_risk_config(self, temp_dir):
+        """Test loading standalone risk config."""
+        config_data = {
+            "max_position_size": 0.05,
+            "max_daily_loss": 0.10,
+            "max_drawdown": 0.25
+        }
+        config_path = os.path.join(temp_dir, 'risk.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        risk_cfg = load_risk_config(config_path)
+
+        assert risk_cfg.max_position_size == 0.05
+        assert risk_cfg.max_daily_loss == 0.10
+        assert risk_cfg.max_drawdown == 0.25
+
+    def test_load_auto_trader_config(self, temp_dir):
+        """Test loading standalone auto-trader config."""
+        config_data = {
+            "symbols": ["EURUSD", "GBPUSD"],
+            "timeframe": "4h",
+            "paper_mode": False,
+            "risk_per_trade": 0.02
+        }
+        config_path = os.path.join(temp_dir, 'auto_trader.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        auto_trader_cfg = load_auto_trader_config(config_path)
+
+        assert auto_trader_cfg.symbols == ["EURUSD", "GBPUSD"]
+        assert auto_trader_cfg.timeframe == "4h"
+        assert auto_trader_cfg.paper_mode is False
+        assert auto_trader_cfg.risk_per_trade == 0.02
+
+    def test_load_logging_config(self, temp_dir):
+        """Test loading standalone logging config."""
+        config_data = {
+            "level": "DEBUG",
+            "log_to_file": False,
+            "max_file_size_mb": 20
+        }
+        config_path = os.path.join(temp_dir, 'logging.json')
+        with open(config_path, 'w') as f:
+            json.dump(config_data, f)
+
+        logging_cfg = load_logging_config(config_path)
+
+        assert logging_cfg.level == "DEBUG"
+        assert logging_cfg.log_to_file is False
+        assert logging_cfg.max_file_size_mb == 20
+
+    def test_load_config_file_not_found(self, temp_dir):
+        """Test that loading non-existent config raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            load_training_config(os.path.join(temp_dir, 'nonexistent.json'))
+
+    def test_load_config_invalid_json(self, temp_dir):
+        """Test that loading invalid JSON raises JSONDecodeError."""
+        config_path = os.path.join(temp_dir, 'invalid.json')
+        with open(config_path, 'w') as f:
+            f.write("not valid json {{{")
+
+        with pytest.raises(json.JSONDecodeError):
+            load_training_config(config_path)
 
 
 # ============================================================================

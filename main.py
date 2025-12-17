@@ -23,7 +23,16 @@ from typing import Optional
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import SystemConfig, get_config
+from config import (
+    SystemConfig,
+    get_config,
+    load_training_config,
+    load_data_config,
+    load_backtest_config,
+    load_risk_config,
+    load_auto_trader_config,
+    load_logging_config,
+)
 from core.data_pipeline import DataPipeline
 from core.trading_env import TradingEnvironment
 from core.trading_types import Action
@@ -1452,9 +1461,35 @@ Examples:
         help='Run Monte Carlo simulation for risk analysis'
     )
 
+    # Modular config arguments (replaces old --config flag)
     parser.add_argument(
-        '--config', '-c',
-        help='Path to config file'
+        '--training-config',
+        help='Path to training config (transformer + ppo settings)'
+    )
+
+    parser.add_argument(
+        '--data-config',
+        help='Path to data config (symbols, timeframes, features)'
+    )
+
+    parser.add_argument(
+        '--backtest-config',
+        help='Path to backtest config (simulation settings)'
+    )
+
+    parser.add_argument(
+        '--risk-config',
+        help='Path to risk config (position sizing, limits)'
+    )
+
+    parser.add_argument(
+        '--auto-trader-config',
+        help='Path to auto-trader config'
+    )
+
+    parser.add_argument(
+        '--logging-config',
+        help='Path to logging config'
     )
 
     parser.add_argument(
@@ -1491,10 +1526,49 @@ Examples:
     args = parser.parse_args()
 
     # Load config first (needed for logging setup)
-    if args.config and os.path.exists(args.config):
-        config = SystemConfig.load(args.config)
-    else:
-        config = get_config()
+    # Start with default config, then override with modular configs
+    config = get_config()
+
+    # Load modular configs if provided
+    if args.training_config:
+        if os.path.exists(args.training_config):
+            transformer_cfg, ppo_cfg, device, seed = load_training_config(args.training_config)
+            config.transformer = transformer_cfg
+            config.ppo = ppo_cfg
+            config.device = device
+            config.seed = seed
+        else:
+            print(f"Warning: Training config file not found: {args.training_config}")
+
+    if args.data_config:
+        if os.path.exists(args.data_config):
+            config.data = load_data_config(args.data_config)
+        else:
+            print(f"Warning: Data config file not found: {args.data_config}")
+
+    if args.backtest_config:
+        if os.path.exists(args.backtest_config):
+            config.backtest = load_backtest_config(args.backtest_config)
+        else:
+            print(f"Warning: Backtest config file not found: {args.backtest_config}")
+
+    if args.risk_config:
+        if os.path.exists(args.risk_config):
+            config.risk = load_risk_config(args.risk_config)
+        else:
+            print(f"Warning: Risk config file not found: {args.risk_config}")
+
+    if args.auto_trader_config:
+        if os.path.exists(args.auto_trader_config):
+            config.auto_trader = load_auto_trader_config(args.auto_trader_config)
+        else:
+            print(f"Warning: Auto-trader config file not found: {args.auto_trader_config}")
+
+    if args.logging_config:
+        if os.path.exists(args.logging_config):
+            config.logging = load_logging_config(args.logging_config)
+        else:
+            print(f"Warning: Logging config file not found: {args.logging_config}")
 
     # Apply MLflow CLI overrides
     if args.no_mlflow:

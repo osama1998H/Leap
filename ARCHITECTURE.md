@@ -573,12 +573,46 @@ class EnvConfig:
 
 ### Configuration Loading
 
+The CLI uses modular config files instead of a single monolithic config file. Each config type has a dedicated loader:
+
 ```python
-# JSON file-based
+from config import (
+    load_training_config,  # Returns (TransformerConfig, PPOConfig, device, seed)
+    load_data_config,      # Returns DataConfig
+    load_backtest_config,  # Returns BacktestConfig
+    load_risk_config,      # Returns RiskConfig
+    load_auto_trader_config,  # Returns AutoTraderConfig
+    load_logging_config,   # Returns LoggingConfig
+)
+
+# Load standalone training config
+transformer_cfg, ppo_cfg, device, seed = load_training_config('config/training.json')
+
+# Load standalone data config
+data_cfg = load_data_config('config/data.json')
+```
+
+**CLI Flags for Modular Configs:**
+
+| Flag | Config Type | Template |
+|------|-------------|----------|
+| `--training-config` | TransformerConfig + PPOConfig | `config/templates/training.json` |
+| `--data-config` | DataConfig | `config/templates/data.json` |
+| `--backtest-config` | BacktestConfig | `config/templates/backtest.json` |
+| `--risk-config` | RiskConfig | `config/templates/risk.json` |
+| `--auto-trader-config` | AutoTraderConfig | `config/templates/auto_trader.json` |
+| `--logging-config` | LoggingConfig | `config/templates/logging.json` |
+
+See [ADR-0007](docs/decisions/0007-modular-config-system.md) for the architectural decision.
+
+**Legacy Full Config Loading:**
+
+```python
+# Full SystemConfig (for programmatic use)
 config = SystemConfig.load("config.json")
 config.save("config.json")
 
-# Programmatic
+# Default config
 config = get_config()
 config.transformer.d_model = 256
 ```

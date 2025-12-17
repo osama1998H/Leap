@@ -1,0 +1,13 @@
+{
+  "symbols": ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "NZDUSD", "USDCAD"],
+  "primary_timeframe": "1h",
+  "additional_timeframes": ["15m", "4h", "1d"],
+  "lookback_window": 120,
+  "prediction_horizon": 12,
+  "train_test_split": 0.8,
+  "validation_split": 0.1,
+  "use_technical_indicators": true,
+  "use_price_patterns": true,
+  "use_volume_features": true,
+  "normalize_method": "robust"
+}
