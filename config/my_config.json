@@ -6,8 +6,7 @@
     "seed": 42,
     "data": {
         "symbols": [
-            "EURUSD",
-            "GBPUSD"
+            "EURUSD"
         ],
         "primary_timeframe": "1h",
         "additional_timeframes": [

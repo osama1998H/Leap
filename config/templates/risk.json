@@ -1,0 +1,11 @@
+{
+  "max_position_size": 0.02,
+  "max_daily_loss": 0.05,
+  "max_drawdown": 0.15,
+  "default_stop_loss_pips": 50,
+  "default_take_profit_pips": 100,
+  "risk_reward_ratio": 2.0,
+  "max_open_positions": 5,
+  "use_trailing_stop": true,
+  "trailing_stop_pips": 30
+}

@@ -48,7 +48,9 @@ python main.py train [OPTIONS]
 | `--timesteps` | | integer | from config | Training timesteps for the PPO agent |
 | `--model-type` | | choice | `both` | Model to train: `transformer`, `ppo`, or `both` |
 | `--model-dir` | `-m` | string | `./saved_models` | Directory to save trained models |
-| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--training-config` | | string | | Path to training config (transformer + ppo) |
+| `--data-config` | | string | | Path to data config (symbols, timeframes) |
+| `--logging-config` | | string | | Path to logging config |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
 | `--log-file` | | string | | Custom log file path |
 
@@ -78,8 +80,11 @@ python main.py train
 # Train on GBPUSD with custom epochs
 python main.py train --symbol GBPUSD --epochs 50 --timesteps 50000
 
-# Train with a configuration file
-python main.py train --config config/custom_config.json
+# Train with custom training config
+python main.py train --training-config config/templates/training.json
+
+# Train with multiple config files
+python main.py train --training-config config/training.json --data-config config/data.json
 
 # Train with verbose logging
 python main.py train --log-level DEBUG --log-file ./training.log
@@ -87,8 +92,8 @@ python main.py train --log-level DEBUG --log-file ./training.log
 # Multi-symbol training (from config or CLI)
 python main.py train --symbols EURUSD GBPUSD USDJPY
 
-# Multi-timeframe training (uses additional_timeframes from config)
-python main.py train --multi-timeframe --config config/my_config.json
+# Multi-timeframe training (uses additional_timeframes from data config)
+python main.py train --multi-timeframe --data-config config/templates/data.json
 
 # Full multi-symbol + multi-timeframe training
 python main.py train --symbols EURUSD GBPUSD --multi-timeframe
@@ -151,7 +156,10 @@ python main.py backtest [OPTIONS]
 | `--model-dir` | `-m` | string | `./saved_models` | Directory to load trained models from |
 | `--realistic` | | flag | `False` | Enable realistic trading constraints |
 | `--monte-carlo` | | flag | `False` | Run Monte Carlo simulation for risk analysis |
-| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--backtest-config` | | string | | Path to backtest config (simulation settings) |
+| `--data-config` | | string | | Path to data config (symbols, timeframes) |
+| `--risk-config` | | string | | Path to risk config (position sizing) |
+| `--logging-config` | | string | | Path to logging config |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
 | `--log-file` | | string | | Custom log file path |
 
@@ -207,11 +215,13 @@ python main.py walkforward [OPTIONS]
 | `--symbol` | `-s` | string | `EURUSD` | Trading symbol |
 | `--timeframe` | `-t` | string | `1h` | Timeframe for data |
 | `--bars` | `-b` | integer | `50000` | Number of historical bars to load |
-| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--backtest-config` | | string | | Path to backtest config (walk-forward settings) |
+| `--data-config` | | string | | Path to data config (symbols, timeframes) |
+| `--logging-config` | | string | | Path to logging config |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
 | `--log-file` | | string | | Custom log file path |
 
-**Walk-Forward Parameters** (configured via config file):
+**Walk-Forward Parameters** (configured via backtest config file):
 - `train_window_days`: 180 days (training window per fold)
 - `test_window_days`: 30 days (testing window per fold)
 - `walk_forward_epochs`: 20 (reduced training epochs per fold for speed)
@@ -267,7 +277,8 @@ python main.py evaluate [OPTIONS]
 | `--timeframe` | `-t` | string | `1h` | Timeframe for data |
 | `--bars` | `-b` | integer | `50000` | Number of historical bars to load |
 | `--model-dir` | `-m` | string | `./saved_models` | Directory to load trained models from |
-| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--data-config` | | string | | Path to data config (symbols, timeframes) |
+| `--logging-config` | | string | | Path to logging config |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
 | `--log-file` | | string | | Custom log file path |
 
@@ -303,7 +314,9 @@ python main.py autotrade [OPTIONS]
 | `--timeframe` | `-t` | string | `1h` | Timeframe for data |
 | `--model-dir` | `-m` | string | `./saved_models` | Directory to load trained models from |
 | `--paper` | | flag | `False` | Enable paper trading mode |
-| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--auto-trader-config` | | string | | Path to auto-trader config |
+| `--risk-config` | | string | | Path to risk config (position sizing) |
+| `--logging-config` | | string | | Path to logging config |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
 | `--log-file` | | string | | Custom log file path |
 
@@ -455,41 +468,60 @@ python main.py train --mlflow-tracking-uri http://localhost:5000
 
 These options are available for all commands:
 
-| Option | Short | Type | Description |
-|--------|-------|------|-------------|
-| `--config` | `-c` | string | Path to JSON configuration file (overrides defaults) |
-| `--log-level` | `-l` | choice | Logging verbosity: DEBUG, INFO, WARNING, ERROR |
-| `--log-file` | | string | Custom path for log file output |
+| Option | Type | Description |
+|--------|------|-------------|
+| `--logging-config` | string | Path to logging config JSON file |
+| `--risk-config` | string | Path to risk config JSON file |
+| `--log-level` | choice | Logging verbosity: DEBUG, INFO, WARNING, ERROR |
+| `--log-file` | string | Custom path for log file output |
 
 **Priority:** CLI arguments override configuration file values.
 
 ---
 
-## Configuration File
+## Modular Configuration Files
 
-You can use a JSON configuration file to customize system behavior. Pass it with `--config`:
+Leap uses a modular configuration system with standalone config files for different purposes. This allows you to customize only what you need without maintaining a large monolithic config file.
+
+### Available Config Flags
+
+| Flag | Purpose | Template |
+|------|---------|----------|
+| `--training-config` | Transformer + PPO model settings | `config/templates/training.json` |
+| `--data-config` | Symbols, timeframes, feature engineering | `config/templates/data.json` |
+| `--backtest-config` | Backtesting simulation settings | `config/templates/backtest.json` |
+| `--risk-config` | Position sizing, stop-loss, drawdown limits | `config/templates/risk.json` |
+| `--auto-trader-config` | Live trading settings | `config/templates/auto_trader.json` |
+| `--logging-config` | Log level, rotation, format | `config/templates/logging.json` |
+
+### Usage Examples
 
 ```bash
-python main.py train --config config/example_config.json
+# Train with custom training config
+python main.py train --training-config config/templates/training.json
+
+# Backtest with custom settings
+python main.py backtest --backtest-config config/templates/backtest.json
+
+# Combine multiple configs
+python main.py train \
+    --training-config config/training.json \
+    --data-config config/data.json \
+    --logging-config config/logging.json
 ```
 
-### Example Configuration
+### Template Files
 
-See [`config/example_config.json`](config/example_config.json) for a complete example configuration file with all available options.
+Template config files are provided in `config/templates/`:
+
+- `training.json` - Training hyperparameters (transformer + ppo)
+- `data.json` - Data pipeline settings (symbols, timeframes, features)
+- `backtest.json` - Backtesting parameters (balance, leverage, walk-forward)
+- `risk.json` - Risk management settings (position sizing, limits)
+- `auto_trader.json` - Auto-trader settings (MT5, online learning)
+- `logging.json` - Logging configuration (level, rotation)
 
 For detailed documentation of the configuration system (dataclasses, type safety, etc.), see [ARCHITECTURE.md](ARCHITECTURE.md#configuration-system).
-
-### Configuration Sections
-
-| Section | Description |
-|---------|-------------|
-| `data` | Data loading, feature engineering, and preprocessing settings |
-| `transformer` | Transformer model architecture and training hyperparameters |
-| `ppo` | PPO reinforcement learning agent configuration |
-| `risk` | Risk management parameters (position sizing, stop-loss, etc.) |
-| `backtest` | Backtesting simulation settings |
-| `logging` | Log output configuration |
-| `auto_trader` | Auto-trading specific settings |
 
 ---
 
@@ -557,10 +589,10 @@ python main.py autotrade --paper --symbol EURUSD
 ### Using Custom Configuration
 
 ```bash
-# Create a config file, then use it across commands
-python main.py train --config config/aggressive.json
-python main.py backtest --config config/aggressive.json --realistic
-python main.py evaluate --config config/aggressive.json
+# Use modular config files for different purposes
+python main.py train --training-config config/aggressive_training.json
+python main.py backtest --backtest-config config/aggressive_backtest.json --realistic
+python main.py evaluate --data-config config/data.json
 ```
 
 ### Multi-Symbol Analysis
@@ -580,10 +612,10 @@ done
 ### Multi-Timeframe Training
 
 ```bash
-# Enable multi-timeframe features (uses additional_timeframes from config)
+# Enable multi-timeframe features (uses additional_timeframes from data config)
 # Config example: "additional_timeframes": ["15m", "4h", "1d"]
-python main.py train --multi-timeframe --config config/my_config.json
+python main.py train --multi-timeframe --data-config config/templates/data.json
 
 # Multi-symbol + multi-timeframe combined
-python main.py train --symbols EURUSD GBPUSD --multi-timeframe --config config/my_config.json
+python main.py train --symbols EURUSD GBPUSD --multi-timeframe --data-config config/templates/data.json
 ```
