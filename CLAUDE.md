@@ -29,6 +29,10 @@ python main.py train --symbols EURUSD GBPUSD --multi-timeframe  # Multi-symbol +
 python main.py backtest --symbol EURUSD --realistic --monte-carlo
 python main.py walkforward --symbol EURUSD
 
+# With data persistence (saves raw OHLCV and features to data/{run_id}/)
+python main.py train --symbol EURUSD --save-data
+python main.py backtest --symbol EURUSD --save-data
+
 # Live Trading (Windows only - requires MT5)
 python main.py autotrade --paper --symbol EURUSD
 
@@ -66,6 +70,7 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
 | Risk management | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` when available |
 | Config loaders | `config/settings.py` | Use `load_training_config()`, `load_data_config()`, etc. for modular config loading |
+| Data persistence | `utils/data_saver.py` | Use `save_pipeline_data()` for CSV export of raw OHLCV and features |
 
 ### Position Sizing
 

@@ -23,6 +23,10 @@ Create an ADR when:
 | [0003](0003-dataclass-configuration.md) | Dataclass-based Configuration | Accepted | 2024-01 |
 | [0004](0004-standardized-checkpoints.md) | Standardized Checkpoint Format | Accepted | 2024-01 |
 | [0005](0005-pnl-position-sizing-utilities.md) | PnL and Position Sizing Utilities | Accepted | 2024-12 |
+| [0006](0006-backtest-agent-integration.md) | Backtest-Agent Integration | Accepted | 2024-12 |
+| [0007](0007-modular-config-system.md) | Modular Configuration System | Accepted | 2024-12 |
+| [0008](0008-cli-package-modularization.md) | CLI Package Modularization | Accepted | 2024-12 |
+| [0009](0009-data-persistence.md) | Pipeline Data Persistence | Accepted | 2024-12 |
 
 ## ADR Template
 

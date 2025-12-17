@@ -12,6 +12,7 @@ The `utils/` directory contains centralized utilities. See ADR-0001 for rational
 | `position_sizing.py` | Position sizing | `calculate_risk_based_size()`, `apply_position_limits()` |
 | `logging_config.py` | Logging setup | `setup_logging()` |
 | `mlflow_tracker.py` | Experiment tracking | `MLflowTracker`, `create_tracker()` |
+| `data_saver.py` | Data persistence | `save_pipeline_data()`, `generate_run_id()` |
 
 ## When to Use Each Utility
 
@@ -47,6 +48,26 @@ from utils.checkpoint import save_checkpoint, load_checkpoint
 
 checkpoint = load_checkpoint(path, device)
 model.load_state_dict(checkpoint['model_state_dict'])
+```
+
+### Data Persistence
+```python
+from utils.data_saver import save_pipeline_data, generate_run_id
+
+# Generate unique run ID
+run_id = generate_run_id("train", "EURUSD", "1h")
+# Output: "train-EURUSD-1h-20241217_143052"
+
+# Save pipeline data (raw OHLCV + computed features)
+save_pipeline_data(
+    run_id=run_id,
+    market_data=market_data,
+    base_dir="data",
+    command="train",
+    n_bars=50000,
+    data_source="MT5"
+)
+# Creates: data/{run_id}/raw.csv, features.csv, metadata.json
 ```
 
 ## Adding New Utilities

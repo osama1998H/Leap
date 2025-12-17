@@ -46,6 +46,24 @@ CLI arguments are resolved in `parser.py:resolve_cli_config()`:
 2. Override with modular config files if provided
 3. CLI arguments take final precedence
 
+### Data Saving Pattern (--save-data)
+All command handlers support the `--save-data` flag using this pattern:
+```python
+if getattr(args, 'save_data', False) and market_data is not None:
+    from utils.data_saver import save_pipeline_data, generate_run_id
+    run_id = generate_run_id("command_name", symbol, timeframe)
+    data_source = "MT5" if getattr(system.data_pipeline, 'broker_gateway', None) else "synthetic"
+    save_pipeline_data(
+        run_id=run_id,
+        market_data=market_data,
+        base_dir=config.get_path('data'),
+        command="command_name",
+        n_bars=n_bars,
+        data_source=data_source
+    )
+```
+See ADR-0009 for design rationale.
+
 ## Common Gotchas
 
 1. **Test Patching**: Tests patch at `main` module level (e.g., `@patch('main.TransformerPredictor')`). The `main.py` wrapper imports these classes to enable patching.
