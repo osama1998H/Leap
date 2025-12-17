@@ -621,10 +621,23 @@ config.transformer.d_model = 256
 
 ```
 Leap/
-├── main.py                    # CLI entry point
+├── main.py                    # CLI entry point (backward-compat wrapper)
 ├── CLAUDE.md                  # Development guidelines
 ├── ARCHITECTURE.md            # This document
 ├── CLI.md                     # Command reference
+│
+├── cli/                       # CLI package (see ADR-0008)
+│   ├── __init__.py            # Package exports and main()
+│   ├── CLAUDE.md              # CLI module documentation
+│   ├── parser.py              # Argument parsing and config resolution
+│   ├── system.py              # LeapTradingSystem orchestrator
+│   └── commands/
+│       ├── __init__.py        # Command registry
+│       ├── train.py           # train command
+│       ├── backtest.py        # backtest command
+│       ├── walkforward.py     # walkforward command
+│       ├── evaluate.py        # evaluate command
+│       └── autotrade.py       # autotrade command
 │
 ├── config/
 │   └── settings.py            # Configuration dataclasses

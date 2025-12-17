@@ -189,6 +189,7 @@ Before making decisions that create new patterns or affect multiple modules, che
 ## Module-Specific Context
 
 Each major module has its own `CLAUDE.md` with module-specific patterns:
+- `cli/CLAUDE.md` - CLI package (commands, parser, LeapTradingSystem orchestrator)
 - `core/CLAUDE.md` - Trading system core (EnvConfig, TradingError, environments)
 - `models/CLAUDE.md` - AI models (Transformer, PPO)
 - `utils/CLAUDE.md` - Centralized utilities

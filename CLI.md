@@ -10,6 +10,8 @@ Leap uses a command-based CLI pattern powered by Python's `argparse`. All comman
 python main.py [COMMAND] [OPTIONS]
 ```
 
+> **Note:** The CLI implementation is modularized in the `cli/` package. See [ADR-0008](docs/decisions/0008-cli-package-modularization.md) for architecture details. The `main.py` file is a thin wrapper for backward compatibility.
+
 ## Quick Reference
 
 | Command | Description |
