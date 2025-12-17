@@ -1,27 +1,76 @@
 {
+  "_comment_symbols": "Trading symbols for live trading",
   "symbols": ["EURUSD"],
+
+  "_comment_timeframe": "Primary timeframe for signals",
   "timeframe": "1h",
+
+  "_comment_risk_per_trade": "Risk per trade as fraction of account (0.01 = 1%)",
   "risk_per_trade": 0.01,
+
+  "_comment_max_positions": "Maximum concurrent positions",
   "max_positions": 3,
+
+  "_comment_max_daily_loss": "Maximum daily loss before stopping (0.05 = 5%)",
   "max_daily_loss": 0.05,
+
+  "_comment_max_drawdown": "Maximum drawdown before stopping (0.10 = 10%)",
   "max_drawdown": 0.10,
+
+  "_comment_default_sl_pips": "Default stop loss in pips",
   "default_sl_pips": 50.0,
+
+  "_comment_default_tp_pips": "Default take profit in pips",
   "default_tp_pips": 100.0,
+
+  "_comment_trading_start_hour": "Trading start hour (UTC, 0-23)",
   "trading_start_hour": 0,
+
+  "_comment_trading_end_hour": "Trading end hour (UTC, 0-24, 24 means end of day)",
   "trading_end_hour": 24,
+
+  "_comment_trading_days": "Active trading days (0=Monday, 4=Friday)",
   "trading_days": [0, 1, 2, 3, 4],
+
+  "_comment_paper_mode": "Enable paper trading (no real trades)",
   "paper_mode": true,
+
+  "_comment_loop_interval": "Seconds between trading loop iterations",
   "loop_interval": 1.0,
+
+  "_comment_bar_interval": "Seconds per bar (3600 = 1 hour)",
   "bar_interval": 3600,
+
+  "_comment_min_confidence": "Minimum prediction confidence to trade (0.0-1.0)",
   "min_confidence": 0.6,
+
+  "_comment_prediction_threshold": "Minimum predicted return to trigger signal",
   "prediction_threshold": 0.001,
+
+  "_comment_model_window_size": "Input window size for models",
   "model_window_size": 60,
+
+  "_comment_model_n_features": "Number of features (0 = auto-detect from model)",
   "model_n_features": 0,
+
+  "_comment_model_n_account_features": "Number of account state features",
   "model_n_account_features": 8,
+
+  "_comment_enable_online_learning": "Enable continuous model adaptation",
   "enable_online_learning": true,
+
+  "_comment_adaptation_frequency": "Bars between adaptation checks",
   "adaptation_frequency": 100,
+
+  "_comment_max_adaptations_per_day": "Maximum daily model updates",
   "max_adaptations_per_day": 10,
+
+  "_comment_magic_number": "MT5 magic number for trade identification",
   "magic_number": 234567,
+
+  "_comment_log_trades": "Log all trade events",
   "log_trades": true,
+
+  "_comment_heartbeat_interval": "Seconds between heartbeat logs",
   "heartbeat_interval": 60.0
 }

@@ -360,6 +360,16 @@ def get_config() -> SystemConfig:
 
 
 # Standalone config loaders for modular configuration
+def _filter_comments(data: dict) -> dict:
+    """Filter out _comment_* keys from config dict.
+
+    JSON doesn't support comments, so we use _comment_<fieldname> keys
+    to document what each setting controls. This helper removes them
+    before passing to dataclass constructors.
+    """
+    return {k: v for k, v in data.items() if not k.startswith('_comment_')}
+
+
 def load_training_config(path: str) -> tuple:
     """Load standalone training configuration.
 
@@ -378,8 +388,11 @@ def load_training_config(path: str) -> tuple:
     with open(path, 'r') as f:
         data = json.load(f)
 
-    transformer_config = TransformerConfig(**data.get('transformer', {}))
-    ppo_config = PPOConfig(**data.get('ppo', {}))
+    transformer_data = _filter_comments(data.get('transformer', {}))
+    ppo_data = _filter_comments(data.get('ppo', {}))
+
+    transformer_config = TransformerConfig(**transformer_data)
+    ppo_config = PPOConfig(**ppo_data)
     device = data.get('device', 'auto')
     seed = data.get('seed', 42)
 
@@ -404,7 +417,7 @@ def load_data_config(path: str) -> DataConfig:
     with open(path, 'r') as f:
         data = json.load(f)
 
-    return DataConfig(**data)
+    return DataConfig(**_filter_comments(data))
 
 
 def load_backtest_config(path: str) -> BacktestConfig:
@@ -425,7 +438,7 @@ def load_backtest_config(path: str) -> BacktestConfig:
     with open(path, 'r') as f:
         data = json.load(f)
 
-    return BacktestConfig(**data)
+    return BacktestConfig(**_filter_comments(data))
 
 
 def load_risk_config(path: str) -> RiskConfig:
@@ -446,7 +459,7 @@ def load_risk_config(path: str) -> RiskConfig:
     with open(path, 'r') as f:
         data = json.load(f)
 
-    return RiskConfig(**data)
+    return RiskConfig(**_filter_comments(data))
 
 
 def load_auto_trader_config(path: str) -> AutoTraderConfig:
@@ -467,7 +480,7 @@ def load_auto_trader_config(path: str) -> AutoTraderConfig:
     with open(path, 'r') as f:
         data = json.load(f)
 
-    return AutoTraderConfig(**data)
+    return AutoTraderConfig(**_filter_comments(data))
 
 
 def load_logging_config(path: str) -> LoggingConfig:
@@ -488,4 +501,4 @@ def load_logging_config(path: str) -> LoggingConfig:
     with open(path, 'r') as f:
         data = json.load(f)
 
-    return LoggingConfig(**data)
+    return LoggingConfig(**_filter_comments(data))

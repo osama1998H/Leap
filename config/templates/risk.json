@@ -1,11 +1,28 @@
 {
+  "_comment_max_position_size": "Maximum position size as fraction of account (0.02 = 2%)",
   "max_position_size": 0.02,
+
+  "_comment_max_daily_loss": "Maximum daily loss as fraction of account (0.05 = 5%)",
   "max_daily_loss": 0.05,
+
+  "_comment_max_drawdown": "Maximum allowed drawdown as fraction of account (0.15 = 15%)",
   "max_drawdown": 0.15,
+
+  "_comment_default_stop_loss_pips": "Default stop loss distance in pips",
   "default_stop_loss_pips": 50,
+
+  "_comment_default_take_profit_pips": "Default take profit distance in pips",
   "default_take_profit_pips": 100,
+
+  "_comment_risk_reward_ratio": "Minimum risk/reward ratio for trades",
   "risk_reward_ratio": 2.0,
+
+  "_comment_max_open_positions": "Maximum concurrent open positions",
   "max_open_positions": 5,
+
+  "_comment_use_trailing_stop": "Enable trailing stop loss",
   "use_trailing_stop": true,
+
+  "_comment_trailing_stop_pips": "Trailing stop distance in pips",
   "trailing_stop_pips": 30
 }

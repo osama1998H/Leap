@@ -1,14 +1,37 @@
 {
+  "_comment_initial_balance": "Starting account balance in USD",
   "initial_balance": 10000.0,
+
+  "_comment_commission_per_lot": "Trading commission per standard lot in USD",
   "commission_per_lot": 5.0,
+
+  "_comment_slippage_pips": "Simulated slippage in pips per trade",
   "slippage_pips": 1.0,
+
+  "_comment_spread_pips": "Simulated bid-ask spread in pips",
   "spread_pips": 1.5,
+
+  "_comment_leverage": "Account leverage ratio (e.g., 400 = 400:1)",
   "leverage": 400,
+
+  "_comment_train_window_days": "Training window size for walk-forward optimization",
   "train_window_days": 180,
+
+  "_comment_test_window_days": "Test window size for walk-forward optimization",
   "test_window_days": 30,
+
+  "_comment_walk_forward_steps": "Number of walk-forward folds",
   "walk_forward_steps": 12,
+
+  "_comment_walk_forward_epochs": "Training epochs per walk-forward fold",
   "walk_forward_epochs": 20,
+
+  "_comment_walk_forward_parallel": "Enable parallel fold training (may cause GPU contention)",
   "walk_forward_parallel": false,
+
+  "_comment_n_simulations": "Number of Monte Carlo simulations for risk analysis",
   "n_simulations": 1000,
+
+  "_comment_confidence_level": "Statistical confidence level for Monte Carlo CI (0.95 = 95%)",
   "confidence_level": 0.95
 }
