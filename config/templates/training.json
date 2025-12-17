@@ -1,38 +1,104 @@
 {
+  "_comment_device": "PyTorch device selection ('auto', 'cuda', 'mps', 'cpu')",
   "device": "auto",
+
+  "_comment_seed": "Random seed for reproducibility",
   "seed": 42,
+
   "transformer": {
+    "_comment_d_model": "Hidden dimension size of transformer layers",
     "d_model": 128,
+
+    "_comment_n_heads": "Number of attention heads (must divide d_model evenly)",
     "n_heads": 8,
+
+    "_comment_n_encoder_layers": "Number of transformer encoder layers",
     "n_encoder_layers": 4,
+
+    "_comment_d_ff": "Feed-forward network hidden dimension",
     "d_ff": 512,
+
+    "_comment_dropout": "Dropout rate for regularization (0.0-1.0)",
     "dropout": 0.1,
+
+    "_comment_max_seq_length": "Maximum input sequence length",
     "max_seq_length": 120,
+
+    "_comment_learning_rate": "Optimizer learning rate for training",
     "learning_rate": 1e-4,
+
+    "_comment_weight_decay": "L2 regularization strength",
     "weight_decay": 1e-5,
+
+    "_comment_batch_size": "Training batch size",
     "batch_size": 64,
+
+    "_comment_epochs": "Maximum training epochs",
     "epochs": 100,
+
+    "_comment_patience": "Early stopping patience (epochs without improvement)",
     "patience": 15,
+
+    "_comment_online_learning_rate": "Learning rate for online adaptation",
     "online_learning_rate": 1e-5,
+
+    "_comment_online_batch_size": "Batch size for online learning",
     "online_batch_size": 16,
+
+    "_comment_adaptation_frequency": "Steps between online adaptations",
     "adaptation_frequency": 100
   },
+
   "ppo": {
+    "_comment_actor_hidden_sizes": "Neural network layer sizes for policy network",
     "actor_hidden_sizes": [256, 256, 128],
+
+    "_comment_critic_hidden_sizes": "Neural network layer sizes for value network",
     "critic_hidden_sizes": [256, 256, 128],
+
+    "_comment_learning_rate": "PPO optimizer learning rate",
     "learning_rate": 3e-4,
+
+    "_comment_gamma": "Discount factor for future rewards (0.0-1.0)",
     "gamma": 0.99,
+
+    "_comment_gae_lambda": "GAE lambda for advantage estimation (0.0-1.0)",
     "gae_lambda": 0.95,
+
+    "_comment_clip_epsilon": "PPO clipping parameter for policy updates",
     "clip_epsilon": 0.2,
+
+    "_comment_entropy_coef": "Entropy bonus coefficient for exploration",
     "entropy_coef": 0.01,
+
+    "_comment_value_coef": "Value loss coefficient in total loss",
     "value_coef": 0.5,
+
+    "_comment_max_grad_norm": "Gradient clipping threshold",
     "max_grad_norm": 0.5,
+
+    "_comment_n_steps": "Steps per rollout before update",
     "n_steps": 2048,
+
+    "_comment_n_epochs": "PPO update epochs per rollout",
     "n_epochs": 10,
+
+    "_comment_batch_size": "PPO training batch size",
     "batch_size": 64,
+
+    "_comment_total_timesteps": "Total training timesteps",
     "total_timesteps": 10000,
+
+    "_comment_patience": "Early stopping patience (requires eval_env)",
     "patience": 15,
+
+    "_comment_eval_split": "Fraction of data for evaluation environment",
+    "eval_split": 0.2,
+
+    "_comment_online_update_frequency": "Steps between online updates",
     "online_update_frequency": 500,
+
+    "_comment_experience_buffer_size": "Maximum experiences in replay buffer",
     "experience_buffer_size": 50000
   }
 }

@@ -411,20 +411,41 @@ class BaseTradingEnvironment(gym.Env, ABC):
         self.history['prices'].append(price)
         self.history['positions'].append(len(self._get_open_positions()))
 
+    def _normalize_ratio(self, ratio: float) -> float:
+        """Normalize unbounded ratio using log-scaling with sign preservation.
+
+        This prevents float32 overflow during profitable trading by compressing
+        large values while preserving relative ordering and sign.
+
+        Args:
+            ratio: The ratio to normalize (can be negative for losses)
+
+        Returns:
+            Log-scaled value that stays within float32 range
+        """
+        if ratio >= 0:
+            return np.log1p(ratio)
+        else:
+            return -np.log1p(-ratio)
+
     def _get_account_observation(self) -> np.ndarray:
-        """Get account state observation."""
+        """Get account state observation.
+
+        Uses log-scaled normalization for unbounded values to prevent
+        float32 overflow during profitable backtests/trading.
+        """
         current_price = self._get_current_price()
         unrealized_pnl = self._get_unrealized_pnl(current_price)
 
         return np.array([
-            self.state.balance / self.initial_balance,
-            self.state.equity / self.initial_balance,
+            self._normalize_ratio(self.state.balance / self.initial_balance - 1.0),
+            self._normalize_ratio(self.state.equity / self.initial_balance - 1.0),
             len(self._get_open_positions()),
             1.0 if self._has_position('long') else 0.0,
             1.0 if self._has_position('short') else 0.0,
-            unrealized_pnl / self.initial_balance,
+            self._normalize_ratio(unrealized_pnl / self.initial_balance),
             self.state.max_drawdown,
-            self.state.total_pnl / self.initial_balance
+            self._normalize_ratio(self.state.total_pnl / self.initial_balance)
         ])
 
     def _get_base_info(self) -> Dict[str, Any]:

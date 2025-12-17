@@ -1,13 +1,34 @@
 {
+  "_comment_level": "Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
   "level": "INFO",
+
+  "_comment_log_to_file": "Enable file logging",
   "log_to_file": true,
+
+  "_comment_log_to_console": "Enable console logging",
   "log_to_console": true,
+
+  "_comment_log_format": "Python logging format string",
   "log_format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+
+  "_comment_date_format": "Timestamp format string",
   "date_format": "%Y-%m-%d %H:%M:%S",
+
+  "_comment_max_file_size_mb": "Maximum log file size before rotation (MB)",
   "max_file_size_mb": 10,
+
+  "_comment_backup_count": "Number of rotated log files to keep",
   "backup_count": 5,
+
+  "_comment_log_filename_prefix": "Prefix for log filenames",
   "log_filename_prefix": "leap",
+
+  "_comment_rotation_type": "Rotation type ('size' or 'time')",
   "rotation_type": "size",
+
+  "_comment_rotation_when": "Time-based rotation trigger (if rotation_type='time')",
   "rotation_when": "midnight",
+
+  "_comment_rotation_interval": "Rotation interval (if rotation_type='time')",
   "rotation_interval": 1
 }

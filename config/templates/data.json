@@ -1,13 +1,34 @@
 {
+  "_comment_symbols": "List of trading symbols to use",
   "symbols": ["EURUSD"],
+
+  "_comment_primary_timeframe": "Main timeframe for trading signals",
   "primary_timeframe": "1h",
+
+  "_comment_additional_timeframes": "Extra timeframes for multi-timeframe features",
   "additional_timeframes": ["15m", "4h", "1d"],
+
+  "_comment_lookback_window": "Number of bars for model input sequence",
   "lookback_window": 192,
+
+  "_comment_prediction_horizon": "Number of bars ahead to predict",
   "prediction_horizon": 6,
+
+  "_comment_train_test_split": "Fraction of data for training (remainder for test)",
   "train_test_split": 0.8,
+
+  "_comment_validation_split": "Fraction of training data for validation",
   "validation_split": 0.1,
+
+  "_comment_use_technical_indicators": "Include technical indicator features",
   "use_technical_indicators": true,
+
+  "_comment_use_price_patterns": "Include candlestick pattern features",
   "use_price_patterns": true,
+
+  "_comment_use_volume_features": "Include volume-based features",
   "use_volume_features": true,
+
+  "_comment_normalize_method": "Feature normalization method ('robust', 'standard', 'minmax')",
   "normalize_method": "robust"
 }
