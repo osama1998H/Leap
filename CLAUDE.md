@@ -138,6 +138,51 @@ env = TradingEnvironment(data=data, config=config)
 | Tracking | MLflow >=2.10, TensorBoard >=2.14 |
 | Testing | pytest >=7.4 |
 
+## Search Before Creating
+
+Before implementing any new:
+- **Utility function**: Search `utils/` directory first
+- **Exception type**: Check `core/trading_types.py` TradingError hierarchy
+- **Configuration**: Check `EnvConfig` and `SystemConfig` patterns
+- **Test pattern**: Check existing tests in `tests/` for similar patterns
+
+Use slash commands to guide your workflow:
+- `/before-feature` - Before implementing new features
+- `/review-architecture` - Before making architectural changes
+- `/fix-issue` - Systematic debugging workflow
+- `/add-pattern` - When adding new utilities
+- `/refactor` - Safe refactoring workflow
+- `/code-review` - Review against conventions
+
+## Architecture Decision Records
+
+Before making decisions that create new patterns or affect multiple modules, check `docs/decisions/` for existing ADRs. Create a new ADR when:
+- Introducing cross-module patterns
+- Choosing between significant alternatives
+- Establishing conventions that must be followed
+
+## Module-Specific Context
+
+Each major module has its own `CLAUDE.md` with module-specific patterns:
+- `core/CLAUDE.md` - Trading system core (EnvConfig, TradingError, environments)
+- `models/CLAUDE.md` - AI models (Transformer, PPO)
+- `utils/CLAUDE.md` - Centralized utilities
+
+Read the relevant module CLAUDE.md before making changes to that module.
+
+## Living Documentation
+
+After completing work that:
+- Introduces new patterns
+- Creates reusable utilities
+- Changes conventions
+- Makes architectural decisions
+
+Update the relevant documentation:
+1. Module-level `CLAUDE.md` if patterns change
+2. Create ADR in `docs/decisions/` for significant patterns
+3. Update this file's Centralized Utilities table if adding utilities
+
 ## Important Notes
 
 - **NumPy Version**: Must be <2.0 for PyTorch ABI compatibility
