@@ -98,6 +98,28 @@ def execute_autotrade(
     else:
         logger.info("DataPipeline connected to MT5 for market data")
 
+    # Save initial data snapshot if requested
+    if getattr(args, 'save_data', False):
+        from utils.data_saver import save_pipeline_data, generate_run_id
+        # Load initial data snapshot for the primary symbol
+        initial_data = system.load_data(
+            symbol=autotrade_symbols[0],
+            timeframe=autotrade_timeframe,
+            n_bars=1000  # Recent data snapshot
+        )
+        if initial_data is not None:
+            run_id = generate_run_id("autotrade", autotrade_symbols[0], autotrade_timeframe)
+            data_source = "MT5" if getattr(system.data_pipeline, 'broker_gateway', None) else "synthetic"
+            save_pipeline_data(
+                run_id=run_id,
+                market_data=initial_data,
+                base_dir=config.get_path('data'),
+                command="autotrade",
+                n_bars=1000,
+                data_source=data_source
+            )
+            logger.info(f"Initial data snapshot saved to {config.get_path('data')}/{run_id}/")
+
     # Create auto-trader config with model environment dimensions
     trader_config = AutoTraderConfig(
         symbols=autotrade_symbols,

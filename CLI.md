@@ -481,6 +481,76 @@ These options are available for all commands:
 
 ---
 
+## Data Persistence
+
+The `--save-data` flag saves pipeline data (raw OHLCV and computed features) to CSV files for debugging, reproducibility, and offline analysis.
+
+### Usage
+
+The `--save-data` flag is available for all commands:
+
+```bash
+# Save data during training
+python main.py train --symbol EURUSD --save-data
+
+# Save data during backtest
+python main.py backtest --symbol EURUSD --save-data
+
+# Save data during walk-forward
+python main.py walkforward --symbol EURUSD --save-data
+```
+
+### Directory Structure
+
+Data is saved in `data/{run_id}/`:
+
+```
+data/
+  train-EURUSD-1h-20241217_143052/
+    raw.csv         # Raw OHLCV data (timestamp, open, high, low, close, volume)
+    features.csv    # Computed features (~100 technical indicators)
+    metadata.json   # Data lineage and reproducibility info
+```
+
+### Output Files
+
+| File | Description |
+|------|-------------|
+| `raw.csv` | Raw OHLCV data with timestamp, open, high, low, close, volume columns |
+| `features.csv` | All computed features (~100 indicators) with timestamp column |
+| `metadata.json` | Run metadata: symbol, timeframe, feature names, date range, data source |
+
+### Metadata Example
+
+```json
+{
+  "run_id": "train-EURUSD-1h-20241217_143052",
+  "command": "train",
+  "symbol": "EURUSD",
+  "timeframe": "1h",
+  "n_bars": 50000,
+  "actual_bars": 49880,
+  "feature_count": 108,
+  "feature_names": ["returns", "log_returns", "rsi_14", ...],
+  "data_source": "MT5",
+  "date_range": {
+    "start": "2022-01-01T00:00:00",
+    "end": "2024-12-17T12:00:00"
+  }
+}
+```
+
+### Use Cases
+
+- **Debugging**: Examine exact data used for a specific training run
+- **Reproducibility**: Reuse same data for comparison experiments
+- **Analysis**: Offline feature distribution analysis
+- **Archiving**: Data retention for audit purposes
+
+> See [ADR-0009](docs/decisions/0009-data-persistence.md) for design rationale.
+
+---
+
 ## Modular Configuration Files
 
 Leap uses a modular configuration system with standalone config files for different purposes. This allows you to customize only what you need without maintaining a large monolithic config file.

@@ -53,6 +53,21 @@ def execute_backtest(
     if market_data is None:
         sys.exit(1)
 
+    # Save data if requested
+    if getattr(args, 'save_data', False):
+        from utils.data_saver import save_pipeline_data, generate_run_id
+        run_id = generate_run_id("backtest", primary_symbol, timeframe)
+        data_source = "MT5" if getattr(system.data_pipeline, 'broker_gateway', None) else "synthetic"
+        save_pipeline_data(
+            run_id=run_id,
+            market_data=market_data,
+            base_dir=config.get_path('data'),
+            command="backtest",
+            n_bars=n_bars,
+            data_source=data_source
+        )
+        logger.info(f"Pipeline data saved to {config.get_path('data')}/{run_id}/")
+
     # Load models if available
     if os.path.exists(args.model_dir):
         system.load_models(args.model_dir)

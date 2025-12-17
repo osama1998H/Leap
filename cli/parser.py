@@ -165,6 +165,12 @@ Examples:
         help='Run Monte Carlo simulation for risk analysis'
     )
 
+    parser.add_argument(
+        '--save-data',
+        action='store_true',
+        help='Save raw OHLCV and computed features to CSV files in data/{run_id}/'
+    )
+
     # Modular config arguments
     parser.add_argument(
         '--training-config',
