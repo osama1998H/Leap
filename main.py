@@ -758,7 +758,6 @@ class LeapTradingSystem:
     def backtest(
         self,
         market_data,
-        _strategy_type: str = 'combined',  # Reserved for future multi-strategy support
         realistic_mode: bool = False,
         enable_monte_carlo: bool = False
     ):
@@ -766,7 +765,6 @@ class LeapTradingSystem:
 
         Args:
             market_data: Market data to backtest on
-            _strategy_type: Strategy type (reserved for future use)
             realistic_mode: If True, applies realistic trading constraints:
                 - Minimum 4 hours between trades
                 - Maximum 5 trades per day

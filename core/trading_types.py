@@ -45,6 +45,10 @@ class InsufficientFundsError(TradingError):
     """
     Raised when account balance is insufficient for a trade.
 
+    Note: This exception is part of the public API for custom implementations
+    and extensions. It is not raised by the core library but is available for
+    use in user code that integrates with the Leap trading system.
+
     Example:
         if balance < required_margin:
             raise InsufficientFundsError(
@@ -57,6 +61,10 @@ class InsufficientFundsError(TradingError):
 class OrderRejectedError(TradingError):
     """
     Raised when a trade order is rejected by broker or risk manager.
+
+    Note: This exception is part of the public API for custom implementations
+    and extensions. It is not raised by the core library but is available for
+    use in user code that integrates with the Leap trading system.
 
     Example:
         if not risk_manager.approve_order(order):
@@ -91,6 +99,10 @@ class DataPipelineError(TradingError):
     """
     Raised for data fetching or processing errors.
 
+    Note: This exception is part of the public API for custom implementations
+    and extensions. It is not raised by the core library but is available for
+    use in user code that integrates with the Leap trading system.
+
     Example:
         if data is None or len(data) == 0:
             raise DataPipelineError(f"No data available for {symbol}")
@@ -101,6 +113,10 @@ class DataPipelineError(TradingError):
 class RiskLimitExceededError(TradingError):
     """
     Raised when a trade would exceed risk limits.
+
+    Note: This exception is part of the public API for custom implementations
+    and extensions. It is not raised by the core library but is available for
+    use in user code that integrates with the Leap trading system.
 
     Example:
         if drawdown > max_drawdown:
@@ -279,6 +295,27 @@ class TradingState:
     total_pnl: float = 0.0
     max_drawdown: float = 0.0
     peak_equity: float = 0.0
+
+    def update_with_trade_result(self, pnl: float) -> None:
+        """
+        Update trading statistics after a trade closes.
+
+        This method centralizes the trade statistics update logic to avoid
+        duplication across trading environments.
+
+        Args:
+            pnl: The profit/loss from the closed trade (positive = profit, negative = loss)
+        """
+        self.total_trades += 1
+        self.total_pnl += pnl
+
+        if pnl > 0:
+            self.winning_trades += 1
+            self.gross_profit += pnl
+        elif pnl < 0:
+            self.losing_trades += 1
+            self.gross_loss += abs(pnl)
+        # pnl == 0 is a breakeven trade, only increment total_trades
 
 
 @dataclass

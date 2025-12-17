@@ -411,6 +411,15 @@ class AdaptiveTrainer:
     """
     High-level trainer with automatic adaptation capabilities.
     Combines prediction model and RL agent training with online adaptation.
+
+    Note: This class is experimental and intended for programmatic use.
+    It is not currently integrated into the CLI but is available for custom
+    implementations that require combined offline/online training workflows.
+
+    Example:
+        trainer = AdaptiveTrainer(predictor, agent, env, config)
+        trainer.train_offline(X_train, y_train, X_val, y_val)
+        trainer.start_online_training(data_stream, callback)
     """
 
     def __init__(

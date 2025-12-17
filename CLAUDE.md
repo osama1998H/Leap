@@ -60,6 +60,7 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | PnL calculations | `utils/pnl_calculator.py` | Use `calculate_pnl()` / `calculate_unrealized_pnl()` for consistent PnL |
 | Position sizing | `utils/position_sizing.py` | Use `calculate_risk_based_size()` / `calculate_percentage_size()` for fallback sizing |
 | Trade types | `core/trading_types.py` | Use `Trade`, `TradeStatistics` dataclasses |
+| Trade stats update | `core/trading_types.py` | Use `TradingState.update_with_trade_result()` for trade statistics |
 | Trading exceptions | `core/trading_types.py` | Use `TradingError` hierarchy for trading-related errors |
 | Environment config | `core/trading_types.py` | Use `EnvConfig` or `EnvConfig.from_params()` factory |
 | Metrics | `evaluation/metrics.py` | Use `MetricsCalculator` for Sharpe, Sortino, etc. |
