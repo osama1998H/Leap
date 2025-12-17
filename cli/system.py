@@ -833,16 +833,25 @@ class LeapTradingSystem:
                 drawdown = (peak - equity_arr) / (peak + 1e-8)
                 max_dd = float(np.max(drawdown))
 
+            # Helper to normalize unbounded ratios using log-scaling with sign preservation
+            # This prevents float32 overflow during profitable backtests
+            def _normalize_ratio(ratio: float) -> float:
+                if ratio >= 0:
+                    return np.log1p(ratio)
+                else:
+                    return -np.log1p(-ratio)
+
             # Account observation (8 features, same as BaseTradingEnvironment._get_account_observation)
+            # Uses log-scaled normalization for unbounded values to prevent float32 overflow
             account_obs = np.array([
-                bt.balance / bt.initial_balance,           # Balance ratio
-                bt.equity / bt.initial_balance,            # Equity ratio
-                len(bt.positions),                         # Number of positions
+                _normalize_ratio(bt.balance / bt.initial_balance - 1.0),  # Normalized balance change
+                _normalize_ratio(bt.equity / bt.initial_balance - 1.0),   # Normalized equity change
+                len(bt.positions),                                         # Number of positions (bounded)
                 1.0 if any(p.direction == 'long' for p in bt.positions) else 0.0,   # Has long
                 1.0 if any(p.direction == 'short' for p in bt.positions) else 0.0,  # Has short
-                (bt.equity - bt.balance) / bt.initial_balance,  # Unrealized PnL ratio
-                max_dd,  # Max drawdown calculated from equity curve
-                (bt.equity - bt.initial_balance) / bt.initial_balance  # Total PnL ratio
+                _normalize_ratio((bt.equity - bt.balance) / bt.initial_balance),    # Normalized unrealized PnL
+                max_dd,  # Max drawdown (already bounded 0-1)
+                _normalize_ratio((bt.equity - bt.initial_balance) / bt.initial_balance)  # Normalized total PnL
             ])
 
             return np.concatenate([market_obs, account_obs]).astype(np.float32)
