@@ -21,9 +21,13 @@ Leap is an AI-powered forex trading system combining Transformer-based price pre
 ## Common Commands
 
 ```bash
-# Training
+# Training (both models)
 python main.py train --symbol EURUSD --epochs 100 --timesteps 100000
 python main.py train --symbols EURUSD GBPUSD --multi-timeframe  # Multi-symbol + multi-timeframe
+
+# Training (separate models)
+python main.py train-transformer --symbol EURUSD --epochs 100  # Transformer only
+python main.py train-ppo --symbol EURUSD --timesteps 100000    # PPO only (loads existing predictor)
 
 # Backtesting
 python main.py backtest --symbol EURUSD --realistic --monte-carlo

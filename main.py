@@ -435,6 +435,330 @@ class LeapTradingSystem:
             if run_context is not None:
                 run_context.__exit__(None, None, None)
 
+    def train_transformer(
+        self,
+        market_data,
+        predictor_epochs: Optional[int] = None,
+        symbol: str = 'EURUSD',
+        timeframe: str = '1h',
+        additional_timeframes: Optional[list] = None
+    ):
+        """Train only the Transformer predictor model.
+
+        Args:
+            market_data: Market data for training
+            predictor_epochs: Number of epochs for predictor training
+            symbol: Trading symbol (for MLflow tracking)
+            timeframe: Timeframe (for MLflow tracking)
+            additional_timeframes: List of additional timeframes used for features
+
+        Returns:
+            Dictionary with training results
+        """
+        # Store feature names used during training for inference compatibility
+        if market_data.feature_names:
+            self._model_feature_names = list(market_data.feature_names)
+            logger.info(f"Training with {len(self._model_feature_names)} computed features")
+
+        # Prepare data
+        splits, input_dim = self.prepare_training_data(market_data)
+
+        # Initialize predictor only
+        logger.info(f"Initializing Transformer predictor (input_dim={input_dim})...")
+        self._predictor = TransformerPredictor(
+            input_dim=input_dim,
+            config={
+                'd_model': self.config.transformer.d_model,
+                'n_heads': self.config.transformer.n_heads,
+                'n_encoder_layers': self.config.transformer.n_encoder_layers,
+                'd_ff': self.config.transformer.d_ff,
+                'dropout': self.config.transformer.dropout,
+                'max_seq_length': self.config.data.lookback_window,
+                'learning_rate': self.config.transformer.learning_rate,
+                'weight_decay': self.config.transformer.weight_decay,
+                'online_learning_rate': self.config.transformer.online_learning_rate
+            },
+            device=self.config.device
+        )
+
+        # Create trainer (agent will be None)
+        trainer = ModelTrainer(
+            predictor=self._predictor,
+            agent=None,
+            data_pipeline=self.data_pipeline,
+            config={
+                'predictor_epochs': predictor_epochs or self.config.transformer.epochs,
+                'batch_size': self.config.transformer.batch_size,
+                'patience': self.config.transformer.patience,
+                'checkpoint_dir': os.path.join(self.config.base_dir, self.config.checkpoints_dir)
+            },
+            mlflow_tracker=self.mlflow_tracker
+        )
+
+        # Start MLflow run if enabled
+        tracker = self.mlflow_tracker
+        run_context = None
+
+        if tracker and tracker.is_enabled:
+            run_name = f"train-transformer-{symbol}-{timeframe}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_context = tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "command": "train-transformer",
+                    "model_type": "transformer"
+                }
+            )
+            run_context.__enter__()
+
+            # Log configuration parameters
+            params = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "n_bars": len(market_data.close),
+                "input_dim": input_dim,
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
+            tracker.log_predictor_params(
+                self.config.transformer,
+                max_seq_length_override=self.config.data.lookback_window
+            )
+
+        try:
+            # Train predictor
+            logger.info("Training Transformer prediction model...")
+            predictor_results = trainer.train_predictor(
+                X_train=splits['train'][0],
+                y_train=splits['train'][1],
+                X_val=splits['val'][0],
+                y_val=splits['val'][1]
+            )
+
+            # Save predictor model
+            save_dir = os.path.join(self.config.base_dir, self.config.models_dir)
+            os.makedirs(save_dir, exist_ok=True)
+            self._predictor.save(os.path.join(save_dir, 'predictor.pt'))
+
+            # Save metadata for this model
+            self._save_predictor_metadata(save_dir, input_dim)
+
+            # Log artifacts to MLflow
+            if tracker and tracker.is_enabled:
+                predictor_path = os.path.join(save_dir, 'predictor.pt')
+                if os.path.exists(predictor_path):
+                    tracker.log_artifact(predictor_path)
+
+            return {'predictor': predictor_results}
+
+        except Exception:
+            if run_context is not None:
+                run_context.__exit__(*sys.exc_info())
+                run_context = None
+            raise
+
+        finally:
+            if run_context is not None:
+                run_context.__exit__(None, None, None)
+
+    def train_ppo(
+        self,
+        market_data,
+        agent_timesteps: Optional[int] = None,
+        symbol: str = 'EURUSD',
+        timeframe: str = '1h',
+        additional_timeframes: Optional[list] = None
+    ):
+        """Train only the PPO reinforcement learning agent.
+
+        Requires a trained Transformer predictor to be loaded first via load_models().
+
+        Args:
+            market_data: Market data for training
+            agent_timesteps: Number of timesteps for agent training
+            symbol: Trading symbol (for MLflow tracking)
+            timeframe: Timeframe (for MLflow tracking)
+            additional_timeframes: List of additional timeframes used for features
+
+        Returns:
+            Dictionary with training results
+        """
+        # Store feature names for consistency
+        if market_data.feature_names:
+            self._model_feature_names = list(market_data.feature_names)
+            logger.info(f"Training with {len(self._model_feature_names)} computed features")
+
+        # Create environment
+        env = self.create_environment(market_data)
+        state_dim = env.observation_space.shape[0]
+
+        # Initialize agent
+        logger.info(f"Initializing PPO agent (state_dim={state_dim})...")
+        self._agent = PPOAgent(
+            state_dim=state_dim,
+            action_dim=4,  # HOLD, BUY, SELL, CLOSE
+            config={
+                'learning_rate': self.config.ppo.learning_rate,
+                'gamma': self.config.ppo.gamma,
+                'gae_lambda': self.config.ppo.gae_lambda,
+                'clip_epsilon': self.config.ppo.clip_epsilon,
+                'entropy_coef': self.config.ppo.entropy_coef,
+                'value_coef': self.config.ppo.value_coef,
+                'max_grad_norm': self.config.ppo.max_grad_norm,
+                'n_steps': self.config.ppo.n_steps,
+                'n_epochs': self.config.ppo.n_epochs,
+                'batch_size': self.config.ppo.batch_size,
+                'hidden_sizes': self.config.ppo.actor_hidden_sizes
+            },
+            device=self.config.device
+        )
+
+        # Create trainer (predictor may be None if only training agent)
+        trainer = ModelTrainer(
+            predictor=self._predictor,  # May be loaded from previous training
+            agent=self._agent,
+            data_pipeline=self.data_pipeline,
+            config={
+                'agent_timesteps': agent_timesteps or self.config.ppo.total_timesteps,
+                'ppo_patience': self.config.ppo.patience,
+                'checkpoint_dir': os.path.join(self.config.base_dir, self.config.checkpoints_dir)
+            },
+            mlflow_tracker=self.mlflow_tracker
+        )
+
+        # Start MLflow run if enabled
+        tracker = self.mlflow_tracker
+        run_context = None
+
+        if tracker and tracker.is_enabled:
+            run_name = f"train-ppo-{symbol}-{timeframe}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_context = tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "command": "train-ppo",
+                    "model_type": "ppo"
+                }
+            )
+            run_context.__enter__()
+
+            # Log configuration parameters
+            params = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "n_bars": len(market_data.close),
+                "state_dim": state_dim,
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
+            tracker.log_agent_params(self.config.ppo)
+
+        try:
+            # Train agent
+            logger.info("Training PPO RL agent...")
+            agent_results = trainer.train_agent(
+                env=env,
+                total_timesteps=agent_timesteps or self.config.ppo.total_timesteps
+            )
+
+            # Save agent model
+            save_dir = os.path.join(self.config.base_dir, self.config.models_dir)
+            os.makedirs(save_dir, exist_ok=True)
+            self._agent.save(os.path.join(save_dir, 'agent.pt'))
+
+            # Save metadata for this model
+            self._save_agent_metadata(save_dir, state_dim)
+
+            # Log artifacts to MLflow
+            if tracker and tracker.is_enabled:
+                agent_path = os.path.join(save_dir, 'agent.pt')
+                if os.path.exists(agent_path):
+                    tracker.log_artifact(agent_path)
+
+            return {'agent': agent_results}
+
+        except Exception:
+            if run_context is not None:
+                run_context.__exit__(*sys.exc_info())
+                run_context = None
+            raise
+
+        finally:
+            if run_context is not None:
+                run_context.__exit__(None, None, None)
+
+    def _save_predictor_metadata(self, save_dir: str, input_dim: int):
+        """Save predictor metadata for model reloading."""
+        metadata_path = os.path.join(save_dir, 'model_metadata.json')
+
+        # Load existing metadata if present
+        metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+
+        # Update predictor metadata
+        metadata['predictor'] = {
+            'input_dim': input_dim,
+            'config': {
+                'd_model': self.config.transformer.d_model,
+                'n_heads': self.config.transformer.n_heads,
+                'n_encoder_layers': self.config.transformer.n_encoder_layers,
+                'd_ff': self.config.transformer.d_ff,
+                'dropout': self.config.transformer.dropout,
+                'max_seq_length': self.config.data.lookback_window,
+                'learning_rate': self.config.transformer.learning_rate
+            }
+        }
+
+        if self._model_feature_names:
+            metadata['feature_names'] = self._model_feature_names
+
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        logger.info(f"Predictor metadata saved to {metadata_path}")
+
+    def _save_agent_metadata(self, save_dir: str, state_dim: int):
+        """Save agent metadata for model reloading."""
+        metadata_path = os.path.join(save_dir, 'model_metadata.json')
+
+        # Load existing metadata if present
+        metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+
+        # Update agent metadata
+        metadata['agent'] = {
+            'state_dim': state_dim,
+            'action_dim': 4,
+            'config': {
+                'learning_rate': self.config.ppo.learning_rate,
+                'gamma': self.config.ppo.gamma,
+                'gae_lambda': self.config.ppo.gae_lambda,
+                'clip_epsilon': self.config.ppo.clip_epsilon,
+                'entropy_coef': self.config.ppo.entropy_coef,
+                'n_steps': self.config.ppo.n_steps,
+                'n_epochs': self.config.ppo.n_epochs,
+                'batch_size': self.config.ppo.batch_size,
+                'hidden_sizes': self.config.ppo.actor_hidden_sizes
+            }
+        }
+
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        logger.info(f"Agent metadata saved to {metadata_path}")
+
     def backtest(
         self,
         market_data,
@@ -934,6 +1258,8 @@ def main():
         epilog="""
 Examples:
   python main.py train --symbol EURUSD --epochs 100
+  python main.py train-transformer --symbol EURUSD --epochs 100
+  python main.py train-ppo --symbol EURUSD --timesteps 100000
   python main.py backtest --symbol EURUSD
   python main.py autotrade --paper
   python main.py evaluate --model-dir ./models
@@ -942,7 +1268,7 @@ Examples:
 
     parser.add_argument(
         'command',
-        choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'],
+        choices=['train', 'train-transformer', 'train-ppo', 'backtest', 'evaluate', 'walkforward', 'autotrade'],
         help='Command to execute'
     )
 
@@ -1171,6 +1497,126 @@ Examples:
                 'predictor_final_loss': results['predictor']['train_losses'][-1] if results['predictor']['train_losses'] else None,
                 'agent_episodes': len(results['agent']['episode_rewards'])
             }
+        print(json.dumps(summary, indent=2))
+
+    elif args.command == 'train-transformer':
+        logger.info("Starting Transformer training...")
+
+        # Multi-symbol training
+        if len(symbols) > 1:
+            logger.info(f"Multi-symbol Transformer training enabled for: {symbols}")
+
+        all_results = {}
+        for symbol in symbols:
+            logger.info(f"{'='*50}")
+            logger.info(f"Training Transformer on {symbol} ({timeframe})")
+            logger.info(f"{'='*50}")
+
+            # Load data with optional multi-timeframe features
+            market_data = system.load_data(
+                symbol=symbol,
+                timeframe=timeframe,
+                n_bars=n_bars,
+                additional_timeframes=additional_timeframes
+            )
+
+            if market_data is None:
+                logger.error(f"Failed to load data for {symbol}. Skipping...")
+                continue
+
+            # Train Transformer only
+            results = system.train_transformer(
+                market_data=market_data,
+                predictor_epochs=epochs,
+                symbol=symbol,
+                timeframe=timeframe,
+                additional_timeframes=additional_timeframes
+            )
+
+            all_results[symbol] = results
+
+            # Save models per symbol if multi-symbol
+            if len(symbols) > 1:
+                symbol_model_dir = os.path.join(args.model_dir, symbol)
+                os.makedirs(symbol_model_dir, exist_ok=True)
+                system._predictor.save(os.path.join(symbol_model_dir, 'predictor.pt'))
+                system._save_predictor_metadata(symbol_model_dir, system._predictor.input_dim)
+                logger.info(f"Transformer for {symbol} saved to {symbol_model_dir}")
+
+        logger.info("Transformer training complete!")
+
+        # Print summary
+        summary = {}
+        for symbol, results in all_results.items():
+            if results.get('predictor'):
+                summary[symbol] = {
+                    'predictor_final_loss': results['predictor']['train_losses'][-1] if results['predictor'].get('train_losses') else None,
+                    'best_val_loss': results['predictor'].get('best_val_loss')
+                }
+        print(json.dumps(summary, indent=2))
+
+    elif args.command == 'train-ppo':
+        logger.info("Starting PPO training...")
+
+        # Load existing predictor if available (optional for PPO training)
+        if os.path.exists(args.model_dir):
+            system.load_models(args.model_dir)
+            if system._predictor is not None:
+                logger.info(f"Loaded existing Transformer predictor from {args.model_dir}")
+
+        # Multi-symbol training
+        if len(symbols) > 1:
+            logger.info(f"Multi-symbol PPO training enabled for: {symbols}")
+
+        all_results = {}
+        for symbol in symbols:
+            logger.info(f"{'='*50}")
+            logger.info(f"Training PPO on {symbol} ({timeframe})")
+            logger.info(f"{'='*50}")
+
+            # Load data with optional multi-timeframe features
+            market_data = system.load_data(
+                symbol=symbol,
+                timeframe=timeframe,
+                n_bars=n_bars,
+                additional_timeframes=additional_timeframes
+            )
+
+            if market_data is None:
+                logger.error(f"Failed to load data for {symbol}. Skipping...")
+                continue
+
+            # Train PPO only
+            results = system.train_ppo(
+                market_data=market_data,
+                agent_timesteps=timesteps,
+                symbol=symbol,
+                timeframe=timeframe,
+                additional_timeframes=additional_timeframes
+            )
+
+            all_results[symbol] = results
+
+            # Save models per symbol if multi-symbol
+            if len(symbols) > 1:
+                symbol_model_dir = os.path.join(args.model_dir, symbol)
+                os.makedirs(symbol_model_dir, exist_ok=True)
+                system._agent.save(os.path.join(symbol_model_dir, 'agent.pt'))
+                # Get state_dim from the environment
+                env = system.create_environment(market_data)
+                system._save_agent_metadata(symbol_model_dir, env.observation_space.shape[0])
+                logger.info(f"PPO agent for {symbol} saved to {symbol_model_dir}")
+
+        logger.info("PPO training complete!")
+
+        # Print summary
+        summary = {}
+        for symbol, results in all_results.items():
+            if results.get('agent'):
+                summary[symbol] = {
+                    'agent_episodes': len(results['agent'].get('episode_rewards', [])),
+                    'final_reward': float(np.mean(results['agent']['episode_rewards'][-10:])) if results['agent'].get('episode_rewards') else None
+                }
         print(json.dumps(summary, indent=2))
 
     elif args.command == 'backtest':

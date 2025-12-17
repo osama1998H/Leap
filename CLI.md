@@ -14,7 +14,9 @@ python main.py [COMMAND] [OPTIONS]
 
 | Command | Description |
 |---------|-------------|
-| `train` | Train Transformer predictor and PPO reinforcement learning agent |
+| `train` | Train both Transformer predictor and PPO reinforcement learning agent |
+| `train-transformer` | Train only the Transformer predictor model |
+| `train-ppo` | Train only the PPO reinforcement learning agent |
 | `backtest` | Run backtest on historical market data |
 | `walkforward` | Run walk-forward optimization with rolling train/test splits |
 | `evaluate` | Evaluate trained models on test data |
@@ -91,6 +93,116 @@ python main.py train --multi-timeframe --config config/my_config.json
 
 # Full multi-symbol + multi-timeframe training
 python main.py train --symbols EURUSD GBPUSD --multi-timeframe
+```
+
+---
+
+### train-transformer
+
+Train only the Transformer price predictor model, without training the PPO agent.
+
+**Syntax:**
+```bash
+python main.py train-transformer [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--symbol` | `-s` | string | from config | Trading symbol (e.g., EURUSD, GBPUSD, USDJPY) |
+| `--symbols` | | list | from config | Multiple symbols for training (e.g., `--symbols EURUSD GBPUSD`) |
+| `--timeframe` | `-t` | string | from config | Primary timeframe for data (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w) |
+| `--multi-timeframe` | | flag | `False` | Enable multi-timeframe features (uses `additional_timeframes` from config) |
+| `--bars` | `-b` | integer | `50000` | Number of historical bars to load for training |
+| `--epochs` | `-e` | integer | from config | Training epochs for the Transformer predictor |
+| `--model-dir` | `-m` | string | `./saved_models` | Directory to save trained models |
+| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
+| `--log-file` | | string | | Custom log file path |
+
+**When to Use:**
+- You have a trained PPO agent and only want to update the price predictor
+- You want to experiment with different Transformer architectures
+- You want to retrain prediction on new data without affecting the RL agent
+
+**Training Flow:**
+1. Loads market data (OHLCV + 100+ computed features)
+2. Prepares training sequences (lookback_window=120, prediction_horizon=12)
+3. Trains Transformer predictor (supervised learning on price prediction)
+4. Saves predictor model and metadata to specified directory
+
+**Examples:**
+```bash
+# Train Transformer only with default settings
+python main.py train-transformer --symbol EURUSD
+
+# Train Transformer with custom epochs
+python main.py train-transformer --symbol GBPUSD --epochs 150
+
+# Multi-symbol Transformer training
+python main.py train-transformer --symbols EURUSD GBPUSD USDJPY
+
+# Multi-timeframe Transformer training
+python main.py train-transformer --multi-timeframe --config config/my_config.json
+```
+
+---
+
+### train-ppo
+
+Train only the PPO reinforcement learning agent, without training the Transformer predictor.
+
+**Syntax:**
+```bash
+python main.py train-ppo [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--symbol` | `-s` | string | from config | Trading symbol (e.g., EURUSD, GBPUSD, USDJPY) |
+| `--symbols` | | list | from config | Multiple symbols for training (e.g., `--symbols EURUSD GBPUSD`) |
+| `--timeframe` | `-t` | string | from config | Primary timeframe for data (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w) |
+| `--multi-timeframe` | | flag | `False` | Enable multi-timeframe features (uses `additional_timeframes` from config) |
+| `--bars` | `-b` | integer | `50000` | Number of historical bars to load for training |
+| `--timesteps` | | integer | from config | Training timesteps for the PPO agent |
+| `--model-dir` | `-m` | string | `./saved_models` | Directory to save/load models (loads existing predictor if available) |
+| `--config` | `-c` | string | | Path to configuration JSON file |
+| `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
+| `--log-file` | | string | | Custom log file path |
+
+**When to Use:**
+- You have a trained Transformer predictor and only want to update the RL agent
+- You want to experiment with different PPO hyperparameters
+- You want to retrain the trading strategy without retraining prediction
+
+**Model Loading:**
+- If `--model-dir` contains an existing predictor, it will be loaded automatically
+- The PPO agent will be trained fresh with new weights
+- Existing agent weights in `--model-dir` will be overwritten
+
+**Training Flow:**
+1. Loads existing Transformer predictor from `--model-dir` (if available)
+2. Loads market data (OHLCV + 100+ computed features)
+3. Creates trading environment from market data
+4. Trains PPO agent (reinforcement learning on trading environment)
+5. Saves agent model and metadata to specified directory
+
+**Examples:**
+```bash
+# Train PPO only (loads predictor from default model dir)
+python main.py train-ppo --symbol EURUSD
+
+# Train PPO with custom timesteps
+python main.py train-ppo --symbol GBPUSD --timesteps 200000
+
+# Train PPO with specific model directory
+python main.py train-ppo --symbol EURUSD --model-dir ./my_models --timesteps 100000
+
+# Multi-symbol PPO training
+python main.py train-ppo --symbols EURUSD GBPUSD USDJPY
 ```
 
 ---
@@ -538,6 +650,22 @@ for symbol in EURUSD GBPUSD USDJPY; do
     python main.py train --symbol $symbol --model-dir ./models_$symbol
     python main.py backtest --symbol $symbol --model-dir ./models_$symbol --realistic
 done
+```
+
+### Separate Model Training
+
+```bash
+# Train Transformer predictor first
+python main.py train-transformer --symbol EURUSD --epochs 100
+
+# Later, train PPO agent (automatically loads existing predictor)
+python main.py train-ppo --symbol EURUSD --timesteps 100000
+
+# Retrain only PPO with different hyperparameters
+python main.py train-ppo --symbol EURUSD --timesteps 200000 --config config/aggressive_ppo.json
+
+# Retrain only Transformer on new data (keeps existing PPO)
+python main.py train-transformer --symbol EURUSD --bars 100000 --epochs 150
 ```
 
 ### Multi-Timeframe Training
