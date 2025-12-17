@@ -1,0 +1,50 @@
+# Build artifacts and dependencies
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+build/
+dist/
+
+# Large data and model files
+saved_models/
+checkpoints/
+data/
+*.pt
+*.pth
+*.pkl
+*.h5
+
+# Logs and databases
+logs/
+*.log
+mlflow.db*
+mlruns/
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Node.js (Web UI)
+node_modules/
+ui/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+
+# Results (large output files)
+results/
