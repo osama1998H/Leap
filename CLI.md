@@ -28,7 +28,7 @@ python main.py [COMMAND] [OPTIONS]
 
 ### train
 
-Train both the Transformer price predictor and PPO reinforcement learning agent.
+Train the Transformer price predictor and/or PPO reinforcement learning agent.
 
 **Syntax:**
 ```bash
@@ -46,6 +46,7 @@ python main.py train [OPTIONS]
 | `--bars` | `-b` | integer | `50000` | Number of historical bars to load for training |
 | `--epochs` | `-e` | integer | from config | Training epochs for the Transformer predictor |
 | `--timesteps` | | integer | from config | Training timesteps for the PPO agent |
+| `--model-type` | | choice | `both` | Model to train: `transformer`, `ppo`, or `both` |
 | `--model-dir` | `-m` | string | `./saved_models` | Directory to save trained models |
 | `--config` | `-c` | string | | Path to configuration JSON file |
 | `--log-level` | `-l` | choice | | Logging level: DEBUG, INFO, WARNING, ERROR |
@@ -71,7 +72,7 @@ When `--multi-timeframe` is enabled:
 
 **Examples:**
 ```bash
-# Train with default settings (uses config values)
+# Train with default settings (uses config values, trains both models)
 python main.py train
 
 # Train on GBPUSD with custom epochs
@@ -92,6 +93,26 @@ python main.py train --multi-timeframe --config config/my_config.json
 # Full multi-symbol + multi-timeframe training
 python main.py train --symbols EURUSD GBPUSD --multi-timeframe
 ```
+
+**Training Individual Models:**
+
+Use `--model-type` to train only the Transformer predictor or only the PPO agent:
+
+```bash
+# Train only the Transformer predictor (supervised learning on price prediction)
+python main.py train --model-type transformer --symbol EURUSD --epochs 100
+
+# Train only the PPO agent (reinforcement learning on trading environment)
+python main.py train --model-type ppo --symbol EURUSD --timesteps 100000
+
+# Train both models (default behavior)
+python main.py train --model-type both --symbol EURUSD --epochs 100 --timesteps 100000
+```
+
+**Use Cases for Individual Training:**
+- **Transformer-only**: Fine-tune prediction model without retraining trading policy
+- **PPO-only**: Retrain trading policy when market regime changes, keeping existing predictor
+- **Both**: Full training pipeline (default)
 
 ---
 

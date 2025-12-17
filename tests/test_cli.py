@@ -388,6 +388,74 @@ class TestSaveLoadModels:
         assert trading_system._predictor is None
         assert trading_system._agent is None
 
+    def test_save_predictor_only(self, trading_system, temp_dir):
+        """Test _save_predictor_only saves predictor and preserves agent metadata."""
+        # First save agent to create existing metadata
+        trading_system._agent = MockAgent(state_dim=100, action_dim=4)
+        save_dir = os.path.join(temp_dir, 'partial_save')
+        trading_system._save_agent_only(save_dir)
+
+        # Now save predictor only
+        trading_system._predictor = MockPredictor(input_dim=55)
+        trading_system._save_predictor_only(save_dir)
+
+        # Verify both are in metadata
+        with open(os.path.join(save_dir, 'model_metadata.json')) as f:
+            metadata = json.load(f)
+
+        assert metadata['predictor']['exists'] is True
+        assert metadata['predictor']['input_dim'] == 55
+        # Agent metadata should be preserved
+        assert metadata['agent']['exists'] is True
+        assert metadata['agent']['state_dim'] == 100
+
+    def test_save_agent_only(self, trading_system, temp_dir):
+        """Test _save_agent_only saves agent and preserves predictor metadata."""
+        # First save predictor to create existing metadata
+        trading_system._predictor = MockPredictor(input_dim=55)
+        save_dir = os.path.join(temp_dir, 'partial_save')
+        trading_system._save_predictor_only(save_dir)
+
+        # Now save agent only
+        trading_system._agent = MockAgent(state_dim=100, action_dim=4)
+        trading_system._save_agent_only(save_dir)
+
+        # Verify both are in metadata
+        with open(os.path.join(save_dir, 'model_metadata.json')) as f:
+            metadata = json.load(f)
+
+        assert metadata['agent']['exists'] is True
+        assert metadata['agent']['state_dim'] == 100
+        # Predictor metadata should be preserved
+        assert metadata['predictor']['exists'] is True
+        assert metadata['predictor']['input_dim'] == 55
+
+    def test_save_predictor_only_creates_files(self, trading_system, temp_dir):
+        """Test _save_predictor_only creates only predictor file."""
+        trading_system._predictor = MockPredictor(input_dim=55)
+        save_dir = os.path.join(temp_dir, 'predictor_only')
+
+        trading_system._save_predictor_only(save_dir)
+
+        assert os.path.exists(os.path.join(save_dir, 'predictor.pt'))
+        assert os.path.exists(os.path.join(save_dir, 'model_metadata.json'))
+        assert os.path.exists(os.path.join(save_dir, 'config.json'))
+        # Agent file should not exist
+        assert not os.path.exists(os.path.join(save_dir, 'agent.pt'))
+
+    def test_save_agent_only_creates_files(self, trading_system, temp_dir):
+        """Test _save_agent_only creates only agent file."""
+        trading_system._agent = MockAgent(state_dim=100, action_dim=4)
+        save_dir = os.path.join(temp_dir, 'agent_only')
+
+        trading_system._save_agent_only(save_dir)
+
+        assert os.path.exists(os.path.join(save_dir, 'agent.pt'))
+        assert os.path.exists(os.path.join(save_dir, 'model_metadata.json'))
+        assert os.path.exists(os.path.join(save_dir, 'config.json'))
+        # Predictor file should not exist
+        assert not os.path.exists(os.path.join(save_dir, 'predictor.pt'))
+
 
 # ============================================================================
 # Training Tests
@@ -435,6 +503,63 @@ class TestTraining:
 
                         assert 'predictor' in results
                         assert 'agent' in results
+
+    def test_train_predictor_only(self, trading_system):
+        """Test training only the predictor model."""
+        market_data = MockMarketData(n_bars=500)
+
+        # Set up the internal _data_pipeline directly
+        trading_system._data_pipeline = MockDataPipeline()
+
+        with patch('main.TransformerPredictor', MockPredictor):
+            with patch('main.PPOAgent', MockAgent):
+                with patch('main.ModelTrainer') as mock_trainer_cls:
+                    mock_trainer = Mock()
+                    mock_trainer.train_predictor.return_value = {
+                        'train_losses': [0.5],
+                        'val_losses': [0.6]
+                    }
+                    mock_trainer_cls.return_value = mock_trainer
+
+                    results = trading_system.train_predictor_only(
+                        market_data=market_data,
+                        predictor_epochs=1
+                    )
+
+                    # Verify only predictor training was called
+                    mock_trainer.train_predictor.assert_called_once()
+                    mock_trainer.train_agent.assert_not_called()
+
+                    assert results['predictor'] is not None
+                    assert results['agent'] is None
+
+    def test_train_agent_only(self, trading_system):
+        """Test training only the PPO agent model."""
+        market_data = MockMarketData(n_bars=500)
+
+        # Set up the internal _data_pipeline directly
+        trading_system._data_pipeline = MockDataPipeline()
+
+        with patch('main.TransformerPredictor', MockPredictor):
+            with patch('main.PPOAgent', MockAgent):
+                with patch('main.ModelTrainer') as mock_trainer_cls:
+                    mock_trainer = Mock()
+                    mock_trainer.train_agent.return_value = {
+                        'episode_rewards': [100]
+                    }
+                    mock_trainer_cls.return_value = mock_trainer
+
+                    results = trading_system.train_agent_only(
+                        market_data=market_data,
+                        agent_timesteps=100
+                    )
+
+                    # Verify only agent training was called
+                    mock_trainer.train_agent.assert_called_once()
+                    mock_trainer.train_predictor.assert_not_called()
+
+                    assert results['predictor'] is None
+                    assert results['agent'] is not None
 
 
 # ============================================================================
@@ -497,6 +622,29 @@ class TestCLIArgumentParsing:
             assert args.command == 'train'
             assert args.symbol == 'GBPUSD'
             assert args.epochs == 50
+
+    def test_train_model_type_args(self):
+        """Test train command with --model-type argument."""
+        # Test transformer only
+        test_args = ['train', '--model-type', 'transformer', '--epochs', '50']
+        parser = argparse.ArgumentParser()
+        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
+        parser.add_argument('--model-type', choices=['transformer', 'ppo', 'both'], default='both')
+        parser.add_argument('--epochs', '-e', type=int, default=100)
+
+        args = parser.parse_args(test_args)
+        assert args.model_type == 'transformer'
+
+        # Test ppo only
+        test_args = ['train', '--model-type', 'ppo', '--timesteps', '10000']
+        parser.add_argument('--timesteps', type=int, default=100000)
+        args = parser.parse_args(test_args)
+        assert args.model_type == 'ppo'
+
+        # Test both (default)
+        test_args = ['train']
+        args = parser.parse_args(test_args)
+        assert args.model_type == 'both'
 
     def test_backtest_command_args(self):
         """Test backtest command argument parsing."""
