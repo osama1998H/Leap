@@ -279,6 +279,14 @@ trainer.start_online_training(data_stream, callback)
 #### Backtester (`evaluation/backtester.py`)
 Realistic backtesting with transaction costs.
 
+**Strategy Alignment** (see ADR-0006):
+The backtester uses the same combined strategy as `AutoTrader`:
+1. Transformer predicts returns + confidence
+2. PPO Agent selects action from observation
+3. Signal combination validates agent decisions
+
+This ensures backtest results predict live trading performance.
+
 **Transaction Cost Model**:
 - Spread cost (bid-ask)
 - Commission (per-lot or per-trade)

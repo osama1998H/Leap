@@ -120,6 +120,22 @@ python main.py train --model-type both --symbol EURUSD --epochs 100 --timesteps 
 
 Run backtesting on historical market data with optional realistic trading constraints.
 
+**Strategy Behavior:**
+
+The backtest uses the same strategy as live trading (`autotrade`):
+1. **Transformer** predicts expected returns and confidence
+2. **PPO Agent** selects action based on market + account state
+3. **Signal combination** validates agent decisions against predictions:
+   - Agent CLOSE → always CLOSE
+   - Agent BUY + prediction agrees → BUY
+   - Agent BUY + prediction contradicts → HOLD (cautious)
+   - Agent BUY + weak prediction → BUY (trust agent)
+   - Same pattern for SELL
+
+This ensures backtest results accurately predict live trading performance.
+
+> **Note:** If only the Transformer is loaded (no PPO agent), the backtest runs with Transformer predictions only.
+
 **Syntax:**
 ```bash
 python main.py backtest [OPTIONS]
@@ -155,7 +171,7 @@ When `--realistic` is enabled, the following constraints are applied:
 
 **Examples:**
 ```bash
-# Basic backtest
+# Basic backtest (uses both Transformer + PPO agent if available)
 python main.py backtest --symbol EURUSD
 
 # Backtest with realistic constraints and Monte Carlo analysis
