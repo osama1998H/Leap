@@ -435,6 +435,316 @@ class LeapTradingSystem:
             if run_context is not None:
                 run_context.__exit__(None, None, None)
 
+    def train_predictor_only(
+        self,
+        market_data,
+        predictor_epochs: Optional[int] = None,
+        symbol: str = 'EURUSD',
+        timeframe: str = '1h',
+        additional_timeframes: Optional[list] = None
+    ):
+        """Train only the Transformer predictor model.
+
+        Args:
+            market_data: Market data for training
+            predictor_epochs: Number of epochs for predictor training
+            symbol: Trading symbol (for MLflow tracking)
+            timeframe: Timeframe (for MLflow tracking)
+            additional_timeframes: List of additional timeframes used for features
+        """
+        # Store feature names used during training for inference compatibility
+        if market_data.feature_names:
+            self._model_feature_names = list(market_data.feature_names)
+            logger.info(f"Training predictor with {len(self._model_feature_names)} computed features")
+
+        # Prepare data
+        splits, input_dim = self.prepare_training_data(market_data)
+
+        # Create environment to get state_dim (needed for metadata compatibility)
+        env = self.create_environment(market_data)
+        state_dim = env.observation_space.shape[0]
+
+        # Initialize models (predictor will be trained, agent initialized for metadata)
+        self.initialize_models(input_dim, state_dim)
+
+        # Create trainer with MLflow tracker
+        trainer = ModelTrainer(
+            predictor=self._predictor,
+            agent=self._agent,
+            data_pipeline=self.data_pipeline,
+            config={
+                'predictor_epochs': predictor_epochs or self.config.transformer.epochs,
+                'agent_timesteps': self.config.ppo.total_timesteps,
+                'batch_size': self.config.transformer.batch_size,
+                'patience': self.config.transformer.patience,
+                'ppo_patience': self.config.ppo.patience,
+                'checkpoint_dir': os.path.join(self.config.base_dir, self.config.checkpoints_dir)
+            },
+            mlflow_tracker=self.mlflow_tracker
+        )
+
+        # Start MLflow run if enabled
+        tracker = self.mlflow_tracker
+        run_context = None
+
+        if tracker and tracker.is_enabled:
+            run_name = f"train-predictor-{symbol}-{timeframe}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_context = tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "command": "train",
+                    "model_type": "transformer"
+                }
+            )
+            run_context.__enter__()
+
+            # Log configuration parameters
+            params = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "n_bars": len(market_data.close),
+                "input_dim": input_dim,
+                "model_type": "transformer",
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
+            tracker.log_predictor_params(
+                self.config.transformer,
+                max_seq_length_override=self.config.data.lookback_window
+            )
+
+        try:
+            # Train predictor only
+            logger.info("Training prediction model...")
+            predictor_results = trainer.train_predictor(
+                X_train=splits['train'][0],
+                y_train=splits['train'][1],
+                X_val=splits['val'][0],
+                y_val=splits['val'][1]
+            )
+
+            # Save predictor only (preserve existing agent metadata if present)
+            save_dir = os.path.join(self.config.base_dir, self.config.models_dir)
+            self._save_predictor_only(save_dir)
+
+            # Log artifacts to MLflow
+            if tracker and tracker.is_enabled:
+                config_path = os.path.join(save_dir, 'config.json')
+                if os.path.exists(config_path):
+                    tracker.log_artifact(config_path)
+
+            return {
+                'predictor': predictor_results,
+                'agent': None
+            }
+
+        except Exception:
+            if run_context is not None:
+                run_context.__exit__(*sys.exc_info())
+                run_context = None
+            raise
+
+        finally:
+            if run_context is not None:
+                run_context.__exit__(None, None, None)
+
+    def train_agent_only(
+        self,
+        market_data,
+        agent_timesteps: Optional[int] = None,
+        symbol: str = 'EURUSD',
+        timeframe: str = '1h',
+        additional_timeframes: Optional[list] = None
+    ):
+        """Train only the PPO agent model.
+
+        Args:
+            market_data: Market data for training
+            agent_timesteps: Number of timesteps for agent training
+            symbol: Trading symbol (for MLflow tracking)
+            timeframe: Timeframe (for MLflow tracking)
+            additional_timeframes: List of additional timeframes used for features
+        """
+        # Store feature names used during training for inference compatibility
+        if market_data.feature_names:
+            self._model_feature_names = list(market_data.feature_names)
+            logger.info(f"Training agent with {len(self._model_feature_names)} computed features")
+
+        # Prepare data (needed for input_dim even if not training predictor)
+        splits, input_dim = self.prepare_training_data(market_data)
+
+        # Create environment
+        env = self.create_environment(market_data)
+        state_dim = env.observation_space.shape[0]
+
+        # Initialize models (agent will be trained, predictor initialized for metadata)
+        self.initialize_models(input_dim, state_dim)
+
+        # Create trainer with MLflow tracker
+        trainer = ModelTrainer(
+            predictor=self._predictor,
+            agent=self._agent,
+            data_pipeline=self.data_pipeline,
+            config={
+                'predictor_epochs': self.config.transformer.epochs,
+                'agent_timesteps': agent_timesteps or self.config.ppo.total_timesteps,
+                'batch_size': self.config.transformer.batch_size,
+                'patience': self.config.transformer.patience,
+                'ppo_patience': self.config.ppo.patience,
+                'checkpoint_dir': os.path.join(self.config.base_dir, self.config.checkpoints_dir)
+            },
+            mlflow_tracker=self.mlflow_tracker
+        )
+
+        # Start MLflow run if enabled
+        tracker = self.mlflow_tracker
+        run_context = None
+
+        if tracker and tracker.is_enabled:
+            run_name = f"train-agent-{symbol}-{timeframe}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            run_context = tracker.start_run(
+                run_name=run_name,
+                tags={
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "command": "train",
+                    "model_type": "ppo"
+                }
+            )
+            run_context.__enter__()
+
+            # Log configuration parameters
+            params = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "n_bars": len(market_data.close),
+                "state_dim": state_dim,
+                "model_type": "ppo",
+                "multi_timeframe_enabled": additional_timeframes is not None and len(additional_timeframes) > 0,
+            }
+            if additional_timeframes:
+                params["additional_timeframes"] = ",".join(additional_timeframes)
+                params["n_additional_timeframes"] = len(additional_timeframes)
+            tracker.log_params(params)
+            tracker.log_agent_params(self.config.ppo)
+
+        try:
+            # Train agent only
+            logger.info("Training RL agent...")
+            agent_results = trainer.train_agent(
+                env=env,
+                total_timesteps=agent_timesteps or self.config.ppo.total_timesteps
+            )
+
+            # Save agent only (preserve existing predictor metadata if present)
+            save_dir = os.path.join(self.config.base_dir, self.config.models_dir)
+            self._save_agent_only(save_dir)
+
+            # Log artifacts to MLflow
+            if tracker and tracker.is_enabled:
+                config_path = os.path.join(save_dir, 'config.json')
+                if os.path.exists(config_path):
+                    tracker.log_artifact(config_path)
+
+            return {
+                'predictor': None,
+                'agent': agent_results
+            }
+
+        except Exception:
+            if run_context is not None:
+                run_context.__exit__(*sys.exc_info())
+                run_context = None
+            raise
+
+        finally:
+            if run_context is not None:
+                run_context.__exit__(None, None, None)
+
+    def _save_predictor_only(self, directory: str):
+        """Save only the predictor model and update metadata.
+
+        Preserves existing agent metadata if present.
+        """
+        os.makedirs(directory, exist_ok=True)
+
+        # Load existing metadata if present
+        metadata_path = os.path.join(directory, 'model_metadata.json')
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        else:
+            metadata = {}
+
+        # Update predictor metadata
+        if self._predictor:
+            self._predictor.save(os.path.join(directory, 'predictor.pt'))
+            metadata['predictor'] = {
+                'input_dim': self._predictor.input_dim,
+                'exists': True,
+                'feature_names': self._model_feature_names or []
+            }
+
+        # Update environment metadata
+        n_features = len(self._model_feature_names) if self._model_feature_names else 0
+        metadata['environment'] = {
+            'window_size': self.config.data.lookback_window,
+            'n_additional_features': n_features,
+            'n_account_features': 8
+        }
+
+        # Save updated metadata
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        self.config.save(os.path.join(directory, 'config.json'))
+        logger.info(f"Predictor saved to {directory}")
+
+    def _save_agent_only(self, directory: str):
+        """Save only the agent model and update metadata.
+
+        Preserves existing predictor metadata if present.
+        """
+        os.makedirs(directory, exist_ok=True)
+
+        # Load existing metadata if present
+        metadata_path = os.path.join(directory, 'model_metadata.json')
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        else:
+            metadata = {}
+
+        # Update agent metadata
+        if self._agent:
+            self._agent.save(os.path.join(directory, 'agent.pt'))
+            metadata['agent'] = {
+                'state_dim': self._agent.state_dim,
+                'action_dim': self._agent.action_dim,
+                'exists': True
+            }
+
+        # Update environment metadata if not present
+        if 'environment' not in metadata:
+            n_features = len(self._model_feature_names) if self._model_feature_names else 0
+            metadata['environment'] = {
+                'window_size': self.config.data.lookback_window,
+                'n_additional_features': n_features,
+                'n_account_features': 8
+            }
+
+        # Save updated metadata
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        self.config.save(os.path.join(directory, 'config.json'))
+        logger.info(f"Agent saved to {directory}")
+
     def backtest(
         self,
         market_data,
@@ -993,6 +1303,13 @@ Examples:
     )
 
     parser.add_argument(
+        '--model-type',
+        choices=['transformer', 'ppo', 'both'],
+        default='both',
+        help='Model type to train: transformer (predictor only), ppo (agent only), or both (default)'
+    )
+
+    parser.add_argument(
         '--model-dir', '-m',
         default='./saved_models',
         help='Directory for saving/loading models'
@@ -1116,7 +1433,8 @@ Examples:
 
     # Execute command
     if args.command == 'train':
-        logger.info("Starting training...")
+        model_type = getattr(args, 'model_type', 'both')
+        logger.info(f"Starting training (model_type={model_type})...")
 
         # Multi-symbol training
         if len(symbols) > 1:
@@ -1125,7 +1443,7 @@ Examples:
         all_results = {}
         for symbol in symbols:
             logger.info(f"{'='*50}")
-            logger.info(f"Training on {symbol} ({timeframe})")
+            logger.info(f"Training {model_type} on {symbol} ({timeframe})")
             logger.info(f"{'='*50}")
 
             # Load data with optional multi-timeframe features
@@ -1140,37 +1458,68 @@ Examples:
                 logger.error(f"Failed to load data for {symbol}. Skipping...")
                 continue
 
-            # Train
-            results = system.train(
-                market_data=market_data,
-                predictor_epochs=epochs,
-                agent_timesteps=timesteps,
-                symbol=symbol,
-                timeframe=timeframe,
-                additional_timeframes=additional_timeframes
-            )
+            # Route to appropriate training method based on model_type
+            if model_type == 'transformer':
+                results = system.train_predictor_only(
+                    market_data=market_data,
+                    predictor_epochs=epochs,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    additional_timeframes=additional_timeframes
+                )
+            elif model_type == 'ppo':
+                results = system.train_agent_only(
+                    market_data=market_data,
+                    agent_timesteps=timesteps,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    additional_timeframes=additional_timeframes
+                )
+            else:  # 'both' - current default behavior
+                results = system.train(
+                    market_data=market_data,
+                    predictor_epochs=epochs,
+                    agent_timesteps=timesteps,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    additional_timeframes=additional_timeframes
+                )
 
             all_results[symbol] = results
 
             # Save models per symbol if multi-symbol
             if len(symbols) > 1:
                 symbol_model_dir = os.path.join(args.model_dir, symbol)
-                system.save_models(symbol_model_dir)
+                if model_type == 'transformer':
+                    system._save_predictor_only(symbol_model_dir)
+                elif model_type == 'ppo':
+                    system._save_agent_only(symbol_model_dir)
+                else:
+                    system.save_models(symbol_model_dir)
                 logger.info(f"Models for {symbol} saved to {symbol_model_dir}")
 
         # Save to default location for single symbol
         if len(symbols) == 1:
-            system.save_models(args.model_dir)
+            if model_type == 'transformer':
+                system._save_predictor_only(args.model_dir)
+            elif model_type == 'ppo':
+                system._save_agent_only(args.model_dir)
+            else:
+                system.save_models(args.model_dir)
 
         logger.info("Training complete!")
 
-        # Print summary
+        # Print summary (handle partial training results)
         summary = {}
         for symbol, results in all_results.items():
-            summary[symbol] = {
-                'predictor_final_loss': results['predictor']['train_losses'][-1] if results['predictor']['train_losses'] else None,
-                'agent_episodes': len(results['agent']['episode_rewards'])
-            }
+            symbol_summary = {}
+            if results.get('predictor') is not None:
+                train_losses = results['predictor'].get('train_losses', [])
+                symbol_summary['predictor_final_loss'] = train_losses[-1] if train_losses else None
+            if results.get('agent') is not None:
+                episode_rewards = results['agent'].get('episode_rewards', [])
+                symbol_summary['agent_episodes'] = len(episode_rewards)
+            summary[symbol] = symbol_summary
         print(json.dumps(summary, indent=2))
 
     elif args.command == 'backtest':
