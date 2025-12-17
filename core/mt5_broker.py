@@ -6,7 +6,7 @@ Provides a clean interface to MetaTrader 5 for live trading operations.
 import logging
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import IntEnum
 import time
 
@@ -828,8 +828,6 @@ class MT5BrokerGateway:
             from_date = datetime.now() - timedelta(days=30)
         if to_date is None:
             to_date = datetime.now()
-
-        from datetime import timedelta
 
         if symbol:
             deals = mt5.history_deals_get(from_date, to_date, symbol=symbol)

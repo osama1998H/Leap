@@ -9,7 +9,6 @@ This module provides:
 - Adapter functions to bridge different model signatures
 """
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
