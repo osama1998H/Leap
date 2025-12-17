@@ -843,6 +843,14 @@ class LeapTradingSystem:
             market_flat = market_window.flatten()
             market_obs = (market_flat - np.mean(market_flat)) / (np.std(market_flat) + 1e-8)
 
+            # Calculate max drawdown from equity curve (matches TradingEnvironment behavior)
+            max_dd = 0.0
+            if len(bt.equity_curve) > 1:
+                equity_arr = np.array(bt.equity_curve)
+                peak = np.maximum.accumulate(equity_arr)
+                drawdown = (peak - equity_arr) / (peak + 1e-8)
+                max_dd = float(np.max(drawdown))
+
             # Account observation (8 features, same as BaseTradingEnvironment._get_account_observation)
             account_obs = np.array([
                 bt.balance / bt.initial_balance,           # Balance ratio
@@ -851,7 +859,7 @@ class LeapTradingSystem:
                 1.0 if any(p.direction == 'long' for p in bt.positions) else 0.0,   # Has long
                 1.0 if any(p.direction == 'short' for p in bt.positions) else 0.0,  # Has short
                 (bt.equity - bt.balance) / bt.initial_balance,  # Unrealized PnL ratio
-                0.0,  # Max drawdown (simplified - would need tracking)
+                max_dd,  # Max drawdown calculated from equity curve
                 (bt.equity - bt.initial_balance) / bt.initial_balance  # Total PnL ratio
             ])
 
@@ -927,7 +935,7 @@ class LeapTradingSystem:
 
                     if features is not None:
                         X = features.reshape(1, self.config.data.lookback_window, -1)
-                        prediction = predictor.predict(X)
+                        prediction = predictor.predict(X, return_uncertainty=True)
                         predicted_return = prediction['prediction'][0, 0]
                         # Confidence from uncertainty (clamp to [0, 1])
                         # Note: TransformerPredictor returns uncertainty as array (q_high - q_low)
