@@ -22,9 +22,6 @@ gymnasium>=0.29.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 
-# Logging and Monitoring
-tensorboard>=2.14.0
-
 # Experiment Tracking
 # MLflow 3.x provides LoggedModel entity for enhanced model tracking
 mlflow>=3.0.0
@@ -38,10 +35,5 @@ tqdm>=4.65.0
 # Testing
 pytest>=7.4.0
 
-# Optional: Weights & Biases for experiment tracking
-# wandb>=0.15.0
-
-# Optional: Ray for distributed training
-# ray[rllib]>=2.7.0
-
+# System monitoring
 psutil

@@ -135,7 +135,7 @@ env = TradingEnvironment(data=data, config=config)
 | Data | Pandas >=2.0, SciPy >=1.11, scikit-learn >=1.3 |
 | RL | Gymnasium >=0.29 |
 | Trading | MetaTrader5 >=5.0.45 (Windows only, optional) |
-| Tracking | MLflow >=2.10, TensorBoard >=2.14 |
+| Tracking | MLflow >=3.0 |
 | Testing | pytest >=7.4 |
 
 ## Search Before Creating
