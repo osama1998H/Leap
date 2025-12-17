@@ -32,6 +32,7 @@
     "batch_size": 64,
     "total_timesteps": 10000,
     "patience": 15,
+    "eval_split": 0.2,
     "online_update_frequency": 500,
     "experience_buffer_size": 50000
   }

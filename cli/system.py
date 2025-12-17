@@ -268,8 +268,31 @@ class LeapTradingSystem:
         # Prepare data
         splits, input_dim = self.prepare_training_data(market_data)
 
-        # Create environment
-        env = self.create_environment(market_data)
+        # Create environment(s) - split data for eval if patience is enabled
+        eval_env = None
+        eval_split = getattr(self.config.ppo, 'eval_split', 0.2)
+
+        if self.config.ppo.patience > 0 and eval_split > 0 and hasattr(market_data, 'iloc'):
+            # Split market_data for train/eval to enable early stopping
+            n_bars = len(market_data.close)
+            split_idx = int(n_bars * (1 - eval_split))
+            eval_bars = n_bars - split_idx
+            window_size = self.config.data.lookback_window
+
+            # Only split if eval portion is large enough for the window size
+            if eval_bars > window_size + 10:  # Need at least window_size + some steps
+                train_data = market_data.iloc(slice(0, split_idx))
+                eval_data = market_data.iloc(slice(split_idx, None))
+
+                env = self.create_environment(train_data)
+                eval_env = self.create_environment(eval_data)
+                logger.info(f"Created train env ({split_idx} bars) and eval env ({eval_bars} bars) for early stopping")
+            else:
+                logger.warning(f"Eval split would create too small eval set ({eval_bars} bars < {window_size} window). Disabling early stopping.")
+                env = self.create_environment(market_data)
+        else:
+            env = self.create_environment(market_data)
+
         state_dim = env.observation_space.shape[0]
 
         # Initialize models
@@ -340,6 +363,7 @@ class LeapTradingSystem:
             logger.info("Training RL agent...")
             agent_results = trainer.train_agent(
                 env=env,
+                eval_env=eval_env,
                 total_timesteps=agent_timesteps or self.config.ppo.total_timesteps
             )
 
@@ -515,8 +539,31 @@ class LeapTradingSystem:
         # Prepare data (needed for input_dim even if not training predictor)
         splits, input_dim = self.prepare_training_data(market_data)
 
-        # Create environment
-        env = self.create_environment(market_data)
+        # Create environment(s) - split data for eval if patience is enabled
+        eval_env = None
+        eval_split = getattr(self.config.ppo, 'eval_split', 0.2)
+
+        if self.config.ppo.patience > 0 and eval_split > 0 and hasattr(market_data, 'iloc'):
+            # Split market_data for train/eval to enable early stopping
+            n_bars = len(market_data.close)
+            split_idx = int(n_bars * (1 - eval_split))
+            eval_bars = n_bars - split_idx
+            window_size = self.config.data.lookback_window
+
+            # Only split if eval portion is large enough for the window size
+            if eval_bars > window_size + 10:  # Need at least window_size + some steps
+                train_data = market_data.iloc(slice(0, split_idx))
+                eval_data = market_data.iloc(slice(split_idx, None))
+
+                env = self.create_environment(train_data)
+                eval_env = self.create_environment(eval_data)
+                logger.info(f"Created train env ({split_idx} bars) and eval env ({eval_bars} bars) for early stopping")
+            else:
+                logger.warning(f"Eval split would create too small eval set ({eval_bars} bars < {window_size} window). Disabling early stopping.")
+                env = self.create_environment(market_data)
+        else:
+            env = self.create_environment(market_data)
+
         state_dim = env.observation_space.shape[0]
 
         # Initialize models (agent will be trained, predictor initialized for metadata)
@@ -575,6 +622,7 @@ class LeapTradingSystem:
             logger.info("Training RL agent...")
             agent_results = trainer.train_agent(
                 env=env,
+                eval_env=eval_env,
                 total_timesteps=agent_timesteps or self.config.ppo.total_timesteps
             )
 
@@ -858,7 +906,7 @@ class LeapTradingSystem:
 
             # 1. Get Transformer prediction
             predicted_return = 0.0
-            prediction_confidence = 0.5
+            prediction_confidence = 0.7  # Default above min_confidence threshold (0.6)
 
             if predictor is not None and len(data) >= self.config.data.lookback_window:
                 try:

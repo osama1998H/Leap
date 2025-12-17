@@ -100,6 +100,7 @@ class PPOConfig:
     batch_size: int = 64
     total_timesteps: int = 1_000_000
     patience: int = 15  # Early stopping patience (requires eval_env)
+    eval_split: float = 0.2  # Fraction of data for evaluation (enables early stopping)
 
     # Online learning
     online_update_frequency: int = 500

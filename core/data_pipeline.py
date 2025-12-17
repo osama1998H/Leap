@@ -37,6 +37,21 @@ class MarketData:
     features: Optional[np.ndarray] = None
     feature_names: Optional[List[str]] = None
 
+    def iloc(self, slc: slice) -> 'MarketData':
+        """Slice the market data by index (similar to pandas iloc)."""
+        return MarketData(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            timestamp=self.timestamp[slc],
+            open=self.open[slc],
+            high=self.high[slc],
+            low=self.low[slc],
+            close=self.close[slc],
+            volume=self.volume[slc],
+            features=self.features[slc] if self.features is not None else None,
+            feature_names=self.feature_names
+        )
+
 
 class FeatureEngineer:
     """
