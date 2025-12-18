@@ -84,7 +84,7 @@ Examples:
 
     parser.add_argument(
         'command',
-        choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'],
+        choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade', 'adapt'],
         help='Command to execute'
     )
 
@@ -231,6 +231,76 @@ Examples:
         '--no-mlflow',
         action='store_true',
         help='Disable MLflow tracking'
+    )
+
+    # Adapt command arguments
+    parser.add_argument(
+        '--mode',
+        choices=['offline', 'online', 'evaluate'],
+        default='offline',
+        help='Adaptation mode: offline (single pass), online (continuous), evaluate (metrics only)'
+    )
+
+    parser.add_argument(
+        '--adapt-bars',
+        type=int,
+        default=10000,
+        help='Number of recent bars to use for adaptation (default: 10000)'
+    )
+
+    parser.add_argument(
+        '--adapt-epochs',
+        type=int,
+        default=10,
+        help='Training epochs for predictor during adaptation (default: 10)'
+    )
+
+    parser.add_argument(
+        '--adapt-timesteps',
+        type=int,
+        default=10000,
+        help='Training timesteps for agent during adaptation (default: 10000)'
+    )
+
+    parser.add_argument(
+        '--error-threshold',
+        type=float,
+        default=0.05,
+        help='Prediction error threshold to trigger adaptation (default: 0.05)'
+    )
+
+    parser.add_argument(
+        '--drawdown-threshold',
+        type=float,
+        default=0.1,
+        help='Drawdown threshold to trigger adaptation (default: 0.1)'
+    )
+
+    parser.add_argument(
+        '--adapt-frequency',
+        type=int,
+        default=100,
+        help='Steps between adaptation checks (default: 100)'
+    )
+
+    parser.add_argument(
+        '--max-adaptations',
+        type=int,
+        default=10,
+        help='Maximum adaptations per day (default: 10)'
+    )
+
+    parser.add_argument(
+        '--min-samples',
+        type=int,
+        default=50,
+        help='Minimum samples required before adaptation (default: 50)'
+    )
+
+    parser.add_argument(
+        '--save',
+        action='store_true',
+        help='Save adapted models (creates timestamped subdirectory)'
     )
 
     return parser

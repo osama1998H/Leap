@@ -27,6 +27,10 @@ Create an ADR when:
 | [0007](0007-modular-config-system.md) | Modular Configuration System | Accepted | 2024-12 |
 | [0008](0008-cli-package-modularization.md) | CLI Package Modularization | Accepted | 2024-12 |
 | [0009](0009-data-persistence.md) | Pipeline Data Persistence | Accepted | 2024-12 |
+| [0010](0010-broker-interface-abstraction.md) | Broker Interface Abstraction | Accepted | 2024-12 |
+| [0011](0011-trading-strategy-pattern.md) | Trading Strategy Pattern | Accepted | 2024-12 |
+| [0012](0012-feature-engineering-registry.md) | Feature Engineering Registry | Accepted | 2024-12 |
+| [0013](0013-adaptive-trainer-cli.md) | AdaptiveTrainer CLI Integration | Accepted | 2024-12 |
 
 ## ADR Template
 

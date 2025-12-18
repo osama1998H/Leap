@@ -1,6 +1,9 @@
 """
 Leap Trading System - MT5 Broker Gateway
 Provides a clean interface to MetaTrader 5 for live trading operations.
+
+This module implements the BrokerGateway protocol for MetaTrader 5.
+See core/broker_interface.py for the protocol definition.
 """
 
 import logging
@@ -16,28 +19,16 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
+# Re-export OrderType from broker_interface for backward compatibility
+# (used by core/order_manager.py)
+from core.broker_interface import OrderType
+
 logger = logging.getLogger(__name__)
 
 
-class OrderType(IntEnum):
-    """Order types matching MT5 constants."""
-    BUY = 0
-    SELL = 1
-    BUY_LIMIT = 2
-    SELL_LIMIT = 3
-    BUY_STOP = 4
-    SELL_STOP = 5
-
-
-class TradeAction(IntEnum):
-    """Trade action types."""
-    DEAL = 1  # Market order
-    PENDING = 5  # Pending order
-    SLTP = 6  # Modify SL/TP
-    MODIFY = 7  # Modify pending
-    REMOVE = 8  # Remove pending
-    CLOSE_BY = 10  # Close by opposite
-
+# =============================================================================
+# MT5-specific data classes with from_mt5 factory methods
+# =============================================================================
 
 @dataclass
 class AccountInfo:
