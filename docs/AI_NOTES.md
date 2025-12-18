@@ -76,7 +76,7 @@ Updated by Claude during work to prevent context loss across sessions.
 
 | Issue # | Description | File | Priority |
 |---------|-------------|------|----------|
-| - | None found during this task | - | - |
+| #96 | 13 failing tests due to mocking/patching issues | tests/test_cli.py | Medium |
 
 ---
 
@@ -112,3 +112,12 @@ Failures:
 - Outcome: Created 9 rules, 3 commands, AI_NOTES template
 - Issues created: None
 - Notes: Based on Anthropic's context engineering best practices
+
+### 2025-12-18 - Deprecate reward_analyzer.py
+- Task: Remove unused utils/reward_analyzer.py diagnostic utility
+- Branch: `refactor/deprecate-reward-analyzer`
+- Outcome: Deleted module, updated documentation
+- Files changed:
+  - `utils/reward_analyzer.py` - DELETED (453 lines)
+  - `docs/ARCHITECTURE_AUDIT.md` - Removed 2 references
+- Rationale: Module was completely isolated (no imports, not exported, no tests, no CLI integration)

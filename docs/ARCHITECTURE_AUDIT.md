@@ -51,7 +51,7 @@
 - `training/trainer.py`, `training/online_interface.py`, `training/online_learning.py`
 - `evaluation/backtester.py`, `evaluation/metrics.py`
 - `utils/checkpoint.py`, `utils/device.py`, `utils/logging_config.py`
-- `utils/mlflow_tracker.py`, `utils/reward_analyzer.py`
+- `utils/mlflow_tracker.py`
 - `main.py`
 
 **Files Without Logging (Appropriate):**
@@ -95,7 +95,6 @@
 - `core/trading_env_base.py:13,70` - Import and usage in constructor
 - `core/trading_env.py:11,40` - Import and usage in constructor
 - `core/live_trading_env.py:11,49` - Import and usage in constructor
-- `utils/reward_analyzer.py:24,38,50,86` - Testing utilities
 
 **`EnvConfig` Features:**
 - Defined in `core/trading_types.py:114-209`
