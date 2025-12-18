@@ -24,6 +24,7 @@ git checkout -b <type>/<task-slug>
 ```
 
 **Branch types:**
+
 | Type | Use For |
 |------|---------|
 | `feature/` | New features |
@@ -33,10 +34,6 @@ git checkout -b <type>/<task-slug>
 | `test/` | Test improvements |
 
 **Example:**
-```bash
-git checkout -b feature/add-trailing-stop
-```
-
 ---
 
 ## Explore Phase
