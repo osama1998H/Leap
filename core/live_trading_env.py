@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 
 class LiveTradingEnvironment(BaseTradingEnvironment):
     """
-    Live trading environment with MT5 integration.
+    Live trading environment with broker integration.
 
     Features:
-    - Real-time market data from MT5
+    - Real-time market data from broker
     - Real account state synchronization
     - Position synchronization with broker
     - Open status control for position entry
-    - Paper mode for safe testing
+    - Supports any BrokerGateway implementation (MT5, Paper, etc.)
     - Compatible with PPO agent interface
     """
 
