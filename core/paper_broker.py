@@ -605,7 +605,7 @@ class PaperBrokerGateway:
             return False, "Failed to get account info", 0.0, 0.0
 
         if account.free_margin < required_margin:
-            return False, f"Insufficient margin", account.balance, account.equity
+            return False, "Insufficient margin", account.balance, account.equity
 
         return True, "Order valid", account.balance, account.equity
 

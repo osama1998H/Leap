@@ -72,7 +72,7 @@ Full implementation for paper trading:
 
 ```python
 def create_broker(
-    broker_type: str = 'mt5',
+    broker_type: str = 'paper',
     config: Optional[Union[BrokerConfig, Dict]] = None
 ) -> BrokerGateway:
     """

@@ -214,7 +214,7 @@ def _run_offline_adaptation(
             logger.info("Models not saved (use --save to persist adapted models)")
 
     except Exception as e:
-        logger.error(f"Adaptation failed: {e}")
+        logger.exception("Adaptation failed")
         raise
 
 
