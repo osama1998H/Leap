@@ -185,12 +185,15 @@ Before implementing any new:
 - **Test pattern**: Check existing tests in `tests/` for similar patterns
 
 Use slash commands to guide your workflow:
+- `/start-task` - Start any new development task (creates branch, explores codebase)
+- `/safe-change` - Enforced Explore → Plan → Implement → Verify workflow
 - `/before-feature` - Before implementing new features
 - `/review-architecture` - Before making architectural changes
 - `/fix-issue` - Systematic debugging workflow
 - `/add-pattern` - When adding new utilities
 - `/refactor` - Safe refactoring workflow
 - `/code-review` - Review against conventions
+- `/create-bug-issue` - Create GitHub issue for discovered bug
 
 ## Architecture Decision Records
 
@@ -230,3 +233,42 @@ Update the relevant documentation:
 - **Model Files**: Saved to `saved_models/` with `model_metadata.json` for reloading
 - **Logging**: Logs rotate by size (10MB default) with 5 backups
 - **Strategy Pattern**: Use `TradingStrategy` instances instead of callable functions. Callable strategies are deprecated and will show a warning. See ADR-0011 for migration details.
+
+## Modular Rules
+
+Path-scoped rules are loaded automatically from `.claude/rules/`:
+
+| Rule File | Scope | Purpose |
+|-----------|-------|---------|
+| `00-operating-procedure.md` | Global | Mandatory Explore → Plan → Implement → Verify workflow |
+| `01-architecture.md` | Global | Module layering, boundaries, invariants |
+| `02-git-workflow.md` | Global | Branch strategy, commit practices |
+| `03-out-of-scope-bugs.md` | Global | GitHub issue creation for discovered bugs |
+| `models.md` | `models/**/*.py` | AI model development patterns |
+| `core.md` | `core/**/*.py` | Trading system core patterns |
+| `cli.md` | `cli/**/*.py` | CLI development patterns |
+| `testing.md` | `tests/**/*.py` | Testing conventions |
+| `config.md` | `config/**/*.py` | Configuration patterns |
+
+These rules provide detailed, context-specific guidance when working on matching files.
+
+## Implementation State Tracking
+
+For long-running or complex tasks, update `docs/AI_NOTES.md` with:
+- Current task and branch
+- Key decisions made
+- Files changed and their status
+- Out-of-scope issues discovered (with GitHub issue numbers)
+- Test results
+
+This preserves context across conversation limits and enables session continuity.
+
+## Architecture & Conventions (Auto-Loaded)
+
+The following files are imported as project context:
+
+@ARCHITECTURE.md
+@docs/decisions/README.md
+
+These provide high-level architecture and ADR index.
+See `.claude/rules/` for detailed, path-scoped rules.
