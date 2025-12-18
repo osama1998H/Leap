@@ -1035,8 +1035,14 @@ class DataPipeline:
         # This creates a view without copying data
         from numpy.lib.stride_tricks import sliding_window_view
 
-        # Create sliding windows over features: shape (n_windows, seq_len, n_features)
+        # Create sliding windows over features
+        # sliding_window_view with axis=0 on (n_bars, n_features) produces (n_windows, n_features, seq_len)
+        # We need to transpose to get (n_windows, seq_len, n_features) for PyTorch models
         X = sliding_window_view(features, window_shape=sequence_length, axis=0)
+
+        # Transpose from (n_windows, n_features, seq_len) to (n_windows, seq_len, n_features)
+        # This matches the expected input format: (batch, seq_len, features)
+        X = X.transpose(0, 2, 1)
 
         # Select only the samples we need (excluding last prediction_horizon)
         X = X[:n_samples].copy()  # Copy to ensure contiguous array for training

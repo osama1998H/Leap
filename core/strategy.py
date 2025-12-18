@@ -284,6 +284,48 @@ class CombinedPredictorAgentStrategy(TradingStrategy):
         """Strategy identifier."""
         return "combined_predictor_agent"
 
+    def _get_feature_columns(self, market_data: pd.DataFrame) -> List[str]:
+        """
+        Get feature columns for inference, matching training data format.
+
+        Training data (prepare_sequences) uses:
+            np.column_stack([open, high, low, close, volume, features])
+
+        This method ensures inference uses the SAME feature order:
+            [open, high, low, close, volume, ...computed_features]
+
+        IMPORTANT: OHLCV columns are ALWAYS included first, regardless of
+        what feature_names contains. The model was trained with OHLCV data
+        and inference must match.
+
+        Args:
+            market_data: DataFrame with OHLCV and computed features
+
+        Returns:
+            List of column names in correct order for model input
+        """
+        # OHLCV columns must ALWAYS be included first to match training format
+        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+        metadata_cols = ['time', 'datetime']
+
+        # Get OHLCV columns that exist in the data
+        available_ohlcv = [col for col in ohlcv_cols if col in market_data.columns]
+
+        # Determine computed feature columns
+        if self.feature_names:
+            # Use provided feature names for computed features
+            # Filter to only include names that exist in the data
+            computed_cols = [col for col in self.feature_names if col in market_data.columns]
+        else:
+            # Auto-detect computed features (everything except OHLCV and metadata)
+            computed_cols = [
+                col for col in market_data.columns
+                if col not in ohlcv_cols + metadata_cols
+            ]
+
+        # Return in correct order: OHLCV + computed features
+        return available_ohlcv + computed_cols
+
     def generate_signal(
         self,
         market_data: pd.DataFrame,
@@ -331,7 +373,9 @@ class CombinedPredictorAgentStrategy(TradingStrategy):
         # Get PPO agent action
         if agent is not None and len(market_data) >= self.config.lookback_window:
             try:
-                obs = self._build_observation(market_data, positions)
+                # Get account state from kwargs (passed by backtester/auto_trader)
+                account_state = kwargs.get('account_state', None)
+                obs = self._build_observation(market_data, positions, account_state)
                 if obs is not None:
                     action_idx, _, _ = agent.select_action(obs, deterministic=True)
                     agent_action = Action(action_idx)
@@ -377,11 +421,11 @@ class CombinedPredictorAgentStrategy(TradingStrategy):
         Returns:
             Prediction dictionary or None
         """
-        # Get feature columns
-        feature_cols = self.feature_names if self.feature_names else [
-            col for col in market_data.columns
-            if col not in ['open', 'high', 'low', 'close', 'volume', 'time', 'datetime']
-        ]
+        # Get feature columns - MUST include OHLCV to match training data format
+        # Feature order: [open, high, low, close, volume, ...computed_features]
+        # This matches prepare_sequences() in data_pipeline.py which uses:
+        # np.column_stack([open, high, low, close, volume, features])
+        feature_cols = self._get_feature_columns(market_data)
 
         # Extract features
         features = market_data[feature_cols].tail(self.config.lookback_window).values
@@ -393,41 +437,136 @@ class CombinedPredictorAgentStrategy(TradingStrategy):
         # Reshape for model: (batch=1, seq_len, features)
         X = features.reshape(1, self.config.lookback_window, -1)
 
+        # Validate feature dimension matches model expectation (if input_dim is available)
+        if hasattr(predictor, 'input_dim'):
+            expected_dim = predictor.input_dim
+            # Only validate if input_dim is a valid integer (not a Mock object)
+            if isinstance(expected_dim, int) and X.shape[2] != expected_dim:
+                raise ValueError(
+                    f"Feature dimension mismatch: model expects {expected_dim} features, "
+                    f"but inference data has {X.shape[2]}. "
+                    f"Ensure training and inference use the same feature set (OHLCV + computed)."
+                )
+
         # Get prediction
         return predictor.predict(X, return_uncertainty=True)
 
     def _build_observation(
         self,
         market_data: pd.DataFrame,
-        positions: List[Trade]
+        positions: List[Trade],
+        account_state: Optional[Dict[str, float]] = None
     ) -> Optional[np.ndarray]:
         """
         Build observation for PPO agent.
 
+        The observation must match the training environment format:
+        - Market features: (window_size × n_features) flattened
+        - Account features: 8 values (balance_norm, equity_norm, n_positions,
+          has_long, has_short, unrealized_pnl_norm, max_drawdown, total_pnl_norm)
+
         Args:
             market_data: DataFrame with features
             positions: Current positions
+            account_state: Account state dict with keys:
+                - balance: Current balance
+                - equity: Current equity
+                - initial_balance: Initial balance for normalization
+                - unrealized_pnl: Current unrealized PnL
+                - max_drawdown: Maximum drawdown ratio
+                - total_pnl: Total realized PnL
 
         Returns:
             Observation array or None
         """
-        # Get feature columns
-        feature_cols = self.feature_names if self.feature_names else [
-            col for col in market_data.columns
-            if col not in ['open', 'high', 'low', 'close', 'volume', 'time', 'datetime']
-        ]
+        # Get feature columns - MUST include OHLCV to match training data format
+        # Feature order: [open, high, low, close, volume, ...computed_features]
+        feature_cols = self._get_feature_columns(market_data)
 
         # Extract latest features
         features = market_data[feature_cols].tail(self.config.lookback_window).values
 
         # Flatten for agent
-        obs = features.flatten()
+        market_obs = features.flatten()
 
         # Handle NaN values
-        if np.any(np.isnan(obs)):
-            obs = np.nan_to_num(obs, nan=0.0)
+        if np.any(np.isnan(market_obs)):
+            market_obs = np.nan_to_num(market_obs, nan=0.0)
+
+        # Build account observation (8 features to match training environment)
+        # See core/trading_env_base.py:_get_account_observation()
+        account_obs = self._build_account_observation(positions, account_state)
+
+        # Concatenate market and account observations
+        obs = np.concatenate([market_obs, account_obs])
 
         return obs.astype(np.float32)
+
+    def _build_account_observation(
+        self,
+        positions: List[Trade],
+        account_state: Optional[Dict[str, float]] = None
+    ) -> np.ndarray:
+        """
+        Build account observation matching TradingEnvironment format.
+
+        The 8 account features are:
+        1. balance_norm: (balance / initial_balance - 1.0), normalized
+        2. equity_norm: (equity / initial_balance - 1.0), normalized
+        3. n_positions: Number of open positions
+        4. has_long: 1.0 if has long position, else 0.0
+        5. has_short: 1.0 if has short position, else 0.0
+        6. unrealized_pnl_norm: unrealized_pnl / initial_balance, normalized
+        7. max_drawdown: Maximum drawdown ratio
+        8. total_pnl_norm: total_pnl / initial_balance, normalized
+
+        Args:
+            positions: Current open positions
+            account_state: Account state dict (if None, uses defaults)
+
+        Returns:
+            8-element account observation array
+        """
+        # Default account state if not provided
+        if account_state is None:
+            account_state = {
+                'balance': 10000.0,
+                'equity': 10000.0,
+                'initial_balance': 10000.0,
+                'unrealized_pnl': 0.0,
+                'max_drawdown': 0.0,
+                'total_pnl': 0.0
+            }
+
+        initial_balance = account_state.get('initial_balance', 10000.0)
+        balance = account_state.get('balance', initial_balance)
+        equity = account_state.get('equity', balance)
+        unrealized_pnl = account_state.get('unrealized_pnl', 0.0)
+        max_drawdown = account_state.get('max_drawdown', 0.0)
+        total_pnl = account_state.get('total_pnl', 0.0)
+
+        # Check position directions
+        has_long = any(p.direction == 'long' for p in positions) if positions else False
+        has_short = any(p.direction == 'short' for p in positions) if positions else False
+
+        # Normalize using log-scale for unbounded values (matches trading_env_base.py)
+        def normalize_ratio(x: float) -> float:
+            """Log-scale normalization for unbounded values."""
+            if x >= 0:
+                return np.log1p(x)
+            else:
+                return -np.log1p(-x)
+
+        return np.array([
+            normalize_ratio(balance / initial_balance - 1.0),
+            normalize_ratio(equity / initial_balance - 1.0),
+            float(len(positions)) if positions else 0.0,
+            1.0 if has_long else 0.0,
+            1.0 if has_short else 0.0,
+            normalize_ratio(unrealized_pnl / initial_balance),
+            max_drawdown,
+            normalize_ratio(total_pnl / initial_balance)
+        ], dtype=np.float32)
 
     def _combine_signals(
         self,
