@@ -15,10 +15,10 @@ Updated by Claude during work to prevent context loss across sessions.
 
 <!-- Updated when starting new work -->
 
-- **Task**: Enhanced Context Engineering Implementation
-- **Branch**: `feature/enhanced-context-engineering`
+- **Task**: Model Extensibility Verification and Bug Investigation
+- **Branch**: `main` (verification task)
 - **Started**: 2025-12-18
-- **Status**: Complete - Ready for commit
+- **Status**: Complete - Issue #101 created for dimension mismatch bug
 
 ---
 
@@ -77,6 +77,7 @@ Updated by Claude during work to prevent context loss across sessions.
 | Issue # | Description | File | Priority |
 |---------|-------------|------|----------|
 | #96 | 13 failing tests due to mocking/patching issues | tests/test_cli.py | Medium |
+| #101 | Feature dimension mismatch between training and inference | core/data_pipeline.py, core/strategy.py | High |
 
 ---
 
@@ -120,3 +121,12 @@ Failures:
 - Files changed:
   - `utils/reward_analyzer.py` - DELETED (453 lines)
 - Rationale: Module was completely isolated (no imports, not exported, no tests, no CLI integration)
+
+### 2025-12-18 - Model Extensibility Verification
+- Task: Verify ADR-0014 Model Extensibility implementation (PR #100)
+- Outcome: Discovered feature dimension mismatch bug
+- Issues created: #101 (Feature dimension mismatch)
+- Root cause analysis:
+  1. `prepare_sequences` produces transposed output `(samples, features, seq_len)` instead of `(samples, seq_len, features)`
+  2. Training includes OHLCV (92 features), strategy inference excludes OHLCV (87 features)
+- Note: May require ADR if dimension order change affects existing checkpoints
