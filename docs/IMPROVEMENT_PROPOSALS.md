@@ -205,61 +205,43 @@ def mock_broker_gateway():
 
 ---
 
-### 2.3 Feature Engineering Registry
+### 2.3 Feature Engineering Registry ✅ COMPLETED
 
-**Current State:** `FeatureEngineer` is a monolithic class with all 100+ indicators hardcoded.
+**Status:** Implemented in ADR-0012
 
-**Impact:**
-- Cannot easily enable/disable specific features
-- Cannot create custom feature subsets for experiments
-- All features computed even if not needed
+**Implementation:**
+- `core/feature_registry.py` - FeatureRegistry singleton with decorator-based registration
+- `tests/test_feature_registry.py` - 43 comprehensive unit tests
+- `core/data_pipeline.py` - FeatureEngineer now uses registry as facade
+- `core/__init__.py` - Exports FeatureRegistry, FeatureCategory, FeatureSpec
 
-**Proposed Solution:**
-```python
-# core/feature_registry.py (NEW)
-from typing import Callable, Dict, List
-
-class FeatureRegistry:
-    """Registry for feature computation functions."""
-
-    _features: Dict[str, Callable] = {}
-    _groups: Dict[str, List[str]] = {
-        'price': [],
-        'momentum': [],
-        'volatility': [],
-        'volume': [],
-        'trend': [],
-        'patterns': [],
-        'time': [],
-    }
-
-    @classmethod
-    def register(cls, name: str, group: str):
-        """Decorator to register feature functions."""
-        def decorator(func: Callable):
-            cls._features[name] = func
-            cls._groups[group].append(name)
-            return func
-        return decorator
-
-    @classmethod
-    def compute_features(cls, df: pd.DataFrame,
-                         groups: List[str] = None,
-                         exclude: List[str] = None) -> pd.DataFrame:
-        """Compute selected features."""
-        ...
-
-
-# Usage in feature_engineer.py:
-@FeatureRegistry.register('rsi_14', group='momentum')
-def compute_rsi_14(df: pd.DataFrame) -> pd.Series:
-    ...
-```
-
-**Benefits:**
-- Selective feature computation
-- Easy to add new features
+**Benefits Achieved:**
+- Selective feature computation by category or name
+- Easy to add custom features via decorator
+- Feature enable/disable without code changes
+- Dependency resolution with topological sort
 - Better for feature ablation studies
+
+**Usage:**
+```python
+from core.feature_registry import FeatureRegistry, FeatureCategory
+
+# Get all momentum features
+registry = FeatureRegistry.get_instance()
+momentum_features = registry.get_feature_names(categories=[FeatureCategory.MOMENTUM])
+
+# Compute specific features
+result = registry.compute_all(df, feature_names=['rsi_14', 'macd', 'sma_20'])
+
+# Add custom feature
+@FeatureRegistry.register(
+    name='my_indicator',
+    category=FeatureCategory.CUSTOM,
+    dependencies=['close', 'sma_20']
+)
+def compute_my_indicator(df):
+    return df['close'] / df['sma_20'] - 1
+```
 
 ---
 

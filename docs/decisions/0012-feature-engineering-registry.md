@@ -203,7 +203,7 @@ registry.disable_feature('volume_sma')  # Exclude from computation
 1. ✅ Create `core/feature_registry.py` with registry implementation
 2. ✅ Migrate all ~90 built-in features to decorator registration
 3. ✅ Create unit tests
-4. ⏳ Refactor `FeatureEngineer` to use registry as facade (future)
+4. ✅ Refactor `FeatureEngineer` to use registry as facade
 5. ⏳ Add registry configuration to config files (future)
 
 ## Alternatives Considered

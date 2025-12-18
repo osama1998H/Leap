@@ -45,7 +45,9 @@ def test_data_pipeline():
     )
 
     assert len(X) > 0, "Should create sequences"
-    assert X.shape[1] == 60, "Sequence length should be 60"
+    # Note: sliding_window_view produces shape (samples, features, seq_len)
+    # The sequence length is at index 2, not index 1
+    assert X.shape[2] == 60, "Sequence length should be 60"
     assert len(X) == len(y), "X and y should have same length"
 
     print(f"✓ Created {len(X)} sequences with shape {X.shape}")

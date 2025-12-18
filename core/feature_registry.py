@@ -1057,6 +1057,120 @@ def _register_builtin_features():
 
         return adx
 
+    @FeatureRegistry.register(
+        name='dx',
+        category=FeatureCategory.TREND,
+        dependencies=['plus_di', 'minus_di'],
+        description='Directional Movement Index'
+    )
+    def compute_dx(df: pd.DataFrame) -> pd.Series:
+        if 'plus_di' in df.columns and 'minus_di' in df.columns:
+            plus_di = df['plus_di']
+            minus_di = df['minus_di']
+        else:
+            plus_di = compute_plus_di(df)
+            minus_di = compute_minus_di(df)
+        return 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+
+    @FeatureRegistry.register(
+        name='adxr',
+        category=FeatureCategory.TREND,
+        dependencies=['adx'],
+        description='ADX Rating (smoothed ADX)'
+    )
+    def compute_adxr(df: pd.DataFrame) -> pd.Series:
+        period = 14
+        if 'adx' in df.columns:
+            adx = df['adx']
+        else:
+            adx = compute_adx(df)
+        return (adx + adx.shift(period)) / 2
+
+    @FeatureRegistry.register(
+        name='di_crossover',
+        category=FeatureCategory.TREND,
+        dependencies=['plus_di', 'minus_di'],
+        description='DI Crossover Signal (1 = bullish, 0 = bearish)'
+    )
+    def compute_di_crossover(df: pd.DataFrame) -> pd.Series:
+        if 'plus_di' in df.columns and 'minus_di' in df.columns:
+            plus_di = df['plus_di']
+            minus_di = df['minus_di']
+        else:
+            plus_di = compute_plus_di(df)
+            minus_di = compute_minus_di(df)
+        return (plus_di > minus_di).astype(int)
+
+    @FeatureRegistry.register(
+        name='di_spread',
+        category=FeatureCategory.TREND,
+        dependencies=['plus_di', 'minus_di'],
+        description='Normalized DI spread [-1, 1]'
+    )
+    def compute_di_spread(df: pd.DataFrame) -> pd.Series:
+        if 'plus_di' in df.columns and 'minus_di' in df.columns:
+            plus_di = df['plus_di']
+            minus_di = df['minus_di']
+        else:
+            plus_di = compute_plus_di(df)
+            minus_di = compute_minus_di(df)
+        return (plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+
+    @FeatureRegistry.register(
+        name='adx_slope',
+        category=FeatureCategory.TREND,
+        dependencies=['adx'],
+        description='5-period rate of change of ADX'
+    )
+    def compute_adx_slope(df: pd.DataFrame) -> pd.Series:
+        if 'adx' in df.columns:
+            adx = df['adx']
+        else:
+            adx = compute_adx(df)
+        return adx.diff(5)
+
+    @FeatureRegistry.register(
+        name='adx_strength',
+        category=FeatureCategory.TREND,
+        dependencies=['adx'],
+        description='ADX strength classification (0=weak, 1=moderate, 2=strong)'
+    )
+    def compute_adx_strength(df: pd.DataFrame) -> pd.Series:
+        if 'adx' in df.columns:
+            adx = df['adx']
+        else:
+            adx = compute_adx(df)
+        return pd.cut(
+            adx,
+            bins=[-np.inf, 20, 40, np.inf],
+            labels=[0, 1, 2]
+        ).astype(float)
+
+    @FeatureRegistry.register(
+        name='adx_simple',
+        category=FeatureCategory.TREND,
+        dependencies=['high', 'low', 'tr'],
+        description='Simple rolling ADX (backward compatible)'
+    )
+    def compute_adx_simple(df: pd.DataFrame) -> pd.Series:
+        period = 14
+        high_diff = df['high'].diff()
+        low_diff = -df['low'].diff()
+
+        plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
+        minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
+
+        if 'tr' in df.columns:
+            tr = df['tr']
+        else:
+            tr = compute_tr(df)
+
+        tr_14_simple = tr.rolling(period).sum()
+        plus_di_simple = 100 * (plus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
+        minus_di_simple = 100 * (minus_dm.rolling(period).sum() / (tr_14_simple + 1e-10))
+        dx_simple = 100 * np.abs(plus_di_simple - minus_di_simple) / (plus_di_simple + minus_di_simple + 1e-10)
+        return dx_simple.rolling(period).mean()
+
     # -------------------------------------------------------------------------
     # Candlestick Patterns
     # -------------------------------------------------------------------------
