@@ -11,7 +11,7 @@ import os
 import sys
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import numpy as np
 
@@ -20,8 +20,12 @@ from core.data_pipeline import DataPipeline
 from core.trading_env import TradingEnvironment
 from core.trading_types import Action
 from core.risk_manager import RiskManager, DynamicRiskManager
-from models.transformer import TransformerPredictor
-from models.ppo_agent import PPOAgent
+from models import (
+    create_predictor,
+    create_agent,
+    PredictorModel,
+    AgentModel,
+)
 from training.trainer import ModelTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
 from evaluation.metrics import PerformanceAnalyzer
@@ -92,12 +96,12 @@ class LeapTradingSystem:
         return self._data_pipeline
 
     @property
-    def predictor(self) -> Optional[TransformerPredictor]:
+    def predictor(self) -> Optional[PredictorModel]:
         """Get predictor (initialized via initialize_models or load_models)."""
         return self._predictor
 
     @property
-    def agent(self) -> Optional[PPOAgent]:
+    def agent(self) -> Optional[AgentModel]:
         """Get RL agent (initialized via initialize_models or load_models)."""
         return self._agent
 
@@ -176,11 +180,12 @@ class LeapTradingSystem:
         return splits, X.shape[2]  # Return input dimension
 
     def initialize_models(self, input_dim: int, state_dim: int):
-        """Initialize prediction and RL models."""
+        """Initialize prediction and RL models using factory functions."""
         logger.info(f"Initializing models (input_dim={input_dim}, state_dim={state_dim})...")
 
-        # Initialize predictor
-        self._predictor = TransformerPredictor(
+        # Initialize predictor via factory
+        self._predictor = create_predictor(
+            model_type='transformer',
             input_dim=input_dim,
             config={
                 'd_model': self.config.transformer.d_model,
@@ -196,8 +201,9 @@ class LeapTradingSystem:
             device=self.config.device
         )
 
-        # Initialize agent
-        self._agent = PPOAgent(
+        # Initialize agent via factory
+        self._agent = create_agent(
+            model_type='ppo',
             state_dim=state_dim,
             action_dim=4,  # HOLD, BUY, SELL, CLOSE
             config={
@@ -942,8 +948,9 @@ class LeapTradingSystem:
 
                 input_dim = X_train.shape[2]
 
-                # Create fresh predictor for this fold
-                predictor = TransformerPredictor(
+                # Create fresh predictor for this fold via factory
+                predictor = create_predictor(
+                    model_type='transformer',
                     input_dim=input_dim,
                     config={
                         'd_model': self.config.transformer.d_model,
@@ -1163,7 +1170,9 @@ class LeapTradingSystem:
                     'learning_rate': self.config.transformer.learning_rate,
                     'online_learning_rate': self.config.transformer.online_learning_rate
                 }
-                self._predictor = TransformerPredictor(
+                # Create predictor via factory (defaults to 'transformer', future: read from checkpoint)
+                self._predictor = create_predictor(
+                    model_type='transformer',
                     input_dim=input_dim,
                     config=predictor_config,
                     device=self.config.device
@@ -1199,7 +1208,9 @@ class LeapTradingSystem:
                     'batch_size': self.config.ppo.batch_size,
                     'hidden_sizes': self.config.ppo.actor_hidden_sizes
                 }
-                self._agent = PPOAgent(
+                # Create agent via factory (defaults to 'ppo', future: read from checkpoint)
+                self._agent = create_agent(
+                    model_type='ppo',
                     state_dim=state_dim,
                     action_dim=action_dim,
                     config=agent_config,

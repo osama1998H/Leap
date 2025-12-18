@@ -79,6 +79,8 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | Paper trading | `core/paper_broker.py` | Use `PaperBrokerGateway` for simulated trading |
 | Trading strategy | `core/strategy.py` | Use `TradingStrategy` ABC and `CombinedPredictorAgentStrategy` |
 | Feature registry | `core/feature_registry.py` | Use `FeatureRegistry.get_instance()` for feature computation |
+| Model factory | `models/factory.py` | Use `create_predictor()`, `create_agent()` for model creation (see ADR-0014) |
+| Model protocols | `models/base.py` | Use `PredictorModel`, `AgentModel` for type hints |
 
 ### Position Sizing
 

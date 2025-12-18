@@ -31,6 +31,7 @@ Create an ADR when:
 | [0011](0011-trading-strategy-pattern.md) | Trading Strategy Pattern | Accepted | 2024-12 |
 | [0012](0012-feature-engineering-registry.md) | Feature Engineering Registry | Accepted | 2024-12 |
 | [0013](0013-adaptive-trainer-cli.md) | AdaptiveTrainer CLI Integration | Accepted | 2024-12 |
+| [0014](0014-model-extensibility.md) | Model Extensibility Architecture | Accepted | 2024-12 |
 
 ## ADR Template
 

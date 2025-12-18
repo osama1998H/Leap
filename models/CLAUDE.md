@@ -6,8 +6,67 @@ The `models/` directory contains the AI/ML models.
 
 | File | Purpose | Key Classes |
 |------|---------|-------------|
+| `base.py` | Model protocols | `PredictorModel`, `AgentModel` |
+| `factory.py` | Model factory | `create_predictor()`, `create_agent()`, `register_predictor()`, `register_agent()` |
 | `transformer.py` | Price prediction | `TransformerPredictor`, `TemporalFusionTransformer` |
 | `ppo_agent.py` | RL trading agent | `PPOAgent`, `ActorCritic`, `ExperienceBuffer` |
+
+## Model Extensibility (ADR-0014)
+
+The models module uses Protocol-based extensibility for easy addition of new model types.
+
+### Creating Models via Factory
+
+```python
+from models import create_predictor, create_agent
+
+# Create predictor
+predictor = create_predictor('transformer', input_dim=128, config={...})
+
+# Create agent
+agent = create_agent('ppo', state_dim=72, action_dim=4, config={...})
+
+# Auto-load from checkpoint
+predictor = load_predictor('saved_models/predictor.pt')
+agent = load_agent('saved_models/agent.pt')
+
+# List available types
+print(list_predictors())  # ['transformer']
+print(list_agents())      # ['ppo']
+```
+
+### Adding a New Model
+
+1. Create model class implementing protocol methods
+2. Register with decorator or explicit call
+3. Use via factory
+
+```python
+from models import register_predictor
+
+@register_predictor('lstm')
+class LSTMPredictor:
+    def __init__(self, input_dim: int, config: dict = None, device: str = 'auto'):
+        ...
+
+    def train(self, X_train, y_train, ...): ...
+    def predict(self, X, return_uncertainty=False): ...
+    def online_update(self, X_new, y_new, learning_rate=None): ...
+    def save(self, path: str): ...
+    def load(self, path: str): ...
+```
+
+### Protocol Type Hints
+
+For type-safe code that accepts any model:
+
+```python
+from models import PredictorModel, AgentModel
+
+def train_pipeline(predictor: PredictorModel, agent: AgentModel):
+    predictor.train(...)
+    agent.train_on_env(...)
+```
 
 ## Architecture
 
