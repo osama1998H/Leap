@@ -232,7 +232,7 @@ class OrderManager:
                 return execution
 
         # Execute order
-        from core.mt5_broker import OrderType
+        from core.broker_interface import OrderType
 
         order_type = OrderType.BUY if signal.signal_type == SignalType.BUY else OrderType.SELL
 
