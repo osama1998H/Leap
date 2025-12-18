@@ -55,7 +55,7 @@ class MockDataPipeline:
     def connect(self):
         self.connected = True
 
-    def fetch_historical_data(self, symbol, timeframe, n_bars):
+    def fetch_historical_data(self, symbol, timeframe, n_bars, additional_timeframes=None):
         return MockMarketData(n_bars=n_bars, symbol=symbol)
 
     def prepare_sequences(self, data, sequence_length=60, prediction_horizon=12):
@@ -237,35 +237,33 @@ class TestDataLoading:
 
     def test_load_data_success(self, trading_system):
         """Test successful data loading."""
-        with patch.object(trading_system, 'data_pipeline', MockDataPipeline()):
-            market_data = trading_system.load_data(
-                symbol='EURUSD',
-                timeframe='1h',
-                n_bars=1000
-            )
+        trading_system._data_pipeline = MockDataPipeline()
+        market_data = trading_system.load_data(
+            symbol='EURUSD',
+            timeframe='1h',
+            n_bars=1000
+        )
 
-            assert market_data is not None
-            assert len(market_data.close) == 1000
+        assert market_data is not None
+        assert len(market_data.close) == 1000
 
     def test_load_data_connects_pipeline(self, trading_system):
         """Test that load_data connects the pipeline."""
         mock_pipeline = MockDataPipeline()
+        trading_system._data_pipeline = mock_pipeline
+        trading_system.load_data('EURUSD', '1h', 1000)
 
-        with patch.object(trading_system, 'data_pipeline', mock_pipeline):
-            trading_system.load_data('EURUSD', '1h', 1000)
-
-            assert mock_pipeline.connected
+        assert mock_pipeline.connected
 
     def test_load_data_returns_none_on_failure(self, trading_system):
         """Test that load_data returns None on failure."""
         mock_pipeline = Mock()
         mock_pipeline.connect = Mock()
         mock_pipeline.fetch_historical_data = Mock(return_value=None)
+        trading_system._data_pipeline = mock_pipeline
+        result = trading_system.load_data('INVALID', '1h', 1000)
 
-        with patch.object(trading_system, 'data_pipeline', mock_pipeline):
-            result = trading_system.load_data('INVALID', '1h', 1000)
-
-            assert result is None
+        assert result is None
 
 
 # ============================================================================
@@ -286,8 +284,8 @@ class TestModelInitialization:
 
     def test_initialize_models_uses_config(self, trading_system):
         """Test that model initialization uses config values."""
-        with patch('main.TransformerPredictor') as mock_pred_cls:
-            with patch('main.PPOAgent') as mock_agent_cls:
+        with patch('cli.system.TransformerPredictor') as mock_pred_cls:
+            with patch('cli.system.PPOAgent') as mock_agent_cls:
                 mock_pred_cls.return_value = MockPredictor()
                 mock_agent_cls.return_value = MockAgent()
 
@@ -377,9 +375,9 @@ class TestSaveLoadModels:
         trading_system._predictor = None
         trading_system._agent = None
 
-        # Load with mocked classes
-        with patch('main.TransformerPredictor', MockPredictor):
-            with patch('main.PPOAgent', MockAgent):
+        # Load with mocked classes - patch at cli.system where they're imported
+        with patch('cli.system.TransformerPredictor', MockPredictor):
+            with patch('cli.system.PPOAgent', MockAgent):
                 trading_system.load_models(save_dir)
 
         assert trading_system._predictor is not None
@@ -475,43 +473,43 @@ class TestTraining:
 
     def test_prepare_training_data(self, trading_system):
         """Test training data preparation."""
-        with patch.object(trading_system, 'data_pipeline', MockDataPipeline()):
-            market_data = MockMarketData(n_bars=1000)
+        trading_system._data_pipeline = MockDataPipeline()
+        market_data = MockMarketData(n_bars=1000)
 
-            splits, input_dim = trading_system.prepare_training_data(market_data)
+        splits, input_dim = trading_system.prepare_training_data(market_data)
 
-            assert 'train' in splits
-            assert 'val' in splits
-            assert 'test' in splits
-            assert input_dim > 0
+        assert 'train' in splits
+        assert 'val' in splits
+        assert 'test' in splits
+        assert input_dim > 0
 
     def test_train_integration(self, trading_system):
         """Test training integration (mocked)."""
         market_data = MockMarketData(n_bars=500)
+        trading_system._data_pipeline = MockDataPipeline()
 
-        with patch.object(trading_system, 'data_pipeline', MockDataPipeline()):
-            with patch('main.TransformerPredictor', MockPredictor):
-                with patch('main.PPOAgent', MockAgent):
-                    with patch('main.ModelTrainer') as mock_trainer_cls:
-                        mock_trainer = Mock()
-                        mock_trainer.train_predictor.return_value = {
-                            'train_losses': [0.5],
-                            'val_losses': [0.6]
-                        }
-                        mock_trainer.train_agent.return_value = {
-                            'episode_rewards': [100]
-                        }
-                        mock_trainer.save_all = Mock()
-                        mock_trainer_cls.return_value = mock_trainer
+        with patch('main.TransformerPredictor', MockPredictor):
+            with patch('main.PPOAgent', MockAgent):
+                with patch('main.ModelTrainer') as mock_trainer_cls:
+                    mock_trainer = Mock()
+                    mock_trainer.train_predictor.return_value = {
+                        'train_losses': [0.5],
+                        'val_losses': [0.6]
+                    }
+                    mock_trainer.train_agent.return_value = {
+                        'episode_rewards': [100]
+                    }
+                    mock_trainer.save_all = Mock()
+                    mock_trainer_cls.return_value = mock_trainer
 
-                        results = trading_system.train(
-                            market_data=market_data,
-                            predictor_epochs=1,
-                            agent_timesteps=100
-                        )
+                    results = trading_system.train(
+                        market_data=market_data,
+                        predictor_epochs=1,
+                        agent_timesteps=100
+                    )
 
-                        assert 'predictor' in results
-                        assert 'agent' in results
+                    assert 'predictor' in results
+                    assert 'agent' in results
 
     def test_train_predictor_only(self, trading_system):
         """Test training only the predictor model."""
@@ -522,7 +520,7 @@ class TestTraining:
 
         with patch('main.TransformerPredictor', MockPredictor):
             with patch('main.PPOAgent', MockAgent):
-                with patch('main.ModelTrainer') as mock_trainer_cls:
+                with patch('cli.system.ModelTrainer') as mock_trainer_cls:
                     mock_trainer = Mock()
                     mock_trainer.train_predictor.return_value = {
                         'train_losses': [0.5],
@@ -551,7 +549,7 @@ class TestTraining:
 
         with patch('main.TransformerPredictor', MockPredictor):
             with patch('main.PPOAgent', MockAgent):
-                with patch('main.ModelTrainer') as mock_trainer_cls:
+                with patch('cli.system.ModelTrainer') as mock_trainer_cls:
                     mock_trainer = Mock()
                     mock_trainer.train_agent.return_value = {
                         'episode_rewards': [100]
@@ -708,14 +706,14 @@ class TestLoggingInitialization:
 
     def test_initialize_logging_default(self, mock_config):
         """Test logging initialization with defaults."""
-        with patch('main.setup_logging') as mock_setup:
+        with patch('cli.parser.setup_logging') as mock_setup:
             initialize_logging(mock_config)
 
             mock_setup.assert_called_once()
 
     def test_initialize_logging_with_override(self, mock_config):
         """Test logging initialization with CLI override."""
-        with patch('main.setup_logging') as mock_setup:
+        with patch('cli.parser.setup_logging') as mock_setup:
             initialize_logging(
                 mock_config,
                 log_level_override='DEBUG'
@@ -729,7 +727,7 @@ class TestLoggingInitialization:
         """Test logging initialization with file override."""
         log_file = os.path.join(temp_dir, 'test.log')
 
-        with patch('main.setup_logging') as mock_setup:
+        with patch('cli.parser.setup_logging') as mock_setup:
             initialize_logging(
                 mock_config,
                 log_file_override=log_file
@@ -830,13 +828,14 @@ class TestEdgeCases:
 
     def test_load_data_failure_exits(self, trading_system):
         """Test that data loading failure is handled."""
-        with patch.object(trading_system, 'data_pipeline') as mock_pipeline:
-            mock_pipeline.connect = Mock()
-            mock_pipeline.fetch_historical_data.return_value = None
+        mock_pipeline = Mock()
+        mock_pipeline.connect = Mock()
+        mock_pipeline.fetch_historical_data.return_value = None
+        trading_system._data_pipeline = mock_pipeline
 
-            result = trading_system.load_data('INVALID', '1h', 1000)
+        result = trading_system.load_data('INVALID', '1h', 1000)
 
-            assert result is None
+        assert result is None
 
     def test_save_models_without_predictor(self, trading_system, temp_dir):
         """Test save_models with only agent."""
