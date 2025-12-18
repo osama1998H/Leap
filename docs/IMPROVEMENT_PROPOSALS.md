@@ -2,7 +2,6 @@
 
 **Date:** 2025-12-17
 **Analysis Based On:** CLAUDE.md files, ADRs, Architecture docs, and codebase exploration
-**Current Health Score:** 9.2/10 (from ARCHITECTURE_AUDIT.md)
 
 ---
 
@@ -565,5 +564,4 @@ Implementing these changes would elevate the health score from 9.2/10 to approxi
 
 - [CLAUDE.md](/CLAUDE.md) - Development guidelines
 - [ARCHITECTURE.md](/ARCHITECTURE.md) - System architecture
-- [ARCHITECTURE_AUDIT.md](/docs/ARCHITECTURE_AUDIT.md) - Previous audit
 - [ADR Index](/docs/decisions/README.md) - Architectural decisions

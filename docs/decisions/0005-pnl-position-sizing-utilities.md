@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-The Architecture Audit (docs/ARCHITECTURE_AUDIT.md) identified critical code duplication:
+Code review identified critical code duplication across the codebase:
 - PnL calculations duplicated in 4 files
 - Position sizing logic duplicated in 3 files
 
