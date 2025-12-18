@@ -229,3 +229,4 @@ Update the relevant documentation:
 - **Safety**: Always use `--paper` flag when testing `autotrade` command
 - **Model Files**: Saved to `saved_models/` with `model_metadata.json` for reloading
 - **Logging**: Logs rotate by size (10MB default) with 5 backups
+- **Strategy Pattern**: Use `TradingStrategy` instances instead of callable functions. Callable strategies are deprecated and will show a warning. See ADR-0011 for migration details.

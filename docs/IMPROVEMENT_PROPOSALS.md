@@ -185,53 +185,23 @@ def mock_broker_gateway():
 
 ---
 
-### 2.2 Strategy Pattern for Backtesting
+### 2.2 Strategy Pattern for Backtesting ✅ COMPLETED
 
-**Current State:** Backtest strategy is passed as a callable function with complex signal combination logic duplicated between `Backtester` and `AutoTrader`.
+**Status:** Implemented in PR #88
 
-**Impact:**
-- Strategy logic is duplicated
-- Strategies cannot maintain state across bars easily
-- Harder to test strategies in isolation
+**Implementation:**
+- `core/strategy.py` - `TradingStrategy` ABC, `CombinedPredictorAgentStrategy`, `CallableStrategyAdapter`, `StrategySignal`, `create_strategy()` factory
+- `evaluation/backtester.py` - Updated to accept `Union[TradingStrategy, Callable]`, shows deprecation warning for callables
+- `core/auto_trader.py` - Accepts optional `TradingStrategy`, auto-creates when predictor/agent available
+- `cli/system.py` - Uses `CombinedPredictorAgentStrategy` instead of inline helper functions
+- Integration tests: `tests/test_strategy.py::TestBacktesterIntegration`
 
-**Proposed Solution:**
-```python
-# core/strategy.py (NEW)
-from abc import ABC, abstractmethod
-
-class TradingStrategy(ABC):
-    """Base class for trading strategies."""
-
-    @abstractmethod
-    def on_bar(self, observation: np.ndarray,
-               prediction: Dict,
-               agent_action: int) -> Signal:
-        """Generate trading signal for current bar."""
-        ...
-
-    @abstractmethod
-    def on_trade_opened(self, trade: Trade) -> None:
-        """Called when a trade is opened."""
-        ...
-
-    @abstractmethod
-    def on_trade_closed(self, trade: Trade) -> None:
-        """Called when a trade is closed."""
-        ...
-
-
-class CombinedStrategy(TradingStrategy):
-    """Default strategy combining Transformer + PPO signals."""
-
-    def on_bar(self, observation, prediction, agent_action):
-        # Extract signal combination logic from AutoTrader._combine_signals()
-        ...
-```
-
-**Benefits:**
-- Single source of truth for signal combination
-- Strategies can be tested independently
-- Easy to implement alternative strategies
+**Benefits Achieved:**
+- Single source of truth for signal combination (eliminated ~140 lines of duplicate code)
+- Strategies can be tested independently via ABC interface
+- Lifecycle callbacks: `reset()`, `on_trade_opened()`, `on_trade_closed()`
+- Backward compatible via `CallableStrategyAdapter`
+- See ADR-0011 for full design rationale
 
 ---
 

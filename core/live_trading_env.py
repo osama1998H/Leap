@@ -4,6 +4,7 @@ Extends the base trading environment with real MT5 integration.
 """
 
 import numpy as np
+import pandas as pd
 import logging
 from typing import Optional, Dict, List, Tuple, Any, ClassVar, TYPE_CHECKING
 from gymnasium import spaces
@@ -225,6 +226,43 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         if close_only:
             self.state.open_status = False
         logger.info(f"Close only mode: {close_only}")
+
+    def get_market_data(self) -> Optional[pd.DataFrame]:
+        """
+        Get market data as DataFrame for strategy signal generation.
+
+        Returns market data from internal buffers as a pandas DataFrame
+        compatible with TradingStrategy.generate_signal().
+
+        Returns:
+            DataFrame with OHLCV columns ('open', 'high', 'low', 'close', 'volume')
+            plus any feature columns, or None if insufficient data.
+        """
+        if not self._price_buffer:
+            return None
+
+        # Convert price buffer to DataFrame
+        price_array = np.array(self._price_buffer)
+        df = pd.DataFrame(
+            price_array,
+            columns=['open', 'high', 'low', 'close', 'volume']
+        )
+
+        # Add features if available
+        if self._feature_buffer and len(self._feature_buffer) == len(self._price_buffer):
+            feature_array = np.array(self._feature_buffer)
+            n_features = feature_array.shape[1] if feature_array.ndim > 1 else 1
+
+            # Generate feature column names
+            feature_cols = [f'feature_{i}' for i in range(n_features)]
+
+            if feature_array.ndim == 1:
+                feature_array = feature_array.reshape(-1, 1)
+
+            feature_df = pd.DataFrame(feature_array, columns=feature_cols)
+            df = pd.concat([df, feature_df], axis=1)
+
+        return df
 
     # -------------------------------------------------------------------------
     # Gymnasium interface

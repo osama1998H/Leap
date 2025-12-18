@@ -26,6 +26,7 @@ from training.trainer import ModelTrainer
 from evaluation.backtester import Backtester, WalkForwardOptimizer
 from evaluation.metrics import PerformanceAnalyzer
 from utils.mlflow_tracker import MLflowTracker, create_tracker
+from core.strategy import CombinedPredictorAgentStrategy, StrategyConfig
 
 logger = logging.getLogger(__name__)
 
@@ -810,155 +811,31 @@ class LeapTradingSystem:
         sl_pips = getattr(self.config.auto_trader, 'default_sl_pips', 50)
         tp_pips = getattr(self.config.auto_trader, 'default_tp_pips', 100)
 
-        # Helper function: Build observation for PPO agent
-        def _build_agent_observation(data, bt, feature_names):
-            """Build observation vector matching PPO agent's expected input."""
-            window_size = self.config.data.lookback_window
+        # Create strategy instance using TradingStrategy pattern
+        # This replaces the previous inline helper functions and strategy callable
+        strategy_config = StrategyConfig(
+            min_confidence=min_confidence,
+            prediction_threshold=prediction_threshold,
+            default_sl_pips=sl_pips,
+            default_tp_pips=tp_pips,
+            risk_per_trade=0.02,
+            lookback_window=self.config.data.lookback_window
+        )
 
-            # Market observation (window_size * n_features)
-            recent_data = data.tail(window_size)
-            ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
-            feature_cols = ohlcv_cols + feature_names
-            market_window = recent_data[feature_cols].values
+        # Use CombinedPredictorAgentStrategy - single source of truth for signal logic
+        strategy = CombinedPredictorAgentStrategy(
+            predictor=self._predictor,
+            agent=self._agent,
+            config=strategy_config,
+            feature_names=inference_feature_names
+        )
 
-            # Normalize market data (same as TradingEnvironment._get_market_observation)
-            market_flat = market_window.flatten()
-            market_obs = (market_flat - np.mean(market_flat)) / (np.std(market_flat) + 1e-8)
-
-            # Calculate max drawdown from equity curve (matches TradingEnvironment behavior)
-            max_dd = 0.0
-            if len(bt.equity_curve) > 1:
-                equity_arr = np.array(bt.equity_curve)
-                peak = np.maximum.accumulate(equity_arr)
-                drawdown = (peak - equity_arr) / (peak + 1e-8)
-                max_dd = float(np.max(drawdown))
-
-            # Helper to normalize unbounded ratios using log-scaling with sign preservation
-            # This prevents float32 overflow during profitable backtests
-            def _normalize_ratio(ratio: float) -> float:
-                if ratio >= 0:
-                    return np.log1p(ratio)
-                else:
-                    return -np.log1p(-ratio)
-
-            # Account observation (8 features, same as BaseTradingEnvironment._get_account_observation)
-            # Uses log-scaled normalization for unbounded values to prevent float32 overflow
-            account_obs = np.array([
-                _normalize_ratio(bt.balance / bt.initial_balance - 1.0),  # Normalized balance change
-                _normalize_ratio(bt.equity / bt.initial_balance - 1.0),   # Normalized equity change
-                len(bt.positions),                                         # Number of positions (bounded)
-                1.0 if any(p.direction == 'long' for p in bt.positions) else 0.0,   # Has long
-                1.0 if any(p.direction == 'short' for p in bt.positions) else 0.0,  # Has short
-                _normalize_ratio((bt.equity - bt.balance) / bt.initial_balance),    # Normalized unrealized PnL
-                max_dd,  # Max drawdown (already bounded 0-1)
-                _normalize_ratio((bt.equity - bt.initial_balance) / bt.initial_balance)  # Normalized total PnL
-            ])
-
-            return np.concatenate([market_obs, account_obs]).astype(np.float32)
-
-        # Helper function: Combine signals (mirrors AutoTrader._combine_signals)
-        def _combine_signals(predicted_return, agent_action, confidence):
-            """Combine prediction and agent action into final signal."""
-            # Check confidence threshold
-            if confidence < min_confidence:
-                return 'hold'
-
-            # Agent CLOSE always takes priority
-            if agent_action == Action.CLOSE:
-                return 'close'
-
-            # Agent BUY - validate with prediction
-            if agent_action == Action.BUY:
-                if predicted_return >= prediction_threshold:
-                    return 'buy'  # Agreement
-                elif predicted_return < -prediction_threshold:
-                    return 'hold'  # Contradiction - be cautious
-                else:
-                    return 'buy'  # Weak prediction - trust agent
-
-            # Agent SELL - validate with prediction
-            if agent_action == Action.SELL:
-                if predicted_return <= -prediction_threshold:
-                    return 'sell'  # Agreement
-                elif predicted_return > prediction_threshold:
-                    return 'hold'  # Contradiction - be cautious
-                else:
-                    return 'sell'  # Weak prediction - trust agent
-
-            return 'hold'
-
-        # Helper function: Convert signal to action dict
-        def _signal_to_action_dict(signal):
-            """Convert signal string to backtester action dict."""
-            if signal == 'buy':
-                return {'action': 'buy', 'stop_loss_pips': sl_pips, 'take_profit_pips': tp_pips}
-            elif signal == 'sell':
-                return {'action': 'sell', 'stop_loss_pips': sl_pips, 'take_profit_pips': tp_pips}
-            elif signal == 'close':
-                return {'action': 'close'}
-            return {'action': 'hold'}
-
-        # Define strategy - aligned with AutoTrader for consistent backtest/live behavior
-        def strategy(data, predictor=None, agent=None, positions=None):
-            """Combined prediction + RL strategy aligned with AutoTrader.
-
-            This strategy mirrors the signal combination logic from AutoTrader._combine_signals()
-            to ensure backtest results predict live trading performance.
-
-            Decision flow:
-            1. Get Transformer prediction and confidence
-            2. Get PPO agent action from observation
-            3. Combine signals: Agent decision validated by prediction direction
-            """
-            if len(data) < self.config.data.lookback_window + 1:
-                return {'action': 'hold'}
-
-            # 1. Get Transformer prediction
-            predicted_return = 0.0
-            prediction_confidence = 0.7  # Default above min_confidence threshold (0.6)
-
-            if predictor is not None and len(data) >= self.config.data.lookback_window:
-                try:
-                    recent_data = data.tail(self.config.data.lookback_window)
-                    ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
-                    feature_cols = ohlcv_cols + inference_feature_names
-                    features = recent_data[feature_cols].values
-
-                    if features is not None:
-                        X = features.reshape(1, self.config.data.lookback_window, -1)
-                        prediction = predictor.predict(X, return_uncertainty=True)
-                        predicted_return = prediction['prediction'][0, 0]
-                        # Confidence from uncertainty (clamp to [0, 1])
-                        # Note: TransformerPredictor returns uncertainty as array (q_high - q_low)
-                        uncertainty = prediction.get('uncertainty', 0.5)
-                        if isinstance(uncertainty, np.ndarray):
-                            uncertainty = float(np.mean(uncertainty))
-                        prediction_confidence = max(0.0, min(1.0, 1.0 - uncertainty))
-                except Exception as e:
-                    logger.debug(f"Prediction failed ({type(e).__name__}): {e}")
-
-            # 2. Get PPO agent action
-            agent_action = Action.HOLD
-
-            if agent is not None and len(data) >= self.config.data.lookback_window:
-                try:
-                    obs = _build_agent_observation(data, backtester, inference_feature_names)
-                    action_idx, _, _ = agent.select_action(obs, deterministic=True)
-                    agent_action = Action(action_idx)
-                except Exception as e:
-                    logger.debug(f"Agent action failed ({type(e).__name__}): {e}")
-
-            # 3. Combine signals (same logic as AutoTrader)
-            signal = _combine_signals(predicted_return, agent_action, prediction_confidence)
-
-            return _signal_to_action_dict(signal)
-
-        # Run backtest with both predictor and agent
+        # Run backtest with strategy instance
         logger.info("Running backtest...")
         if self._agent is not None:
-            logger.info("Using PPO agent + Transformer (aligned with AutoTrader strategy)")
+            logger.info(f"Using strategy: {strategy.name} (Transformer + PPO)")
         else:
-            logger.info("Using Transformer only (PPO agent not loaded)")
+            logger.info(f"Using strategy: {strategy.name} (Transformer only)")
 
         result = backtester.run(
             data=df,
