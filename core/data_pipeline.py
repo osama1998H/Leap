@@ -56,38 +56,41 @@ class MarketData:
 class FeatureEngineer:
     """
     Advanced feature engineering for trading data.
-    Computes technical indicators, price patterns, and derived features.
+
+    Uses FeatureRegistry internally for computation (see ADR-0012).
+    Maintains backward-compatible interface with helper methods for testing.
     """
 
     def __init__(self, config=None):
         self.config = config
         self.feature_names = []
+        # Lazy import to avoid circular dependency at module level
+        from core.feature_registry import FeatureRegistry
+        self._registry = FeatureRegistry.get_instance()
 
     def compute_all_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Compute all features from OHLCV data."""
-        features = df.copy()
+        """
+        Compute all features from OHLCV data using FeatureRegistry.
 
-        # Price-based features
-        features = self._add_price_features(features)
+        Args:
+            df: DataFrame with OHLCV columns (open, high, low, close, volume)
 
-        # Technical indicators
-        features = self._add_moving_averages(features)
-        features = self._add_momentum_indicators(features)
-        features = self._add_volatility_indicators(features)
-        features = self._add_volume_indicators(features)
-        features = self._add_trend_indicators(features)
+        Returns:
+            DataFrame with all computed features added
+        """
+        # Delegate to registry for all feature computation
+        features = self._registry.compute_all(df)
 
-        # Pattern recognition
-        features = self._add_candlestick_patterns(features)
-
-        # Time-based features
-        features = self._add_time_features(features)
-
-        # Store feature names (excluding OHLCV)
+        # Store feature names (excluding OHLCV) - backward compatible
         base_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
         self.feature_names = [c for c in features.columns if c not in base_cols]
 
         return features
+
+    # =========================================================================
+    # Legacy helper methods - kept for backward compatibility with tests
+    # These methods are deprecated; use FeatureRegistry directly instead.
+    # =========================================================================
 
     def _add_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add basic price-derived features."""
