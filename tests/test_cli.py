@@ -284,16 +284,16 @@ class TestModelInitialization:
 
     def test_initialize_models_uses_config(self, trading_system):
         """Test that model initialization uses config values."""
-        with patch('cli.system.TransformerPredictor') as mock_pred_cls:
-            with patch('cli.system.PPOAgent') as mock_agent_cls:
-                mock_pred_cls.return_value = MockPredictor()
-                mock_agent_cls.return_value = MockAgent()
+        with patch('cli.system.create_predictor') as mock_create_pred:
+            with patch('cli.system.create_agent') as mock_create_agent:
+                mock_create_pred.return_value = MockPredictor()
+                mock_create_agent.return_value = MockAgent()
 
                 trading_system.initialize_models(input_dim=55, state_dim=100)
 
-                # Verify predictor was called with config values
-                mock_pred_cls.assert_called_once()
-                call_kwargs = mock_pred_cls.call_args
+                # Verify create_predictor was called with correct input_dim
+                mock_create_pred.assert_called_once()
+                call_kwargs = mock_create_pred.call_args
                 assert call_kwargs[1]['input_dim'] == 55
 
 
@@ -375,9 +375,12 @@ class TestSaveLoadModels:
         trading_system._predictor = None
         trading_system._agent = None
 
-        # Load with mocked classes - patch at cli.system where they're imported
-        with patch('cli.system.TransformerPredictor', MockPredictor):
-            with patch('cli.system.PPOAgent', MockAgent):
+        # Load with mocked factory functions - load_models uses create_predictor/create_agent
+        # then calls .load() on them, so we mock the factory create functions
+        with patch('cli.system.create_predictor') as mock_create_pred:
+            with patch('cli.system.create_agent') as mock_create_agent:
+                mock_create_pred.return_value = MockPredictor(input_dim=55)
+                mock_create_agent.return_value = MockAgent(state_dim=100, action_dim=4)
                 trading_system.load_models(save_dir)
 
         assert trading_system._predictor is not None

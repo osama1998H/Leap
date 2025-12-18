@@ -16,6 +16,7 @@ from utils.device import resolve_device
 
 if TYPE_CHECKING:
     from utils.mlflow_tracker import MLflowTracker
+    from models import PredictorModel, AgentModel
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ class ModelTrainer:
 
     def __init__(
         self,
-        predictor,
-        agent,
+        predictor: 'PredictorModel',
+        agent: 'AgentModel',
         data_pipeline,
         config: Optional[Dict] = None,
         device: str = 'auto',

@@ -140,6 +140,35 @@ compute_all_features()
 
 ### Model Layer
 
+The model layer uses Protocol-based extensibility (see [ADR-0014](docs/decisions/0014-model-extensibility.md)) for easy addition of new model types.
+
+#### Model Factory (`models/factory.py`)
+Registry and factory functions for creating models:
+
+```python
+from models import create_predictor, create_agent, load_predictor, load_agent
+
+# Create models via factory
+predictor = create_predictor('transformer', input_dim=128, config={...})
+agent = create_agent('ppo', state_dim=72, action_dim=4, config={...})
+
+# Auto-load from checkpoint (detects model_type from metadata)
+predictor = load_predictor('saved_models/predictor.pt')
+agent = load_agent('saved_models/agent.pt')
+
+# List available types
+list_predictors()  # ['transformer']
+list_agents()      # ['ppo']
+```
+
+#### Model Protocols (`models/base.py`)
+Protocol definitions for type-safe model usage:
+
+| Protocol | Required Methods |
+|----------|-----------------|
+| `PredictorModel` | `train()`, `predict()`, `online_update()`, `save()`, `load()` |
+| `AgentModel` | `select_action()`, `train_on_env()`, `online_update()`, `save()`, `load()` |
+
 #### TransformerPredictor (`models/transformer.py`)
 Temporal Fusion Transformer for multi-horizon price prediction.
 
@@ -697,9 +726,25 @@ Leap/
 2. Feature automatically included in `feature_names` list
 
 ### Adding New Models
-1. Implement predictor/agent with matching interface
-2. Add to `models/__init__.py`
-3. Update `ModelTrainer` if needed
+See [ADR-0014](docs/decisions/0014-model-extensibility.md) for full migration guide.
+
+1. Create model class implementing `PredictorModel` or `AgentModel` protocol methods
+2. Register with decorator: `@register_predictor('name')` or `@register_agent('name')`
+3. Use via factory: `create_predictor('name', input_dim=...)` or `create_agent('name', state_dim=...)`
+
+```python
+from models import register_predictor
+
+@register_predictor('lstm')
+class LSTMPredictor:
+    def __init__(self, input_dim: int, config: dict = None, device: str = 'auto'):
+        ...
+    def train(self, X_train, y_train, ...): ...
+    def predict(self, X, return_uncertainty=False): ...
+    def online_update(self, X_new, y_new, learning_rate=None): ...
+    def save(self, path: str): ...
+    def load(self, path: str): ...
+```
 
 ### Adding New Environments
 1. Extend `BaseTradingEnvironment`
