@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import numpy as np
 
-from core.mt5_broker import MT5BrokerGateway
+from core.broker_interface import BrokerGateway
 from core.order_manager import OrderManager, TradingSignal, SignalType, OrderExecution
 from core.position_sync import PositionSynchronizer, PositionEvent, PositionChange
 from core.live_trading_env import LiveTradingEnvironment
@@ -144,7 +144,7 @@ class AutoTrader:
 
     def __init__(
         self,
-        broker: MT5BrokerGateway,
+        broker: BrokerGateway,
         predictor: Optional['TransformerPredictor'] = None,
         agent: Optional['PPOAgent'] = None,
         risk_manager: Optional['RiskManager'] = None,
@@ -156,7 +156,7 @@ class AutoTrader:
         Initialize auto-trader.
 
         Args:
-            broker: MT5 broker gateway
+            broker: BrokerGateway implementation (MT5 or Paper)
             predictor: Transformer predictor model
             agent: PPO agent for decisions
             risk_manager: Risk management system
@@ -291,7 +291,7 @@ class AutoTrader:
         self._trading_thread.start()
 
         self._set_state(TraderState.RUNNING)
-        logger.info(f"AutoTrader started (paper_mode={self.config.paper_mode})")
+        logger.info("AutoTrader started")
 
         return True
 
@@ -357,7 +357,6 @@ class AutoTrader:
 
         status = {
             'state': self.state.value,
-            'paper_mode': self.config.paper_mode,
             'symbols': self.config.symbols,
             'connected': self.broker.is_connected,
             'balance': account.balance if account else 0.0,
@@ -388,8 +387,7 @@ class AutoTrader:
             'config': {
                 'symbols': self.config.symbols,
                 'risk_per_trade': self.config.risk_per_trade,
-                'max_positions': self.config.max_positions,
-                'paper_mode': self.config.paper_mode
+                'max_positions': self.config.max_positions
             }
         }
 
@@ -426,7 +424,6 @@ class AutoTrader:
                 default_sl_pips=self.config.default_sl_pips,
                 default_tp_pips=self.config.default_tp_pips,
                 risk_per_trade=self.config.risk_per_trade,
-                paper_mode=self.config.paper_mode,
                 # Pass model dimensions for compatibility with trained models
                 window_size=self.config.model_window_size,
                 feature_dim=self.config.model_n_features,

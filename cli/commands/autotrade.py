@@ -16,9 +16,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Optional imports for auto-trading (MT5 is Windows-only)
+# Optional imports for auto-trading
 try:
-    from core.mt5_broker import MT5BrokerGateway
+    from core.broker_interface import create_broker, PaperBrokerConfig
+    from core.mt5_broker import MT5BrokerGateway  # Keep for MT5-specific config
     from core.auto_trader import AutoTrader
     from config.settings import AutoTraderConfig
     from training.online_learning import OnlineLearningManager
@@ -83,13 +84,26 @@ def execute_autotrade(
 
     autotrade_timeframe = args.timeframe or config.auto_trader.timeframe or timeframe
 
-    # Create broker gateway
-    broker = MT5BrokerGateway(
-        login=config.auto_trader.mt5_login,
-        password=config.auto_trader.mt5_password,
-        server=config.auto_trader.mt5_server,
-        magic_number=config.auto_trader.magic_number
-    )
+    # Create broker gateway based on mode
+    if args.paper:
+        # Use PaperBrokerGateway for paper trading (cross-platform)
+        paper_config = PaperBrokerConfig(
+            initial_balance=getattr(config.auto_trader, 'initial_balance', 10000.0),
+            leverage=100,
+            magic_number=config.auto_trader.magic_number,
+            use_real_prices=True  # Use MT5 prices if available
+        )
+        broker = create_broker('paper', config=paper_config)
+        logger.info("Created PaperBrokerGateway for paper trading")
+    else:
+        # Use MT5BrokerGateway for live trading (Windows only)
+        broker = MT5BrokerGateway(
+            login=config.auto_trader.mt5_login,
+            password=config.auto_trader.mt5_password,
+            server=config.auto_trader.mt5_server,
+            magic_number=config.auto_trader.magic_number
+        )
+        logger.info("Created MT5BrokerGateway for live trading")
 
     # Connect data pipeline to MT5 for real market data
     # This is critical - without this, the system uses synthetic data!
@@ -128,7 +142,6 @@ def execute_autotrade(
         max_positions=config.auto_trader.max_positions,
         default_sl_pips=config.auto_trader.default_sl_pips,
         default_tp_pips=config.auto_trader.default_tp_pips,
-        paper_mode=args.paper,
         enable_online_learning=config.auto_trader.enable_online_learning,
         # Pass model environment dimensions for live trading compatibility
         model_window_size=system._model_env_config['window_size'],

@@ -17,7 +17,7 @@ from core.trading_types import (
 )
 
 if TYPE_CHECKING:
-    from core.mt5_broker import MT5BrokerGateway, OrderResult, SymbolInfo, TickInfo
+    from core.broker_interface import BrokerGateway, OrderResult, SymbolInfo, TickInfo
     from core.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class OrderManager:
 
     def __init__(
         self,
-        broker: 'MT5BrokerGateway',
+        broker: 'BrokerGateway',
         risk_manager: Optional['RiskManager'] = None,
         default_sl_pips: float = 50.0,
         default_tp_pips: float = 100.0,
@@ -100,7 +100,7 @@ class OrderManager:
         Initialize order manager.
 
         Args:
-            broker: MT5 broker gateway
+            broker: BrokerGateway implementation (MT5 or Paper)
             risk_manager: Risk manager for position sizing
             default_sl_pips: Default stop loss in pips
             default_tp_pips: Default take profit in pips
@@ -232,7 +232,7 @@ class OrderManager:
                 return execution
 
         # Execute order
-        from core.mt5_broker import OrderType
+        from core.broker_interface import OrderType
 
         order_type = OrderType.BUY if signal.signal_type == SignalType.BUY else OrderType.SELL
 
