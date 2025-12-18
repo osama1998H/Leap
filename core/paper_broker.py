@@ -25,6 +25,7 @@ from core.broker_interface import (
     OrderType,
     PaperBrokerConfig,
 )
+from utils.pnl_calculator import calculate_unrealized_pnl
 
 logger = logging.getLogger(__name__)
 
@@ -751,15 +752,17 @@ class PaperBrokerGateway:
         current_price: float,
         contract_size: float
     ) -> float:
-        """Calculate PnL for a position."""
-        if position.is_long:
-            price_diff = current_price - position.price_open
-        else:
-            price_diff = position.price_open - current_price
+        """Calculate PnL for a position using centralized utility."""
+        direction = 'long' if position.is_long else 'short'
+        pnl = calculate_unrealized_pnl(
+            entry_price=position.price_open,
+            current_price=current_price,
+            size=position.volume,
+            direction=direction,
+            contract_size=contract_size
+        )
 
-        pnl = price_diff * position.volume * contract_size
-
-        # Adjust for JPY pairs
+        # Adjust for JPY pairs (different pip value)
         if 'JPY' in position.symbol.upper():
             pnl *= 0.01
 
