@@ -720,3 +720,154 @@ class TestStrategyIntegration:
         # Convert to backtest format
         backtest_dict = signal.to_backtest_dict()
         assert backtest_dict['action'] == 'buy'
+
+
+class TestBacktesterIntegration:
+    """Tests for Backtester + TradingStrategy integration."""
+
+    @pytest.fixture
+    def sample_ohlcv_data(self):
+        """Create sample OHLCV DataFrame for backtesting."""
+        n_bars = 200
+        np.random.seed(42)
+        close = np.cumsum(np.random.randn(n_bars) * 0.001) + 1.10
+        return pd.DataFrame({
+            'open': close - 0.0005,
+            'high': close + 0.001,
+            'low': close - 0.001,
+            'close': close,
+            'volume': np.random.randint(1000, 5000, n_bars).astype(float),
+        })
+
+    def test_backtester_accepts_strategy_instance(self, sample_ohlcv_data):
+        """Test Backtester accepts TradingStrategy instance."""
+        from evaluation.backtester import Backtester
+
+        strategy = CombinedPredictorAgentStrategy()
+        backtester = Backtester(initial_balance=10000.0)
+
+        result = backtester.run(
+            data=sample_ohlcv_data,
+            strategy=strategy,
+            show_progress=False
+        )
+
+        assert result is not None
+        assert isinstance(result.total_return, float)
+
+    def test_backtester_callable_deprecation_warning(self, sample_ohlcv_data):
+        """Test deprecation warning is shown for callable strategies."""
+        from evaluation.backtester import Backtester
+        import warnings
+
+        def legacy_strategy(market_data, **kwargs):
+            return {'action': 'hold'}
+
+        backtester = Backtester(initial_balance=10000.0)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            backtester.run(
+                data=sample_ohlcv_data,
+                strategy=legacy_strategy,
+                show_progress=False
+            )
+
+            # Should have exactly one deprecation warning
+            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(deprecation_warnings) == 1
+            assert "deprecated" in str(deprecation_warnings[0].message).lower()
+
+    def test_backtester_callable_warning_once_per_instance(self, sample_ohlcv_data):
+        """Test deprecation warning is shown only once per backtester instance."""
+        from evaluation.backtester import Backtester
+        import warnings
+
+        def legacy_strategy(market_data, **kwargs):
+            return {'action': 'hold'}
+
+        backtester = Backtester(initial_balance=10000.0)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            # Run twice with same backtester instance
+            backtester.run(data=sample_ohlcv_data, strategy=legacy_strategy, show_progress=False)
+            backtester.run(data=sample_ohlcv_data, strategy=legacy_strategy, show_progress=False)
+
+            # Should still have only one warning (per instance)
+            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(deprecation_warnings) == 1
+
+    def test_strategy_reset_called_at_start(self, sample_ohlcv_data):
+        """Test strategy.reset() is called at backtest start."""
+        from evaluation.backtester import Backtester
+
+        mock_strategy = Mock(spec=TradingStrategy)
+        mock_strategy.name = "mock_strategy"
+        mock_strategy.generate_signal.return_value = StrategySignal(action=SignalType.HOLD)
+
+        backtester = Backtester(initial_balance=10000.0)
+        backtester.run(data=sample_ohlcv_data, strategy=mock_strategy, show_progress=False)
+
+        mock_strategy.reset.assert_called_once()
+
+    def test_strategy_lifecycle_callbacks_invoked(self, sample_ohlcv_data):
+        """Test on_trade_opened and on_trade_closed callbacks are invoked."""
+        from evaluation.backtester import Backtester
+
+        class TrackingStrategy(TradingStrategy):
+            def __init__(self):
+                self.trades_opened = []
+                self.trades_closed = []
+                self._signal_count = 0
+
+            @property
+            def name(self):
+                return "tracking"
+
+            def generate_signal(self, market_data, positions, **kwargs):
+                self._signal_count += 1
+                # Open a trade on bar 10, close on bar 20
+                if self._signal_count == 10:
+                    return StrategySignal(
+                        action=SignalType.BUY,
+                        stop_loss_pips=50.0,
+                        take_profit_pips=100.0
+                    )
+                elif self._signal_count == 20 and len(positions) > 0:
+                    return StrategySignal(action=SignalType.CLOSE)
+                return StrategySignal(action=SignalType.HOLD)
+
+            def on_trade_opened(self, trade):
+                self.trades_opened.append(trade)
+
+            def on_trade_closed(self, trade):
+                self.trades_closed.append(trade)
+
+        strategy = TrackingStrategy()
+        backtester = Backtester(initial_balance=10000.0)
+        backtester.run(data=sample_ohlcv_data, strategy=strategy, show_progress=False)
+
+        # Should have opened and closed at least one trade
+        assert len(strategy.trades_opened) >= 1, "on_trade_opened should be called"
+        assert len(strategy.trades_closed) >= 1, "on_trade_closed should be called"
+
+    def test_no_warning_for_strategy_instance(self, sample_ohlcv_data):
+        """Test no deprecation warning when using TradingStrategy instance."""
+        from evaluation.backtester import Backtester
+        import warnings
+
+        strategy = CombinedPredictorAgentStrategy()
+        backtester = Backtester(initial_balance=10000.0)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            backtester.run(
+                data=sample_ohlcv_data,
+                strategy=strategy,
+                show_progress=False
+            )
+
+            # Should have no deprecation warnings
+            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(deprecation_warnings) == 0

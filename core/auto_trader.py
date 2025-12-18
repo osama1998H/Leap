@@ -20,6 +20,11 @@ from core.data_pipeline import DataPipeline
 from core.trading_env import Action
 from core.trading_types import TradeStatistics  # Consolidated trade statistics
 from config.settings import AutoTraderConfig  # Single source of truth for config
+from core.strategy import (
+    TradingStrategy,
+    CombinedPredictorAgentStrategy,
+    StrategyConfig
+)
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -150,7 +155,8 @@ class AutoTrader:
         risk_manager: Optional['RiskManager'] = None,
         online_manager: Optional['OnlineLearningManager'] = None,
         data_pipeline: Optional[DataPipeline] = None,
-        config: Optional[AutoTraderConfig] = None
+        config: Optional[AutoTraderConfig] = None,
+        strategy: Optional[TradingStrategy] = None
     ):
         """
         Initialize auto-trader.
@@ -163,6 +169,9 @@ class AutoTrader:
             online_manager: Online learning manager
             data_pipeline: Data pipeline for features
             config: Auto-trader configuration
+            strategy: Optional TradingStrategy for signal generation.
+                      If not provided, auto-creates CombinedPredictorAgentStrategy
+                      when predictor/agent are available.
         """
         self.broker = broker
         self.predictor = predictor
@@ -171,6 +180,31 @@ class AutoTrader:
         self.online_manager = online_manager
         self.data_pipeline = data_pipeline or DataPipeline()
         self.config = config or AutoTraderConfig()
+
+        # Initialize strategy - inject or auto-create
+        if strategy is not None:
+            self.strategy = strategy
+            logger.info(f"Using injected strategy: {strategy.name}")
+        elif predictor is not None or agent is not None:
+            # Auto-create CombinedPredictorAgentStrategy when models are available
+            strategy_config = StrategyConfig(
+                min_confidence=self.config.min_confidence,
+                prediction_threshold=self.config.prediction_threshold,
+                default_sl_pips=self.config.default_sl_pips,
+                default_tp_pips=self.config.default_tp_pips,
+                risk_per_trade=self.config.risk_per_trade,
+                lookback_window=self.config.model_window_size
+            )
+            self.strategy = CombinedPredictorAgentStrategy(
+                predictor=predictor,
+                agent=agent,
+                config=strategy_config,
+                feature_names=None  # Will use auto-detection from market_data
+            )
+            logger.info("Auto-created CombinedPredictorAgentStrategy")
+        else:
+            self.strategy = None
+            logger.info("No strategy configured - using legacy signal generation")
 
         # Components
         self.order_manager = OrderManager(
@@ -571,7 +605,56 @@ class AutoTrader:
                     self.session.signals_rejected += 1
 
     def _generate_signal(self, symbol: str) -> TradingSignal:
-        """Generate trading signal using models."""
+        """Generate trading signal using strategy pattern.
+
+        Delegates to self.strategy.generate_signal() when available,
+        falls back to legacy inline generation otherwise.
+        """
+        env = self.live_envs.get(symbol)
+        if env is None:
+            return TradingSignal(signal_type=SignalType.HOLD, symbol=symbol)
+
+        # Use strategy if available
+        if self.strategy is not None:
+            try:
+                # Get market data from environment
+                market_data = env.get_market_data() if hasattr(env, 'get_market_data') else None
+
+                if market_data is None or len(market_data) == 0:
+                    logger.debug(f"[{symbol}] No market data available, returning HOLD")
+                    return TradingSignal(signal_type=SignalType.HOLD, symbol=symbol)
+
+                # Get current positions for this symbol
+                positions = [p for p in self.position_sync.get_all_positions()
+                            if hasattr(p, 'symbol') and p.symbol == symbol]
+
+                # Check if new positions allowed
+                open_status = env.open_status if hasattr(env, 'open_status') else True
+
+                # Generate signal using strategy
+                strategy_signal = self.strategy.generate_signal(
+                    market_data=market_data,
+                    positions=positions,
+                    symbol=symbol,
+                    open_status=open_status
+                )
+
+                # Convert StrategySignal to TradingSignal for OrderManager
+                return strategy_signal.to_trading_signal()
+
+            except Exception as e:
+                logger.warning(f"[{symbol}] Strategy signal generation failed: {e}, falling back to legacy")
+                # Fall through to legacy generation
+
+        # Fallback: legacy inline signal generation
+        return self._generate_signal_legacy(symbol)
+
+    def _generate_signal_legacy(self, symbol: str) -> TradingSignal:
+        """Legacy signal generation method.
+
+        DEPRECATED: This method is kept for backward compatibility.
+        New code should use TradingStrategy via self.strategy.
+        """
         env = self.live_envs.get(symbol)
         if env is None:
             return TradingSignal(signal_type=SignalType.HOLD, symbol=symbol)
@@ -649,7 +732,12 @@ class AutoTrader:
         confidence: float,
         symbol: str
     ) -> SignalType:
-        """Combine prediction and agent action into final signal."""
+        """Combine prediction and agent action into final signal.
+
+        DEPRECATED: Signal combination is now handled by TradingStrategy.
+        This method is kept for backward compatibility with _generate_signal_legacy().
+        New code should use TradingStrategy.generate_signal() instead.
+        """
         # Check confidence threshold
         if confidence < self.config.min_confidence:
             return SignalType.HOLD
@@ -851,6 +939,13 @@ class AutoTrader:
 
         profit = change.details.get('profit', 0.0)
         ticket = change.ticket
+
+        # Notify strategy of trade closed (for learning/adaptation)
+        if self.strategy is not None and change.position is not None:
+            try:
+                self.strategy.on_trade_closed(change.position)
+            except Exception as e:
+                logger.debug(f"Strategy on_trade_closed callback failed: {e}")
 
         if self.session:
             self.session.update_with_trade_result(profit)

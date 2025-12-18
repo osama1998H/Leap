@@ -5,7 +5,8 @@ Comprehensive backtesting with walk-forward optimization and Monte Carlo simulat
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Callable, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, Callable, Union, TYPE_CHECKING
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,7 @@ from utils.position_sizing import calculate_risk_based_size, apply_position_limi
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
     from evaluation.metrics import MetricsCalculator
+    from core.strategy import TradingStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +135,12 @@ class Backtester:
         self._daily_trade_count: int = 0
         self._current_day: Optional[datetime] = None
 
+        # Deprecation tracking (one warning per run)
+        self._callable_warning_shown: bool = False
+
+        # Current strategy reference for lifecycle callbacks
+        self._current_strategy: Optional['TradingStrategy'] = None
+
     def _calculate_position_size(
         self,
         entry_price: float,
@@ -186,7 +194,7 @@ class Backtester:
     def run(
         self,
         data: pd.DataFrame,
-        strategy: Callable,
+        strategy: Union['TradingStrategy', Callable],
         predictor=None,
         agent=None,
         show_progress: bool = True
@@ -196,7 +204,7 @@ class Backtester:
 
         Args:
             data: DataFrame with OHLCV data and features
-            strategy: Strategy function that returns actions
+            strategy: TradingStrategy instance (recommended) or callable function (deprecated)
             predictor: Optional prediction model
             agent: Optional RL agent
             show_progress: Whether to show tqdm progress bar (default True)
@@ -205,6 +213,33 @@ class Backtester:
             BacktestResult with comprehensive metrics
         """
         self.reset()
+
+        # Import here to avoid circular imports
+        from core.strategy import TradingStrategy, CallableStrategyAdapter
+
+        # Detect strategy type and wrap if needed
+        if isinstance(strategy, TradingStrategy):
+            strategy_instance = strategy
+        else:
+            # Show deprecation warning once per instance
+            if not self._callable_warning_shown:
+                warnings.warn(
+                    "Passing a callable function to Backtester.run() is deprecated. "
+                    "Use TradingStrategy instances instead. "
+                    "See core/strategy.py for the TradingStrategy ABC.",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
+                self._callable_warning_shown = True
+
+            # Wrap callable in adapter for unified interface
+            strategy_instance = CallableStrategyAdapter(strategy, "legacy_callable")
+
+        # Store reference for lifecycle callbacks
+        self._current_strategy = strategy_instance
+
+        # Call strategy.reset() at start of backtest
+        strategy_instance.reset()
 
         n_steps = len(data)
         logger.info(f"Running backtest on {n_steps} bars...")
@@ -227,13 +262,16 @@ class Backtester:
             # Update existing positions (check stop loss / take profit)
             self._update_positions(high, low, timestamp)
 
-            # Get trading signal
-            signal = strategy(
-                data.iloc[:i + 1],
+            # Get trading signal using strategy pattern
+            strategy_signal = strategy_instance.generate_signal(
+                market_data=data.iloc[:i + 1],
+                positions=self.positions,
                 predictor=predictor,
-                agent=agent,
-                positions=self.positions
+                agent=agent
             )
+
+            # Convert StrategySignal to dict for backward compatibility with _execute_signal
+            signal = strategy_signal.to_backtest_dict()
 
             # Execute signal (with bar index for cooldown tracking)
             self._execute_signal(signal, current_price, timestamp, bar_index=i)
@@ -377,6 +415,10 @@ class Backtester:
 
         self.positions.append(trade)
 
+        # Notify strategy of trade opened (lifecycle callback)
+        if self._current_strategy is not None:
+            self._current_strategy.on_trade_opened(trade)
+
         # Notify risk manager of position opened
         notional = size * entry_price
         if self.risk_manager is not None:
@@ -420,6 +462,10 @@ class Backtester:
         # Move to closed trades
         self.positions.remove(position)
         self.closed_trades.append(position)
+
+        # Notify strategy of trade closed (lifecycle callback)
+        if self._current_strategy is not None:
+            self._current_strategy.on_trade_closed(position)
 
         # Notify risk manager of position closed (use entry notional for consistency)
         notional = position.size * position.entry_price

@@ -194,9 +194,51 @@ def _combine_signals(self, predicted_return, agent_action, confidence, open_stat
 
 1. ✅ Create `core/strategy.py` with ABC and implementations
 2. ✅ Create unit tests
-3. ⏳ Update `Backtester` to accept `TradingStrategy` (future)
-4. ⏳ Update `AutoTrader` to use injected strategy (future)
-5. ⏳ Deprecate callable-only strategy interface (future)
+3. ✅ Update `Backtester` to accept `TradingStrategy`
+   - Accepts `Union[TradingStrategy, Callable]`
+   - Shows deprecation warning for callable usage (once per instance)
+   - Calls lifecycle hooks: `reset()`, `on_trade_opened()`, `on_trade_closed()`
+4. ✅ Update `AutoTrader` to use injected strategy
+   - Accepts optional `TradingStrategy` in constructor
+   - Auto-creates `CombinedPredictorAgentStrategy` when predictor/agent available
+   - Delegates signal generation to strategy
+5. ✅ Update `cli/system.py` to use `CombinedPredictorAgentStrategy`
+   - Removed duplicate helper functions: `_build_agent_observation()`, `_combine_signals()`, `_signal_to_action_dict()`
+6. ⏳ Remove deprecated callable support (future major version)
+
+### Deprecation Timeline
+
+- **v1.x**: Callable strategies supported with deprecation warning
+- **v2.0**: Callable support removed, only `TradingStrategy` accepted
+
+### Migration for External Code
+
+If you have code using callable strategies:
+
+```python
+# Before (deprecated)
+def my_strategy(data, predictor=None, agent=None, positions=None):
+    return {'action': 'buy', 'stop_loss_pips': 50, 'take_profit_pips': 100}
+
+result = backtester.run(data, my_strategy)
+
+# After (recommended)
+from core.strategy import TradingStrategy, StrategySignal, SignalType
+
+class MyStrategy(TradingStrategy):
+    @property
+    def name(self):
+        return "my_strategy"
+
+    def generate_signal(self, market_data, positions, **kwargs):
+        return StrategySignal(
+            action=SignalType.BUY,
+            stop_loss_pips=50.0,
+            take_profit_pips=100.0
+        )
+
+result = backtester.run(data, MyStrategy())
+```
 
 ## Alternatives Considered
 
