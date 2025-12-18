@@ -304,7 +304,7 @@ class TestPaperBrokerGateway:
 
     def test_check_order_valid(self, broker):
         """Test order validation for valid order."""
-        is_valid, message, balance, equity = broker.check_order(
+        is_valid, _message, balance, _equity = broker.check_order(
             symbol="EURUSD",
             order_type=OrderType.BUY,
             volume=0.1
@@ -317,7 +317,7 @@ class TestPaperBrokerGateway:
         """Test order validation for excessive volume (insufficient margin)."""
         # With 10000 balance and 100 leverage, max margin is ~1000 lots
         # Test with a very large volume to trigger margin check
-        is_valid, message, _, _ = broker.check_order(
+        is_valid, _message, _, _ = broker.check_order(
             symbol="EURUSD",
             order_type=OrderType.BUY,
             volume=10000.0  # Excessively large - should fail margin check
@@ -387,11 +387,13 @@ class TestPaperBrokerGateway:
 
     def test_context_manager(self):
         """Test context manager usage."""
-        with PaperBrokerGateway() as broker:
+        broker = PaperBrokerGateway()
+        with broker:
             assert broker.is_connected is True
             broker.send_market_order("EURUSD", OrderType.BUY, 0.1)
 
         # Should be disconnected after context
+        assert broker.is_connected is False
 
 
 class TestBrokerFactory:

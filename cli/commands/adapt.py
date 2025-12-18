@@ -104,7 +104,7 @@ def execute_adapt(
                 system, args, config, market_data, adaptation_config, symbol
             )
         elif mode == 'evaluate':
-            _evaluate_adaptation(system, market_data, symbol)
+            _evaluate_adaptation(system, market_data, symbol, config)
         else:
             logger.error(f"Unknown mode: {mode}")
 
@@ -339,7 +339,8 @@ def _run_online_adaptation(
 def _evaluate_adaptation(
     system: 'LeapTradingSystem',
     market_data,
-    symbol: str
+    symbol: str,
+    config: 'SystemConfig'
 ) -> None:
     """
     Evaluate current model adaptation performance.
@@ -353,7 +354,7 @@ def _evaluate_adaptation(
 
     features = market_data.features
     close = market_data.close
-    lookback = 60  # Default lookback
+    lookback = config.data.lookback_window
 
     if features is None or len(features) < lookback + 10:
         logger.error("Insufficient data for evaluation")

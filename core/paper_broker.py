@@ -431,7 +431,7 @@ class PaperBrokerGateway:
             price=price,
             bid=tick.bid,
             ask=tick.ask,
-            comment=f"Paper trade executed"
+            comment="Paper trade executed"
         )
 
     def close_position(

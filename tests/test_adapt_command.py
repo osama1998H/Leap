@@ -343,21 +343,29 @@ class TestEvaluateAdaptation:
         market_data.feature_names = [f'feature_{i}' for i in range(20)]
         return market_data
 
+    @pytest.fixture
+    def mock_config(self):
+        """Create mock config for evaluation tests."""
+        config = Mock()
+        config.data = Mock()
+        config.data.lookback_window = 60
+        return config
+
     @patch('cli.commands.adapt.logger')
     def test_evaluate_adaptation(
-        self, mock_logger, mock_system, sample_market_data
+        self, mock_logger, mock_system, sample_market_data, mock_config
     ):
         """Test adaptation evaluation."""
         from cli.commands.adapt import _evaluate_adaptation
 
         # Should not raise
-        _evaluate_adaptation(mock_system, sample_market_data, 'EURUSD')
+        _evaluate_adaptation(mock_system, sample_market_data, 'EURUSD', mock_config)
 
         # Should log evaluation info
         assert mock_logger.info.called
 
     @patch('cli.commands.adapt.logger')
-    def test_evaluate_adaptation_insufficient_data(self, mock_logger, mock_system):
+    def test_evaluate_adaptation_insufficient_data(self, mock_logger, mock_system, mock_config):
         """Test evaluation with insufficient data."""
         from cli.commands.adapt import _evaluate_adaptation
 
@@ -365,7 +373,7 @@ class TestEvaluateAdaptation:
         market_data.features = np.random.randn(10, 5)  # Too few samples
         market_data.close = np.random.randn(10)
 
-        _evaluate_adaptation(mock_system, market_data, 'EURUSD')
+        _evaluate_adaptation(mock_system, market_data, 'EURUSD', mock_config)
 
         # Should log error about insufficient data
         assert mock_logger.error.called
