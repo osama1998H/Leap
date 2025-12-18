@@ -15,9 +15,29 @@ The `core/` directory contains the trading system's fundamental components.
 | `auto_trader.py` | Autonomous trading | `AutoTrader` |
 | `order_manager.py` | Order execution | `OrderManager` |
 | `position_sync.py` | Position sync | `PositionSynchronizer` |
+| `broker_interface.py` | Broker abstraction | `BrokerGateway` Protocol, `create_broker()` |
+| `paper_broker.py` | Paper trading | `PaperBrokerGateway` |
 | `mt5_broker.py` | MT5 integration | `MT5BrokerGateway` |
 
 ## Critical Patterns
+
+### Broker Abstraction (broker_interface.py)
+Use `BrokerGateway` Protocol for broker-agnostic code:
+```python
+from core.broker_interface import BrokerGateway, create_broker, PaperBrokerConfig
+
+# Create paper broker (cross-platform)
+paper_config = PaperBrokerConfig(initial_balance=10000.0, leverage=100)
+broker: BrokerGateway = create_broker('paper', config=paper_config)
+
+# Or create MT5 broker (Windows only)
+from core.mt5_broker import MT5BrokerGateway
+broker: BrokerGateway = MT5BrokerGateway()
+
+# Both satisfy BrokerGateway protocol - same interface
+```
+
+All broker-dependent classes (`LiveTradingEnvironment`, `AutoTrader`, `OrderManager`, `PositionSynchronizer`) accept `BrokerGateway` type, enabling dependency injection.
 
 ### EnvConfig (trading_types.py)
 Always use `EnvConfig` for environment configuration:
@@ -44,12 +64,13 @@ Use specific exception types:
 ```
 BaseTradingEnvironment (abstract)
 ├── TradingEnvironment (backtest/training)
-└── LiveTradingEnvironment (live trading)
+└── LiveTradingEnvironment (live trading - delegates to BrokerGateway)
 ```
 
 ## Common Gotchas
 
-1. **MT5 Windows-only**: `mt5_broker.py` only works on Windows
-2. **Paper mode**: Always use `--paper` flag when testing `autotrade`
-3. **Risk validation**: Call `RiskManager.should_take_trade()` with all 4 params:
+1. **MT5 Windows-only**: `mt5_broker.py` only works on Windows. Use `PaperBrokerGateway` for cross-platform testing.
+2. **Paper mode**: Always use `--paper` flag when testing `autotrade` command
+3. **Broker abstraction**: `LiveTradingEnvironment` no longer has internal paper trading logic. Paper trading is now handled by `PaperBrokerGateway`.
+4. **Risk validation**: Call `RiskManager.should_take_trade()` with all 4 params:
    `entry_price`, `stop_loss_price`, `take_profit_price`, `direction`

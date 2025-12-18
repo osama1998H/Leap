@@ -225,7 +225,6 @@ class AutoTraderConfig:
     trading_days: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])  # Mon-Fri
 
     # Execution
-    paper_mode: bool = True
     loop_interval: float = 1.0  # Seconds between trading cycles
     bar_interval: int = 3600  # Seconds per bar (for 1h = 3600)
 

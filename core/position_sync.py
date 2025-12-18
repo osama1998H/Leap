@@ -10,8 +10,11 @@ from datetime import datetime
 from enum import Enum
 from threading import Lock
 
-from core.mt5_broker import MT5BrokerGateway, MT5Position
+from core.broker_interface import BrokerGateway, BrokerPosition
 from utils.pnl_calculator import calculate_unrealized_pnl
+
+# Backward compatibility alias
+MT5Position = BrokerPosition
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,7 @@ class PositionSynchronizer:
 
     def __init__(
         self,
-        broker: MT5BrokerGateway,
+        broker: BrokerGateway,
         magic_number: Optional[int] = None,
         sync_interval: float = 1.0
     ):
@@ -70,7 +73,7 @@ class PositionSynchronizer:
         Initialize position synchronizer.
 
         Args:
-            broker: MT5 broker gateway
+            broker: BrokerGateway implementation (MT5 or Paper)
             magic_number: Filter positions by magic number (None for all)
             sync_interval: Minimum seconds between syncs
         """
@@ -251,7 +254,7 @@ class PositionSynchronizer:
 
         return changes
 
-    def get_positions(self, symbol: Optional[str] = None) -> List[MT5Position]:
+    def get_positions(self, symbol: Optional[str] = None) -> List[BrokerPosition]:
         """
         Get current positions.
 
@@ -269,7 +272,7 @@ class PositionSynchronizer:
 
         return positions
 
-    def get_position(self, ticket: int) -> Optional[MT5Position]:
+    def get_position(self, ticket: int) -> Optional[BrokerPosition]:
         """Get position by ticket."""
         with self._lock:
             synced = self._positions.get(ticket)

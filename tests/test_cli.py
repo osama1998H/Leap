@@ -989,8 +989,8 @@ class TestModularConfigLoaders:
         config_data = {
             "symbols": ["EURUSD", "GBPUSD"],
             "timeframe": "4h",
-            "paper_mode": False,
-            "risk_per_trade": 0.02
+            "risk_per_trade": 0.02,
+            "max_positions": 5
         }
         config_path = os.path.join(temp_dir, 'auto_trader.json')
         with open(config_path, 'w') as f:
@@ -1000,8 +1000,8 @@ class TestModularConfigLoaders:
 
         assert auto_trader_cfg.symbols == ["EURUSD", "GBPUSD"]
         assert auto_trader_cfg.timeframe == "4h"
-        assert auto_trader_cfg.paper_mode is False
         assert auto_trader_cfg.risk_per_trade == 0.02
+        assert auto_trader_cfg.max_positions == 5
 
     def test_load_logging_config(self, temp_dir):
         """Test loading standalone logging config."""

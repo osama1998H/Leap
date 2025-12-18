@@ -54,29 +54,30 @@ tests/
 
 ---
 
-### 1.2 Missing Tests for Trading Environments
+### 1.2 Missing Tests for Trading Environments (Partially Complete)
 
-**Current State:** `TradingEnvironment` and `LiveTradingEnvironment` are only tested through integration tests.
+**Current State:** `TradingEnvironment` is only tested through integration tests. `LiveTradingEnvironment` now has dedicated tests.
 
 **Impact:**
 - Reward calculation edge cases not verified
-- Position management logic not unit tested
-- Environment reset behavior not validated
+- TradingEnvironment position management logic not unit tested
 
-**Proposed Solution:**
+**Completed:**
+- `tests/test_live_trading_env.py` ✅ (11 tests) - Tests LiveTradingEnvironment with:
+  - PaperBrokerGateway integration
+  - Mocked BrokerGateway protocol compliance
+  - Position synchronization
+  - Broker abstraction validation
+
+**Still Needed:**
 ```
 tests/
-├── test_trading_env.py           # NEW: Test TradingEnvironment
-│   ├── test_step_buy_action()
-│   ├── test_step_sell_action()
-│   ├── test_reward_calculation()
-│   ├── test_position_close()
-│   └── test_observation_space()
-│
-└── test_live_trading_env.py      # NEW: Test LiveTradingEnvironment (mocked)
-    ├── test_paper_mode()
-    ├── test_position_sync()
-    └── test_open_status_control()
+└── test_trading_env.py           # NEW: Test TradingEnvironment
+    ├── test_step_buy_action()
+    ├── test_step_sell_action()
+    ├── test_reward_calculation()
+    ├── test_position_close()
+    └── test_observation_space()
 ```
 
 ---
@@ -164,58 +165,23 @@ def mock_broker_gateway():
 
 ## 2. High Priority: Architecture Improvements
 
-### 2.1 Broker Interface Abstraction
+### 2.1 Broker Interface Abstraction ✅ COMPLETED
 
-**Current State:** `AutoTrader` and `LiveTradingEnvironment` directly depend on `MT5BrokerGateway`, making them Windows-only.
+**Status:** Implemented in PR #86 and #87
 
-**Impact:**
-- Cannot run auto-trading tests on Linux/Mac
-- Cannot swap broker implementations
-- Paper trading is a special case, not a proper implementation
+**Implementation:**
+- `core/broker_interface.py` - BrokerGateway Protocol, PaperBrokerConfig, create_broker() factory
+- `core/paper_broker.py` - PaperBrokerGateway with full position/order management
+- `core/mt5_broker.py` - MT5BrokerGateway (Windows only)
+- Type hints updated in: PositionSynchronizer, OrderManager, AutoTrader, LiveTradingEnvironment
+- Paper trading logic removed from LiveTradingEnvironment (now delegates to broker)
+- CLI autotrade command uses create_broker() factory
+- Integration tests: `tests/test_live_trading_env.py`, `tests/test_broker_interface.py`
 
-**Proposed Solution:**
-```python
-# core/broker_interface.py (NEW)
-from abc import ABC, abstractmethod
-from typing import Protocol
-
-class BrokerGateway(Protocol):
-    """Protocol for broker implementations."""
-
-    @abstractmethod
-    def connect(self) -> bool: ...
-
-    @abstractmethod
-    def get_current_tick(self, symbol: str) -> TickInfo: ...
-
-    @abstractmethod
-    def send_market_order(self, symbol: str, order_type: OrderType,
-                          volume: float, sl: float, tp: float) -> OrderResult: ...
-
-    @abstractmethod
-    def close_position(self, ticket: int) -> bool: ...
-
-    @abstractmethod
-    def get_open_positions(self, symbol: str = None) -> List[Position]: ...
-
-
-class MT5BrokerGateway(BrokerGateway):
-    """MetaTrader 5 implementation (Windows only)."""
-    ...
-
-class PaperBrokerGateway(BrokerGateway):
-    """Paper trading implementation (cross-platform)."""
-    ...
-
-class BacktestBrokerGateway(BrokerGateway):
-    """Backtest-mode broker for historical simulation."""
-    ...
-```
-
-**Benefits:**
-- Cross-platform testing
-- Easier to add new broker integrations (e.g., IBKR, Alpaca)
-- Cleaner separation of concerns
+**Benefits Achieved:**
+- Cross-platform paper trading
+- True dependency injection for brokers
+- Easy to add new broker integrations
 
 ---
 

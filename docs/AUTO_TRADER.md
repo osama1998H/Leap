@@ -110,9 +110,6 @@ config = AutoTraderConfig(
     trading_end_hour=20,
     trading_days=[0, 1, 2, 3, 4],  # Mon-Fri
 
-    # Execution
-    paper_mode=True,          # Start in paper mode
-
     # Online learning
     enable_online_learning=True,
     adaptation_frequency=100,  # Adapt every 100 trades
@@ -137,24 +134,29 @@ python main.py autotrade --paper --model-dir ./saved_models --symbol GBPUSD
 ### Programmatic Usage
 
 ```python
+from core.broker_interface import create_broker, PaperBrokerConfig
 from core.mt5_broker import MT5BrokerGateway
 from core.auto_trader import AutoTrader, AutoTraderConfig
 from models.transformer import TransformerPredictor
 from models.ppo_agent import PPOAgent
 
-# Initialize components
-broker = MT5BrokerGateway()
+# Option 1: Paper trading (cross-platform)
+paper_config = PaperBrokerConfig(initial_balance=10000.0, leverage=100)
+broker = create_broker('paper', config=paper_config)
+
+# Option 2: Live trading with MT5 (Windows only)
+# broker = MT5BrokerGateway()
+
 predictor = TransformerPredictor.load('./models/predictor.pt')
 agent = PPOAgent.load('./models/agent.pt')
 
 # Configure
 config = AutoTraderConfig(
     symbols=['EURUSD'],
-    paper_mode=True,
     risk_per_trade=0.01
 )
 
-# Create auto-trader
+# Create auto-trader (accepts any BrokerGateway implementation)
 trader = AutoTrader(
     broker=broker,
     predictor=predictor,

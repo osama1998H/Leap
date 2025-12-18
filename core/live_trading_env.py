@@ -10,11 +10,12 @@ from gymnasium import spaces
 
 from core.trading_types import Action, EnvConfig, Position, TradingState, LiveTradingState
 from core.trading_env_base import BaseTradingEnvironment
-from core.mt5_broker import MT5BrokerGateway, MT5Position
+from core.broker_interface import BrokerGateway, BrokerPosition
 from core.position_sync import PositionSynchronizer, PositionEvent, PositionChange
+
+# Backward compatibility alias
+MT5Position = BrokerPosition
 from core.order_manager import OrderManager, TradingSignal, SignalType
-from utils.pnl_calculator import calculate_pnl, calculate_unrealized_pnl
-from utils.position_sizing import calculate_risk_based_size
 
 if TYPE_CHECKING:
     from core.risk_manager import RiskManager
@@ -45,7 +46,7 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
 
     def __init__(
         self,
-        broker: MT5BrokerGateway,
+        broker: BrokerGateway,
         symbol: str = 'EURUSD',
         data_pipeline=None,
         config: Optional[EnvConfig] = None,
@@ -57,7 +58,6 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         default_tp_pips: float = 100.0,
         risk_per_trade: float = 0.01,
         render_mode: Optional[str] = None,
-        paper_mode: bool = True,
         feature_dim: Optional[int] = None,
         match_training_obs: bool = False
     ):
@@ -65,19 +65,18 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         Initialize live trading environment.
 
         Args:
-            broker: MT5 broker gateway
+            broker: BrokerGateway implementation (MT5 or Paper)
             symbol: Trading symbol
             data_pipeline: Data pipeline for feature computation
             config: Optional EnvConfig dataclass
             risk_manager: Risk manager for position sizing
-            initial_balance: Initial balance (for paper mode)
+            initial_balance: Initial balance (used for state initialization)
             window_size: Observation window size
             max_positions: Maximum concurrent positions
             default_sl_pips: Default stop loss in pips
             default_tp_pips: Default take profit in pips
             risk_per_trade: Risk per trade as fraction
             render_mode: Rendering mode
-            paper_mode: If True, simulate trades; if False, execute real trades
             feature_dim: Number of additional features (from FeatureEngineer).
                          If None, attempts to infer from data_pipeline or uses default.
             match_training_obs: If True, return observations with 8 account features
@@ -100,7 +99,6 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         self.default_sl_pips = default_sl_pips
         self.default_tp_pips = default_tp_pips
         self.risk_per_trade = risk_per_trade
-        self.paper_mode = paper_mode
         self.match_training_obs = match_training_obs
 
         # Initialize components
@@ -163,10 +161,6 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             peak_equity=initial_balance,
             session_start_balance=initial_balance
         )
-
-        # Paper trading state
-        self._paper_positions: List[Position] = []
-        self._paper_balance = initial_balance
 
         logger.info(f"Live trading environment initialized for {symbol}")
 
@@ -248,10 +242,10 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         if self.broker.is_connected:
             self._sync_with_broker()
 
-        # Reset state
+        # Reset state from broker (works with both MT5 and Paper brokers)
         account = self.broker.get_account_info() if self.broker.is_connected else None
 
-        if account and not self.paper_mode:
+        if account:
             self.state = LiveTradingState(
                 balance=account.balance,
                 equity=account.equity,
@@ -270,10 +264,6 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
                 peak_equity=self.initial_balance,
                 session_start_balance=self.initial_balance
             )
-
-        # Clear paper positions
-        self._paper_positions.clear()
-        self._paper_balance = self.initial_balance
 
         # Reset buffers
         self._price_buffer.clear()
@@ -418,34 +408,26 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             source="live_env"
         )
 
-        if self.paper_mode:
-            self._execute_paper_trade(signal)
-        else:
-            execution = self.order_manager.execute_signal(signal)
-            if execution.executed:
-                self.state.total_trades += 1
-                self.state.session_trades += 1
+        # Always delegate to order_manager (works with any BrokerGateway)
+        execution = self.order_manager.execute_signal(signal)
+        if execution.executed:
+            self.state.total_trades += 1
+            self.state.session_trades += 1
 
     def _close_position(self, position: Position, price: float):
-        """Close a specific position."""
-        # In live mode, use order manager
-        if not self.paper_mode:
-            # Position closing is handled by position_sync
-            pass
-        else:
-            self._close_paper_position(position, price)
+        """Close a specific position via broker."""
+        # Position closing is handled by position_sync or order_manager
+        # The broker (whether MT5 or Paper) handles the actual close
+        pass
 
     def _close_all_positions(self, price: float):
-        """Close all open positions."""
-        if self.paper_mode:
-            self._close_all_paper_positions()
-        else:
-            signal = TradingSignal(
-                signal_type=SignalType.CLOSE,
-                symbol=self.symbol,
-                source="live_env"
-            )
-            self.order_manager.execute_signal(signal)
+        """Close all open positions via broker."""
+        signal = TradingSignal(
+            signal_type=SignalType.CLOSE,
+            symbol=self.symbol,
+            source="live_env"
+        )
+        self.order_manager.execute_signal(signal)
 
     def _get_open_positions(self) -> List[Position]:
         """Get list of open positions from single source of truth.
@@ -468,201 +450,46 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         return any(p.type == direction for p in positions)
 
     def _get_unrealized_pnl(self, price: float) -> float:
-        """Calculate unrealized PnL."""
-        if self.paper_mode:
-            return self._calculate_paper_unrealized_pnl()
-        else:
-            return self.position_sync.get_unrealized_pnl(self.symbol)
-
-    # -------------------------------------------------------------------------
-    # Paper trading methods
-    # -------------------------------------------------------------------------
-
-    def _execute_paper_trade(self, signal: TradingSignal):
-        """Execute a paper trade (simulated)."""
-        tick = self.broker.get_current_tick(self.symbol)
-        if tick is None:
-            return
-
-        symbol_info = self.broker.get_symbol_info(self.symbol)
-        if symbol_info is None:
-            return
-
-        # Calculate position parameters
-        pip_size = symbol_info.point * 10
-
-        if signal.signal_type == SignalType.BUY:
-            entry_price = tick.ask
-            sl = entry_price - (self.default_sl_pips * pip_size)
-            tp = entry_price + (self.default_tp_pips * pip_size)
-            pos_type = 'long'
-        else:
-            entry_price = tick.bid
-            sl = entry_price + (self.default_sl_pips * pip_size)
-            tp = entry_price - (self.default_tp_pips * pip_size)
-            pos_type = 'short'
-
-        # Calculate volume - use RiskManager when available (matches Backtester pattern)
-        if self.risk_manager is not None:
-            volume = self.risk_manager.calculate_position_size(
-                entry_price=entry_price,
-                stop_loss_price=sl
-            )
-            if volume <= 0:
-                logger.debug("Position size is zero or negative, skipping paper trade")
-                return
-        else:
-            # Fallback: use centralized position sizing utility with symbol-specific pip value
-            try:
-                pip_value = symbol_info.trade_tick_value * (pip_size / symbol_info.trade_tick_size)
-            except (AttributeError, ZeroDivisionError, TypeError) as e:
-                logger.warning(
-                    f"Failed to calculate pip value for {self.symbol} from symbol info: {e}. "
-                    f"Using fallback value of 10.0 (appropriate for major pairs only)"
-                )
-                pip_value = 10.0  # Fallback for major pairs
-
-            if pip_value <= 0:
-                logger.error(f"Invalid pip_value {pip_value} for {self.symbol}, using fallback 10.0")
-                pip_value = 10.0
-
-            volume = calculate_risk_based_size(
-                self._paper_balance, self.risk_per_trade, self.default_sl_pips, pip_value
-            )
-
-        volume = max(0.01, min(volume, 10.0))
-
-        position = Position(
-            type=pos_type,
-            entry_price=entry_price,
-            size=volume,
-            entry_time=self.current_step,
-            stop_loss=sl,
-            take_profit=tp
-        )
-
-        self._paper_positions.append(position)
-        self.state.total_trades += 1
-        self.state.session_trades += 1
-
-        logger.info(f"Paper trade opened: {pos_type} {volume} @ {entry_price}")
-
-    def _close_all_paper_positions(self):
-        """Close all paper positions."""
-        tick = self.broker.get_current_tick(self.symbol)
-        if tick is None:
-            return
-
-        symbol_info = self.broker.get_symbol_info(self.symbol)
-        contract_size = symbol_info.trade_contract_size if symbol_info else 100000
-
-        for position in list(self._paper_positions):
-            exit_price = tick.bid if position.type == 'long' else tick.ask
-            pnl = calculate_pnl(
-                position.entry_price, exit_price, position.size, position.type, contract_size
-            )
-
-            self._paper_balance += pnl
-            self.state.update_with_trade_result(pnl)
-
-            self._paper_positions.remove(position)
-            logger.info(f"Paper position closed: PnL = {pnl:.2f}")
-
-    def _close_paper_position(self, position: Position, exit_price: float):
-        """Close a specific paper position."""
-        symbol_info = self.broker.get_symbol_info(self.symbol)
-        contract_size = symbol_info.trade_contract_size if symbol_info else 100000
-
-        pnl = calculate_pnl(
-            position.entry_price, exit_price, position.size, position.type, contract_size
-        )
-
-        self._paper_balance += pnl
-        self.state.update_with_trade_result(pnl)
-
-        self._paper_positions.remove(position)
-
-    def _update_paper_positions(self):
-        """Update paper positions with current prices (check SL/TP)."""
-        tick = self.broker.get_current_tick(self.symbol)
-        if tick is None:
-            return
-
-        for position in list(self._paper_positions):
-            if position.type == 'long':
-                current_price = tick.bid
-                if position.stop_loss and current_price <= position.stop_loss:
-                    self._close_paper_position(position, position.stop_loss)
-                elif position.take_profit and current_price >= position.take_profit:
-                    self._close_paper_position(position, position.take_profit)
-            else:
-                current_price = tick.ask
-                if position.stop_loss and current_price >= position.stop_loss:
-                    self._close_paper_position(position, position.stop_loss)
-                elif position.take_profit and current_price <= position.take_profit:
-                    self._close_paper_position(position, position.take_profit)
-
-    def _calculate_paper_unrealized_pnl(self) -> float:
-        """Calculate unrealized PnL for paper positions."""
-        tick = self.broker.get_current_tick(self.symbol)
-        if tick is None:
-            return 0.0
-
-        symbol_info = self.broker.get_symbol_info(self.symbol)
-        contract_size = symbol_info.trade_contract_size if symbol_info else 100000
-
-        return sum(
-            calculate_unrealized_pnl(
-                position.entry_price,
-                tick.bid if position.type == 'long' else tick.ask,
-                position.size,
-                position.type,
-                contract_size
-            )
-            for position in self._paper_positions
-        )
+        """Calculate unrealized PnL via broker."""
+        return self.position_sync.get_unrealized_pnl(self.symbol)
 
     # -------------------------------------------------------------------------
     # Broker sync methods
     # -------------------------------------------------------------------------
 
-    def _mt5_position_to_position(self, mt5_pos: MT5Position) -> Position:
+    def _broker_position_to_position(self, broker_pos: BrokerPosition) -> Position:
         """
-        Convert MT5Position to Position dataclass.
+        Convert BrokerPosition to Position dataclass.
 
         Args:
-            mt5_pos: MT5 position object from broker
+            broker_pos: BrokerPosition from any BrokerGateway implementation
 
         Returns:
             Position dataclass instance compatible with TradingState
         """
         # Convert type from int (0=BUY, 1=SELL) to string ('long', 'short')
-        direction = 'long' if mt5_pos.type == 0 else 'short'
+        direction = 'long' if broker_pos.type == 0 else 'short'
 
         return Position(
             type=direction,
-            entry_price=mt5_pos.price_open,
-            size=mt5_pos.volume,
-            entry_time=int(mt5_pos.time.timestamp()) if mt5_pos.time else self.current_step,
-            stop_loss=mt5_pos.sl if mt5_pos.sl > 0 else None,
-            take_profit=mt5_pos.tp if mt5_pos.tp > 0 else None
+            entry_price=broker_pos.price_open,
+            size=broker_pos.volume,
+            entry_time=int(broker_pos.time.timestamp()) if broker_pos.time else self.current_step,
+            stop_loss=broker_pos.sl if broker_pos.sl > 0 else None,
+            take_profit=broker_pos.tp if broker_pos.tp > 0 else None
         )
 
     def _sync_positions_to_state(self):
         """
         Sync positions to self.state.positions (single source of truth).
 
-        This ensures self.state.positions always reflects the current positions,
-        whether from paper trading or live broker.
+        This ensures self.state.positions always reflects the current positions
+        from the broker (whether MT5 or Paper).
         """
-        if self.paper_mode:
-            # Copy paper positions to state
-            self.state.positions = list(self._paper_positions)
-        else:
-            # Get positions from broker via position_sync and convert to Position objects
-            broker_positions = self.position_sync.get_positions(self.symbol)
-            # Convert MT5Position objects to Position dataclass instances
-            self.state.positions = [self._mt5_position_to_position(p) for p in broker_positions]
+        # Get positions from broker via position_sync and convert to Position objects
+        broker_positions = self.position_sync.get_positions(self.symbol)
+        # Convert BrokerPosition objects to Position dataclass instances
+        self.state.positions = [self._broker_position_to_position(p) for p in broker_positions]
 
     def _sync_with_broker(self):
         """Sync state with broker account."""
@@ -673,18 +500,14 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
         if account is None:
             return
 
-        if self.paper_mode:
-            self._update_paper_positions()
-            self.state.balance = self._paper_balance
-            self.state.equity = self._paper_balance + self._calculate_paper_unrealized_pnl()
-        else:
-            self.state.balance = account.balance
-            self.state.equity = account.equity
-            self.state.real_balance = account.balance
-            self.state.real_equity = account.equity
-            self.state.real_margin = account.margin
-            self.state.real_free_margin = account.free_margin
-            self.state.real_margin_level = account.margin_level
+        # Update state from broker (works with both MT5 and Paper brokers)
+        self.state.balance = account.balance
+        self.state.equity = account.equity
+        self.state.real_balance = account.balance
+        self.state.real_equity = account.equity
+        self.state.real_margin = account.margin
+        self.state.real_free_margin = account.free_margin
+        self.state.real_margin_level = account.margin_level
 
         # Sync positions to state.positions (single source of truth)
         self._sync_positions_to_state()
@@ -811,8 +634,7 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             'open_status': self.state.open_status,
             'close_only': self.state.close_only,
             'session_pnl': self.state.session_pnl,
-            'session_trades': self.state.session_trades,
-            'paper_mode': self.paper_mode
+            'session_trades': self.state.session_trades
         })
 
         return info
@@ -867,15 +689,11 @@ class LiveTradingEnvironment(BaseTradingEnvironment):
             stats.update({
                 'session_trades': self.state.session_trades,
                 'session_pnl': self.state.session_pnl,
-                'open_status': self.state.open_status,
-                'paper_mode': self.paper_mode
+                'open_status': self.state.open_status
             })
 
         return stats
 
     def close(self):
         """Clean up environment."""
-        if not self.paper_mode:
-            # Close all positions on shutdown (optional)
-            pass
         logger.info("Live trading environment closed")
