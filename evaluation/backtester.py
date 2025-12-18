@@ -135,6 +135,11 @@ class Backtester:
         self._daily_trade_count: int = 0
         self._current_day: Optional[datetime] = None
 
+        # Account state tracking for strategy observation building
+        self._total_pnl: float = 0.0  # Total realized PnL
+        self._max_drawdown: float = 0.0  # Maximum drawdown ratio
+        self._peak_equity: float = initial_balance  # Peak equity for drawdown calc
+
         # Deprecation tracking (one warning per run)
         self._callable_warning_shown: bool = False
 
@@ -190,6 +195,10 @@ class Backtester:
         self._last_trade_bar = -999
         self._daily_trade_count = 0
         self._current_day = None
+        # Reset account state tracking
+        self._total_pnl = 0.0
+        self._max_drawdown = 0.0
+        self._peak_equity = self.initial_balance
 
     def run(
         self,
@@ -262,12 +271,30 @@ class Backtester:
             # Update existing positions (check stop loss / take profit)
             self._update_positions(high, low, timestamp)
 
+            # Build account state for strategy observation building
+            # Matches TradingEnvironment._get_account_observation() format
+            unrealized_pnl = sum(
+                calculate_unrealized_pnl(
+                    p.entry_price, current_price, p.size, p.direction
+                )
+                for p in self.positions
+            )
+            account_state = {
+                'balance': self.balance,
+                'equity': self.equity,
+                'initial_balance': self.initial_balance,
+                'unrealized_pnl': unrealized_pnl,
+                'max_drawdown': self._max_drawdown,
+                'total_pnl': self._total_pnl
+            }
+
             # Get trading signal using strategy pattern
             strategy_signal = strategy_instance.generate_signal(
                 market_data=data.iloc[:i + 1],
                 positions=self.positions,
                 predictor=predictor,
-                agent=agent
+                agent=agent,
+                account_state=account_state
             )
 
             # Convert StrategySignal to dict for backward compatibility with _execute_signal
@@ -459,8 +486,9 @@ class Backtester:
         position.commission += commission
         position.status = status
 
-        # Update balance
+        # Update balance and total realized PnL
         self.balance += pnl
+        self._total_pnl += pnl
 
         # Move to closed trades
         self.positions.remove(position)
@@ -527,7 +555,7 @@ class Backtester:
                     self._close_position(position, take_profit, timestamp, 'take_profit')
 
     def _update_equity(self, current_price: float):
-        """Update equity with unrealized PnL."""
+        """Update equity with unrealized PnL and track drawdown."""
         unrealized_pnl = sum(
             calculate_unrealized_pnl(
                 position.entry_price, current_price, position.size, position.direction
@@ -535,6 +563,14 @@ class Backtester:
             for position in self.positions
         )
         self.equity = self.balance + unrealized_pnl
+
+        # Update peak equity and max drawdown for observation building
+        if self.equity > self._peak_equity:
+            self._peak_equity = self.equity
+        if self._peak_equity > 0:
+            current_drawdown = (self._peak_equity - self.equity) / self._peak_equity
+            if current_drawdown > self._max_drawdown:
+                self._max_drawdown = current_drawdown
 
     def _calculate_results(self) -> BacktestResult:
         """Calculate comprehensive backtest results using MetricsCalculator for consistency."""
