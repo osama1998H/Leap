@@ -644,6 +644,7 @@ class AutoTrader:
 
             except Exception as e:
                 logger.warning(f"[{symbol}] Strategy signal generation failed: {e}, falling back to legacy")
+                logger.debug("Strategy exception details:", exc_info=True)
                 # Fall through to legacy generation
 
         # Fallback: legacy inline signal generation

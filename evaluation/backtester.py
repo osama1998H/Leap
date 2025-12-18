@@ -417,7 +417,10 @@ class Backtester:
 
         # Notify strategy of trade opened (lifecycle callback)
         if self._current_strategy is not None:
-            self._current_strategy.on_trade_opened(trade)
+            try:
+                self._current_strategy.on_trade_opened(trade)
+            except Exception as e:
+                logger.debug(f"Strategy on_trade_opened callback failed: {e}")
 
         # Notify risk manager of position opened
         notional = size * entry_price
@@ -465,7 +468,10 @@ class Backtester:
 
         # Notify strategy of trade closed (lifecycle callback)
         if self._current_strategy is not None:
-            self._current_strategy.on_trade_closed(position)
+            try:
+                self._current_strategy.on_trade_closed(position)
+            except Exception as e:
+                logger.debug(f"Strategy on_trade_closed callback failed: {e}")
 
         # Notify risk manager of position closed (use entry notional for consistency)
         notional = position.size * position.entry_price
