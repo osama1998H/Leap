@@ -21,6 +21,7 @@ python main.py [COMMAND] [OPTIONS]
 | `walkforward` | Run walk-forward optimization with rolling train/test splits |
 | `evaluate` | Evaluate trained models on test data |
 | `autotrade` | Start auto-trader with MetaTrader5 integration (Windows only) |
+| `adapt` | Adapt trained models to recent market data (online learning) |
 | `api/run.py` | Start Web UI backend API server |
 | `ui (npm run dev)` | Start Web UI frontend development server |
 
@@ -350,6 +351,92 @@ export MT5_PASSWORD=your_password
 export MT5_SERVER=YourBroker-Server
 python main.py autotrade --paper
 ```
+
+---
+
+### adapt
+
+Adapt trained models to recent market data using online learning techniques.
+
+**What Adapt Does:**
+1. Loads existing trained models (predictor + agent)
+2. Fetches recent market data for adaptation
+3. Performs incremental training based on mode:
+   - **offline**: Single adaptation pass
+   - **online**: Continuous adaptation loop (experimental)
+   - **evaluate**: Analyze model drift without retraining
+
+This helps models stay current with changing market conditions without full retraining.
+
+> **Note:** See [ADR-0013](docs/decisions/0013-adaptive-trainer-cli.md) for design rationale.
+
+**Syntax:**
+```bash
+python main.py adapt [OPTIONS]
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--mode` | choice | `offline` | Adaptation mode: `offline`, `online`, or `evaluate` |
+| `--symbol` | string | from config | Trading symbol |
+| `--symbols` | list | from config | Multiple symbols for adaptation |
+| `--adapt-bars` | integer | `10000` | Number of recent bars for adaptation |
+| `--adapt-epochs` | integer | `10` | Predictor training epochs during adaptation |
+| `--adapt-timesteps` | integer | `10000` | Agent training timesteps during adaptation |
+| `--error-threshold` | float | `0.05` | Prediction error threshold to trigger adaptation |
+| `--drawdown-threshold` | float | `0.1` | Drawdown threshold to trigger adaptation |
+| `--adapt-frequency` | integer | `100` | Steps between adaptation checks (online mode) |
+| `--max-adaptations` | integer | `10` | Maximum adaptations per day |
+| `--min-samples` | integer | `50` | Minimum samples before adaptation |
+| `--model-dir` | string | `./saved_models` | Directory with trained models |
+| `--save` | flag | `False` | Save adapted models to timestamped subdirectory |
+
+**Modes:**
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `offline` | Single adaptation pass with recent data | Quick model update after market regime change |
+| `online` | Continuous adaptation loop | Experimental real-time adaptation (Ctrl+C to stop) |
+| `evaluate` | Analyze prediction accuracy and agent behavior | Check model drift without retraining |
+
+**Offline Mode Workflow:**
+1. Load models from `--model-dir`
+2. Fetch recent bars with `--adapt-bars`
+3. Split data 80/20 for train/validation
+4. Train predictor for `--adapt-epochs`
+5. Train agent for `--adapt-timesteps`
+6. Print results summary
+7. Optionally save with `--save`
+
+**Evaluate Mode Output:**
+- Predictor metrics: MAE, RMSE, correlation, direction accuracy
+- Agent action distribution: HOLD, BUY, SELL, CLOSE percentages
+
+**Examples:**
+```bash
+# Quick offline adaptation (most common usage)
+python main.py adapt --symbol EURUSD --adapt-bars 5000 --adapt-epochs 5
+
+# Adapt with custom thresholds and save
+python main.py adapt --symbol EURUSD --error-threshold 0.03 --save
+
+# Evaluate model performance on recent data
+python main.py adapt --mode evaluate --symbol EURUSD --adapt-bars 2000
+
+# Multi-symbol adaptation
+python main.py adapt --symbols EURUSD GBPUSD --adapt-epochs 10 --save
+
+# Experimental: continuous online adaptation (press Ctrl+C to stop)
+python main.py adapt --mode online --symbol EURUSD --adapt-frequency 50
+```
+
+**Important Notes:**
+- Models must be trained first (`python main.py train`)
+- Adapted models saved to `{model-dir}/adapted_{timestamp}/`
+- Original models are preserved
+- Online mode is experimental and requires monitoring
 
 ---
 

@@ -36,6 +36,10 @@ python main.py backtest --symbol EURUSD --save-data
 # Live Trading (Windows only - requires MT5)
 python main.py autotrade --paper --symbol EURUSD
 
+# Model Adaptation
+python main.py adapt --symbol EURUSD --mode offline --adapt-epochs 10
+python main.py adapt --symbol EURUSD --mode evaluate  # Check model performance
+
 # Testing
 python -m pytest tests/ -v
 ```
@@ -71,6 +75,10 @@ Do NOT use `from utils.logging_config import get_logger`. The standard pattern h
 | Risk management | `core/risk_manager.py` | Delegate to `RiskManager.calculate_position_size()` when available |
 | Config loaders | `config/settings.py` | Use `load_training_config()`, `load_data_config()`, etc. for modular config loading |
 | Data persistence | `utils/data_saver.py` | Use `save_pipeline_data()` for CSV export of raw OHLCV and features |
+| Broker abstraction | `core/broker_interface.py` | Use `BrokerGateway` Protocol and `create_broker()` factory |
+| Paper trading | `core/paper_broker.py` | Use `PaperBrokerGateway` for simulated trading |
+| Trading strategy | `core/strategy.py` | Use `TradingStrategy` ABC and `CombinedPredictorAgentStrategy` |
+| Feature registry | `core/feature_registry.py` | Use `FeatureRegistry.get_instance()` for feature computation |
 
 ### Position Sizing
 

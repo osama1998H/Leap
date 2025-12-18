@@ -17,6 +17,7 @@ from .backtest import execute_backtest
 from .walkforward import execute_walkforward
 from .evaluate import execute_evaluate
 from .autotrade import execute_autotrade
+from .adapt import execute_adapt
 
 # Command registry mapping command names to handler functions
 COMMANDS = {
@@ -25,6 +26,7 @@ COMMANDS = {
     'walkforward': execute_walkforward,
     'evaluate': execute_evaluate,
     'autotrade': execute_autotrade,
+    'adapt': execute_adapt,
 }
 
 
@@ -58,5 +60,6 @@ __all__ = [
     'execute_walkforward',
     'execute_evaluate',
     'execute_autotrade',
+    'execute_adapt',
     'COMMANDS',
 ]
