@@ -1,7 +1,6 @@
 # Safe Refactoring Workflow
 
 ## 1. Pre-Refactor Checklist
-- [ ] Read ARCHITECTURE_AUDIT.md for known issues
 - [ ] Run all tests: `python -m pytest tests/ -v`
 - [ ] Commit any uncommitted changes
 

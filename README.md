@@ -132,7 +132,6 @@ Leap/
 │   └── test_feature_engineering.py  # Feature engineering tests
 │
 ├── docs/
-│   ├── ARCHITECTURE_AUDIT.md    # Codebase health audit
 │   └── AUTO_TRADER.md           # Auto-trader documentation
 │
 ├── ARCHITECTURE.md              # System architecture documentation
