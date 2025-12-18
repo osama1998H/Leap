@@ -55,8 +55,8 @@ def test_data_pipeline():
     return pipeline, market_data
 
 
-def test_transformer_predictor(input_dim: int):
-    """Test Transformer predictor model."""
+def _test_transformer_predictor(input_dim: int):
+    """Test Transformer predictor model (helper function, not a standalone test)."""
     print("\n" + "="*60)
     print("Testing Transformer Predictor...")
     print("="*60)
@@ -122,8 +122,8 @@ def test_transformer_predictor(input_dim: int):
     return predictor
 
 
-def test_ppo_agent(state_dim: int):
-    """Test PPO reinforcement learning agent."""
+def _test_ppo_agent(state_dim: int):
+    """Test PPO reinforcement learning agent (helper function, not a standalone test)."""
     print("\n" + "="*60)
     print("Testing PPO Agent...")
     print("="*60)
@@ -541,10 +541,10 @@ def test_full_integration():
     print(f"✓ State dimension: {state_dim}")
 
     # 4. Create and test predictor
-    predictor = test_transformer_predictor(input_dim)
+    predictor = _test_transformer_predictor(input_dim)
 
     # 5. Create and test agent
-    agent = test_ppo_agent(state_dim)
+    agent = _test_ppo_agent(state_dim)
 
     # 6. Test risk manager
     risk_manager = test_risk_manager()
