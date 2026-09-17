@@ -7,11 +7,6 @@ from utils.logging_config import (
     add_file_handler,
     LogContext,
 )
-from utils.mlflow_tracker import (
-    MLflowTracker,
-    create_tracker,
-    MLFLOW_AVAILABLE,
-)
 from utils.device import (
     get_device,
     get_device_string,
@@ -37,9 +32,6 @@ __all__ = [
     'setup_logging',
     'add_file_handler',
     'LogContext',
-    'MLflowTracker',
-    'create_tracker',
-    'MLFLOW_AVAILABLE',
     'get_device',
     'get_device_string',
     'resolve_device',

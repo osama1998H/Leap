@@ -100,32 +100,4 @@ def execute_backtest(
     with open(results_file, 'w') as f:
         json.dump(results_data, f, indent=2)
 
-    # Log backtest results to MLflow
-    tracker = system.mlflow_tracker
-    if tracker and tracker.is_enabled:
-        run_name = f"backtest-{primary_symbol}-{timeframe}-{timestamp}"
-        with tracker.start_run(
-            run_name=run_name,
-            tags={
-                "symbol": primary_symbol,
-                "timeframe": timeframe,
-                "command": "backtest",
-                "realistic_mode": str(args.realistic)
-            }
-        ):
-            # Log parameters
-            tracker.log_params({
-                "symbol": primary_symbol,
-                "timeframe": timeframe,
-                "n_bars": n_bars,
-                "realistic_mode": args.realistic,
-                "monte_carlo": args.monte_carlo
-            })
-
-            # Log backtest metrics
-            tracker.log_backtest_results(analysis)
-
-            # Log results file as artifact
-            tracker.log_artifact(results_file)
-
-            logger.info(f"Backtest results logged to MLflow: {run_name}")
+    logger.info(f"Backtest results saved to {results_file}")

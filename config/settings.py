@@ -174,35 +174,6 @@ class LoggingConfig:
 
 
 @dataclass
-class MLflowConfig:
-    """MLflow experiment tracking configuration."""
-    enabled: bool = True
-    # Database backend (SQLite) - filesystem backend deprecated Feb 2026
-    # See: https://github.com/mlflow/mlflow/issues/18534
-    # Note: Use absolute path so mlflow ui can find the database from any directory
-    tracking_uri: str = field(
-        default_factory=lambda: f"sqlite:///{os.path.abspath('mlflow.db')}"
-    )
-    experiment_name: str = "leap-trading"
-    run_name_prefix: str = "training"
-
-    # Logging options
-    log_models: bool = True
-    log_system_metrics: bool = True
-    log_artifacts: bool = True
-
-    # Model registry settings
-    register_models: bool = True
-    registered_model_name_predictor: str = "leap-predictor"
-    registered_model_name_agent: str = "leap-ppo-agent"
-
-    # Autolog settings (disabled by default for custom training loops)
-    autolog_enabled: bool = False
-    log_every_n_epoch: int = 1
-    log_every_n_step: Optional[int] = None
-
-
-@dataclass
 class AutoTraderConfig:
     """Auto-trader configuration."""
     # Trading settings
@@ -288,7 +259,6 @@ class SystemConfig:
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     auto_trader: AutoTraderConfig = field(default_factory=AutoTraderConfig)
-    mlflow: MLflowConfig = field(default_factory=MLflowConfig)
 
     def save(self, path: str):
         """Save configuration to JSON file.
@@ -332,8 +302,7 @@ class SystemConfig:
             backtest=BacktestConfig(**data.get('backtest', {})),
             evaluation=EvaluationConfig(**data.get('evaluation', {})),
             logging=LoggingConfig(**data.get('logging', {})),
-            auto_trader=AutoTraderConfig(**data.get('auto_trader', {})),
-            mlflow=MLflowConfig(**data.get('mlflow', {}))
+            auto_trader=AutoTraderConfig(**data.get('auto_trader', {}))
         )
 
         # Set top-level attributes

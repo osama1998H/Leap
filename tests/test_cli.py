@@ -85,7 +85,7 @@ class MockPredictor:
         self.model = Mock()
 
     def train(self, X_train, y_train, X_val, y_val, epochs=10, batch_size=32,
-              verbose=True, mlflow_callback=None):
+              patience=15, verbose=True):
         return {
             'train_losses': [0.5 - i * 0.01 for i in range(epochs)],
             'val_losses': [0.6 - i * 0.01 for i in range(epochs)],
@@ -118,7 +118,8 @@ class MockAgent:
         self.network = Mock()
 
     def train_on_env(self, env, total_timesteps=1000, eval_env=None,
-                     eval_frequency=100, mlflow_callback=None):
+                     eval_frequency=100, verbose=True, patience=None,
+                     min_improvement=0.01):
         n_episodes = total_timesteps // 100
         return {
             'episode_rewards': [np.random.uniform(-100, 200) for _ in range(n_episodes)],
@@ -159,7 +160,6 @@ def mock_config(temp_dir):
     config.models_dir = 'models'
     config.logs_dir = 'logs'
     config.checkpoints_dir = 'checkpoints'
-    config.mlflow.enabled = False
     return config
 
 
@@ -178,10 +178,11 @@ class TestLeapTradingSystemInitialization:
 
     def test_initialization_default_config(self, temp_dir):
         """Test initialization with default config."""
-        with patch('cli.parser.get_config') as mock_get_config:
+        # LeapTradingSystem.__init__ resolves get_config from cli.system,
+        # so that is the name that has to be patched here.
+        with patch('cli.system.get_config') as mock_get_config:
             config = get_config()
             config.base_dir = temp_dir
-            config.mlflow.enabled = False
             mock_get_config.return_value = config
 
             system = LeapTradingSystem()
@@ -685,20 +686,6 @@ class TestCLIArgumentParsing:
         assert args.command == 'autotrade'
         assert args.paper is True
 
-    def test_mlflow_args(self):
-        """Test MLflow argument parsing."""
-        test_args = ['train', '--no-mlflow', '--mlflow-experiment', 'test_exp']
-
-        parser = argparse.ArgumentParser()
-        parser.add_argument('command', choices=['train', 'backtest', 'evaluate', 'walkforward', 'autotrade'])
-        parser.add_argument('--no-mlflow', action='store_true')
-        parser.add_argument('--mlflow-experiment', default=None)
-
-        args = parser.parse_args(test_args)
-
-        assert args.no_mlflow is True
-        assert args.mlflow_experiment == 'test_exp'
-
 
 # ============================================================================
 # Logging Initialization Tests
@@ -756,8 +743,7 @@ class TestMainFunction:
             '--epochs', '1',
             '--timesteps', '100',
             '--bars', '500',
-            '--model-dir', os.path.join(temp_dir, 'models'),
-            '--no-mlflow'
+            '--model-dir', os.path.join(temp_dir, 'models')
         ]
 
         with patch.object(sys, 'argv', ['main.py'] + test_args):
@@ -774,7 +760,6 @@ class TestMainFunction:
                 with patch('cli.parser.get_config') as mock_get_config:
                     config = get_config()
                     config.base_dir = temp_dir
-                    config.mlflow.enabled = False
                     mock_get_config.return_value = config
 
                     with patch('main.initialize_logging'):
@@ -791,8 +776,7 @@ class TestMainFunction:
             'backtest',
             '--symbol', 'EURUSD',
             '--bars', '500',
-            '--model-dir', os.path.join(temp_dir, 'models'),
-            '--no-mlflow'
+            '--model-dir', os.path.join(temp_dir, 'models')
         ]
 
         with patch.object(sys, 'argv', ['main.py'] + test_args):
@@ -806,13 +790,11 @@ class TestMainFunction:
                     'sharpe_ratio': 1.2
                 })
                 mock_system.load_models = Mock()
-                mock_system.mlflow_tracker = None
                 mock_system_cls.return_value = mock_system
 
                 with patch('cli.parser.get_config') as mock_get_config:
                     config = get_config()
                     config.base_dir = temp_dir
-                    config.mlflow.enabled = False
                     mock_get_config.return_value = config
 
                     with patch('main.initialize_logging'):
