@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from collections import deque
 import logging
 
@@ -752,7 +752,6 @@ class PPOAgent:
         eval_env=None,
         eval_frequency: int = 10000,
         verbose: bool = True,
-        mlflow_callback: Optional[Callable] = None,
         patience: Optional[int] = None,
         min_improvement: float = 0.01
     ) -> Dict:
@@ -765,8 +764,6 @@ class PPOAgent:
             eval_env: Optional evaluation environment
             eval_frequency: Evaluation frequency in timesteps
             verbose: Whether to log progress
-            mlflow_callback: Optional callback for MLflow logging.
-                Called with (metrics_dict, step) after each policy update.
             patience: Number of evaluations without improvement before early stopping.
                 If None, early stopping is disabled. Requires eval_env to be set.
             min_improvement: Minimum improvement in evaluation reward to reset patience counter.
@@ -812,12 +809,6 @@ class PPOAgent:
                     episode_rewards.append(current_episode_reward)
                     episode_lengths.append(current_episode_length)
 
-                    # Capture reward component statistics before reset
-                    if hasattr(env, 'get_reward_component_stats'):
-                        self._last_reward_component_stats = env.get_reward_component_stats()
-                    if hasattr(env, 'get_action_distribution'):
-                        self._last_action_distribution = env.get_action_distribution()
-
                     current_episode_reward = 0.0
                     current_episode_length = 0
                     n_episodes += 1
@@ -856,39 +847,6 @@ class PPOAgent:
                     )
                 print(progress_msg, flush=True)
                 logger.info(progress_msg)
-
-            # MLflow callback for tracking
-            if mlflow_callback is not None:
-                callback_metrics = {
-                    "policy_loss": update_stats['policy_loss'],
-                    "value_loss": update_stats['value_loss'],
-                    "entropy": update_stats['entropy'],
-                    "clip_fraction": update_stats.get('clip_fraction', 0),
-                }
-                if len(episode_rewards) > 0:
-                    callback_metrics["episode_reward"] = episode_rewards[-1]
-                    callback_metrics["avg_reward_10ep"] = np.mean(episode_rewards[-10:])
-
-                # Add reward component statistics if available
-                if hasattr(self, '_last_reward_component_stats') and self._last_reward_component_stats:
-                    for comp_name, comp_stats in self._last_reward_component_stats.items():
-                        if isinstance(comp_stats, dict):
-                            callback_metrics[f"reward.{comp_name}.mean"] = comp_stats.get('mean', 0)
-                            callback_metrics[f"reward.{comp_name}.sum"] = comp_stats.get('sum', 0)
-
-                # Add action distribution if available
-                if hasattr(self, '_last_action_distribution') and self._last_action_distribution:
-                    for action_name, pct in self._last_action_distribution.items():
-                        callback_metrics[f"action.{action_name}_pct"] = pct
-
-                # Add reward normalizer statistics (v2 reward system)
-                if self.reward_normalizer is not None:
-                    norm_stats = self.reward_normalizer.get_stats()
-                    callback_metrics["reward_norm.mean"] = norm_stats['mean']
-                    callback_metrics["reward_norm.std"] = norm_stats['std']
-                    callback_metrics["reward_norm.count"] = norm_stats['count']
-
-                mlflow_callback(callback_metrics, timestep)
 
             # Evaluation and early stopping
             if eval_env is not None and timestep % eval_frequency < self.n_steps:

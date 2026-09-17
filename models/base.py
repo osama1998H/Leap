@@ -9,7 +9,7 @@ See ADR-0014 for design rationale.
 
 import torch
 import numpy as np
-from typing import Any, Callable, Dict, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Dict, Optional, Protocol, Tuple, runtime_checkable
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,8 +50,7 @@ class PredictorModel(Protocol):
         epochs: int = 100,
         batch_size: int = 64,
         patience: int = 15,
-        verbose: bool = True,
-        mlflow_callback: Optional[Callable] = None
+        verbose: bool = True
     ) -> Dict[str, Any]:
         """
         Train the model on historical data.
@@ -65,7 +64,6 @@ class PredictorModel(Protocol):
             batch_size: Batch size for training
             patience: Early stopping patience
             verbose: Whether to show progress
-            mlflow_callback: Optional callback for MLflow logging
 
         Returns:
             Dictionary containing training metrics
@@ -198,7 +196,6 @@ class AgentModel(Protocol):
         eval_env=None,
         eval_frequency: int = 10000,
         verbose: bool = True,
-        mlflow_callback: Optional[Callable] = None,
         patience: Optional[int] = None,
         min_improvement: float = 0.01
     ) -> Dict[str, Any]:
@@ -211,7 +208,6 @@ class AgentModel(Protocol):
             eval_env: Optional evaluation environment
             eval_frequency: Evaluation frequency in timesteps
             verbose: Whether to log progress
-            mlflow_callback: Optional callback for MLflow logging
             patience: Number of evaluations without improvement before early stopping
             min_improvement: Minimum improvement to reset patience counter
 

@@ -214,25 +214,6 @@ Examples:
         help='Log file path'
     )
 
-    # MLflow arguments
-    parser.add_argument(
-        '--mlflow-experiment',
-        default=None,
-        help='MLflow experiment name (default: from config)'
-    )
-
-    parser.add_argument(
-        '--mlflow-tracking-uri',
-        default=None,
-        help='MLflow tracking URI (default: sqlite:///mlflow.db)'
-    )
-
-    parser.add_argument(
-        '--no-mlflow',
-        action='store_true',
-        help='Disable MLflow tracking'
-    )
-
     # Adapt command arguments
     parser.add_argument(
         '--mode',
@@ -359,14 +340,6 @@ def resolve_cli_config(args: argparse.Namespace) -> Tuple[SystemConfig, Dict[str
             config.logging = load_logging_config(args.logging_config)
         else:
             print(f"Warning: Logging config file not found: {args.logging_config}")
-
-    # Apply MLflow CLI overrides
-    if args.no_mlflow:
-        config.mlflow.enabled = False
-    if args.mlflow_experiment:
-        config.mlflow.experiment_name = args.mlflow_experiment
-    if args.mlflow_tracking_uri:
-        config.mlflow.tracking_uri = args.mlflow_tracking_uri
 
     # Resolve CLI defaults from config (CLI takes precedence over config)
     # Symbols: --symbols > --symbol > config.data.symbols[0] > 'EURUSD'

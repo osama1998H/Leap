@@ -19,15 +19,9 @@ try:
 except ImportError:
     pass  # urllib3 < 2.0 doesn't have NotOpenSSLWarning
 
-import logging
-
 from .system import LeapTradingSystem
 from .parser import create_parser, initialize_logging, resolve_cli_config
 from .commands import execute_command
-
-from utils.mlflow_tracker import MLFLOW_AVAILABLE
-
-logger = logging.getLogger(__name__)
 
 
 def main():
@@ -54,12 +48,6 @@ def main():
         log_level_override=args.log_level,
         log_file_override=args.log_file
     )
-
-    # Log MLflow status
-    if config.mlflow.enabled and MLFLOW_AVAILABLE:
-        logger.info(f"MLflow tracking enabled: experiment='{config.mlflow.experiment_name}'")
-    elif config.mlflow.enabled and not MLFLOW_AVAILABLE:
-        logger.warning("MLflow is enabled in config but not installed. Install with: pip install mlflow")
 
     # Create system
     system = LeapTradingSystem(config)

@@ -208,10 +208,6 @@ data/
 checkpoints/
 saved_models/
 results/
-mlruns/
-mlflow.db
-mlflow.db-shm
-mlflow.db-wal
 # Ruff stuff:
 .ruff_cache/
 
